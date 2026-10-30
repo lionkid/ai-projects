@@ -72,6 +72,8 @@ Toolkit summary (see `src/ui/*.ts` for full signatures):
 | `Scene3D` | Three.js scene, z-up, orbit camera, themed. `addFrame({size,label})` → `setTransform(T4x4)`; `addLink()` → `setEndpoints(a,b)`; `addArrow()` → `setFromTo/setDir`; `addSphere/addBox/addPolyline/addLabel/addScrewAxis(…).setScrew(S)`; `onTick(cb)`; `destroy()`. |
 | `Plot2D` | line plots. Streaming: `push(x, [y1,y2])` with `xWindow`; static: `setSeries(i, pts)` / `setXY(i, xs, ys)`; `setMarkers([{x}, {y}, {x,y,label}])`; `equalAspect` for phase planes. |
 | controls | `controlPanel(host)` grid; `slider`, `angleSlider`, `toggle`, `button`, `select`, `readout`, `matrixView(...).set(M, {highlightCols:['x','y','z']})`, `playback({onPlay,onPause,onReset,onSpeed,duration,onScrub})`, `kv`, `legend`, `note`, `simTitle`, `split`, `row`. |
+| robot2d | `drawPlanarArm(cv, lengths, thetas, {frames, labels, angleArcs, alpha})` → joint points; `planarArmPoints`, `planarArmAngles`; `drawEllipse2x2(cv, center, JJt, {scale, inverse, axes})` for manipulability/force ellipses; `eig2x2Sym`; `drawTrail`. |
+| robot3d | `new Robot3D(scene, {M, Slist}, {showAxes, showJointFrames, frameSize, opacity})` → `setConfig(thetas)` returns `{T, points}`; a stick figure for any PoE chain (`ur5`, `rrr3`, planar models). `homeJointPoints(Slist)`. |
 | loop | `createLoop((dt, t) => {...})` with `start/stop/speed`; `substep(dt, h, step)` for fixed-step physics. |
 | text | `mdElement(md)` renders markdown+LaTeX inside the sim; `mathEl(tex)` for a formula label. `fmt(x, 3)`, `fmtDeg(rad)`. |
 | theme | `cssVar('--accent')`, `--axis-x/y/z`, `--series-1..8`, `--fg`, `--fg-muted`, `--grid`. Re-read inside draw callbacks so theme switches work (Canvas2D/Plot2D/Scene3D re-render automatically on theme change). |

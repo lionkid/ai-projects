@@ -5,3 +5,5 @@ export * from './controls';
 export * from './plot2d';
 export * from './canvas2d';
 export * from './scene3d';
+export * from './robot2d';
+export * from './robot3d';

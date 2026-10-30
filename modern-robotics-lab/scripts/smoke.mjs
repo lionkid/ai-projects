@@ -8,6 +8,7 @@
  *   node scripts/smoke.mjs --lesson ch03-01-x   # one lesson
  *   node scripts/smoke.mjs --screens out/dir    # also save screenshots
  *   node scripts/smoke.mjs --json               # machine-readable summary on stdout
+ *   node scripts/smoke.mjs --dark --mobile      # dark theme and/or a 420px-wide viewport
  *
  * Requires Playwright + Chromium to be resolvable from this directory (pre-installed in
  * the cloud environment; locally run `npm i -D playwright && npx playwright install chromium`).
@@ -26,6 +27,8 @@ const only = opt('lesson', null);
 const screens = opt('screens', null);
 const asJson = argv.includes('--json');
 const settle = Number(opt('settle', 500));
+const dark = argv.includes('--dark');
+const mobile = argv.includes('--mobile');
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const port = 5300 + Math.floor(Math.random() * 600);
@@ -36,7 +39,8 @@ const base = server.resolvedUrls.local[0];
 const launchOpts = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'] };
 if (process.env.PW_CHROMIUM_PATH) launchOpts.executablePath = process.env.PW_CHROMIUM_PATH;
 const browser = await chromium.launch(launchOpts);
-const page = await browser.newPage({ viewport: { width: 1400, height: 950 } });
+const page = await browser.newPage({ viewport: mobile ? { width: 420, height: 900 } : { width: 1400, height: 950 } });
+if (dark) await page.addInitScript(() => { try { localStorage.setItem('mrlab.theme', 'dark'); } catch {} });
 
 const errors = [];
 const benign = /favicon|ERR_BLOCKED_BY_CLIENT|Download the React DevTools/i;
@@ -117,7 +121,7 @@ for (const id of ids) {
     r.quiz = await qs.count();
     for (let k = 0; k < r.quiz; k++) await qs.nth(k).locator('.quiz-opt').first().click();
     await page.waitForTimeout(300);
-    if (screens) await page.screenshot({ path: path.join(screens, `${id}.png`), fullPage: true });
+    if (screens) await page.screenshot({ path: path.join(screens, `${id}${dark ? '-dark' : ''}${mobile ? '-mobile' : ''}.png`), fullPage: true });
   } catch (e) {
     errors.push(`exception: ${e.message}`);
   }
