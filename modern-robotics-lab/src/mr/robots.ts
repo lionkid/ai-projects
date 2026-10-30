@@ -114,56 +114,43 @@ function ur5Kinematics(): { M: Mat; Slist: Mat } {
 }
 
 /**
- * Link-frame transforms and spatial inertias commonly used for the UR5 (they
- * derive from the manufacturer's URDF: masses 3.7, 8.393, 2.275, 1.219,
- * 1.219, 0.1879 kg with link frames at the centres of mass). The URDF offsets
- * (0.089159, 0.10915, 0.81725, ...) differ from the rounded book dimensions by
- * well under a millimetre, so the dynamic model is marked approximate.
+ * Link-frame transforms and spatial inertias of the UR5 for Newton-Euler
+ * dynamics. Masses, inertias and the positions of the centres of mass along
+ * the links follow the manufacturer's URDF (3.7, 8.393, 2.275, 1.219, 1.219,
+ * 0.1879 kg; upper-arm COM 0.28 m from the shoulder, forearm COM 0.25 m from
+ * the elbow, shoulder lateral offset 0.13585 m, upper-arm COM lateral offset
+ * -0.1197 m). The joint-to-joint distances, however, come from UR5_DIMENSIONS
+ * (the rounded book values) instead of the URDF (0.089159, 0.10915, 0.81725,
+ * 0.09465, 0.0823 m, all within a millimetre of the book), so that the chain
+ * M01 M12 ... M67 ends exactly at the book's M and Newton-Euler statics agree
+ * with J_b^T F_tip to machine precision.
  */
 function ur5Dynamics(): { Mlist: Mat[]; Glist: Mat[] } {
+  const { W1, W2, L1, L2, H1, H2 } = UR5_DIMENSIONS;
+  const upperArmCom = 0.28; // shoulder -> upper-arm COM, along the link (m)
+  const forearmCom = 0.25; // elbow -> forearm COM, along the link (m)
+  const shoulderOffset = 0.13585; // lateral (y) offset of the shoulder frame (m)
+  const upperArmLateral = -0.1197; // lateral (y) offset of the upper-arm COM relative to the shoulder frame (m)
+  // RotY(+90 deg): frames {2}, {3} have z along the arm (space +x); after a second one, frames {4}..{6} have z = space -z.
+  const Ry: Mat = [
+    [0, 0, 1],
+    [0, 1, 0],
+    [-1, 0, 0],
+  ];
+  // RotX(-90 deg) for the tool frame, whose z axis points along space +y like the book's M.
+  const Rx: Mat = [
+    [1, 0, 0],
+    [0, 0, 1],
+    [0, -1, 0],
+  ];
   const Mlist: Mat[] = [
-    [
-      [1, 0, 0, 0],
-      [0, 1, 0, 0],
-      [0, 0, 1, 0.089159],
-      [0, 0, 0, 1],
-    ],
-    [
-      [0, 0, 1, 0.28],
-      [0, 1, 0, 0.13585],
-      [-1, 0, 0, 0],
-      [0, 0, 0, 1],
-    ],
-    [
-      [1, 0, 0, 0],
-      [0, 1, 0, -0.1197],
-      [0, 0, 1, 0.395],
-      [0, 0, 0, 1],
-    ],
-    [
-      [0, 0, 1, 0],
-      [0, 1, 0, 0],
-      [-1, 0, 0, 0.14225],
-      [0, 0, 0, 1],
-    ],
-    [
-      [1, 0, 0, 0],
-      [0, 1, 0, 0.093],
-      [0, 0, 1, 0],
-      [0, 0, 0, 1],
-    ],
-    [
-      [1, 0, 0, 0],
-      [0, 1, 0, 0],
-      [0, 0, 1, 0.09465],
-      [0, 0, 0, 1],
-    ],
-    [
-      [1, 0, 0, 0],
-      [0, 0, 1, 0.0823],
-      [0, -1, 0, 0],
-      [0, 0, 0, 1],
-    ],
+    RpToTrans(eye(3), [0, 0, H1]), // {0} -> {1}: up the base column
+    RpToTrans(Ry, [upperArmCom, shoulderOffset, 0]), // {1} -> {2}: shoulder offset, then along the upper arm
+    RpToTrans(eye(3), [0, upperArmLateral, L1 - upperArmCom + forearmCom]), // {2} -> {3}: past the elbow to the forearm COM
+    RpToTrans(Ry, [0, 0, L2 - forearmCom]), // {3} -> {4}: to the wrist (end of the forearm)
+    RpToTrans(eye(3), [0, W1 - shoulderOffset - upperArmLateral, 0]), // {4} -> {5}: remaining lateral offset W1
+    RpToTrans(eye(3), [0, 0, H2]), // {5} -> {6}: down by H2 (frame z = space -z)
+    RpToTrans(Rx, [0, W2, 0]), // {6} -> {7}: tool offset W2
   ];
   const Glist: Mat[] = [
     diag([0.010267495893, 0.010267495893, 0.00666, 3.7, 3.7, 3.7]),
@@ -196,8 +183,7 @@ export const ur5: RobotModel = {
     [-TWO_PI, TWO_PI],
     [-TWO_PI, TWO_PI],
   ],
-  dynamicsApproximate: true,
-  notes: 'Mlist/Glist follow the manufacturer URDF (COM frames, diagonal inertias). They are internally consistent for dynamics demos but use URDF offsets that differ from the rounded book kinematics by < 1 mm.',
+  notes: 'Mlist/Glist: masses, inertias and COM placements from the manufacturer URDF (COM frames, diagonal inertias), joint-to-joint distances from the book values above, so the dynamics are exactly consistent with the kinematics (product of Mlist = M).',
 };
 
 // ---------------------------------------------------------------------------

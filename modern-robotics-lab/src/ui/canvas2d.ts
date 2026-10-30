@@ -318,6 +318,18 @@ export class Canvas2D {
     }
   }
 
+  /** Draw an image/canvas so that it covers the world rectangle `rect` (used by RasterLayer). */
+  image(img: CanvasImageSource, rect: World, o: { alpha?: number; smooth?: boolean } = {}): void {
+    const [sx, sy] = this.toScreen([rect.xmin, rect.ymax]);
+    const w = (rect.xmax - rect.xmin) * this.sc, h = (rect.ymax - rect.ymin) * this.sc;
+    const c = this.ctx;
+    c.save();
+    c.globalAlpha = o.alpha ?? 1;
+    c.imageSmoothingEnabled = !!o.smooth;
+    c.drawImage(img, sx, sy, w, h);
+    c.restore();
+  }
+
   // ---- handles & pointer ---------------------------------------------
   addHandle(h: Handle): Handle { this.handles.push(h); this.requestRender(); return h; }
   removeHandle(h: Handle): void { const i = this.handles.indexOf(h); if (i >= 0) this.handles.splice(i, 1); }

@@ -53,7 +53,9 @@ DistanceToSO3, TestIfSO3, RotX, RotY, RotZ, rotZYX, eulerZYX, RotToQuat,
 QuatToRot, rotationAngleBetween, rodriguesCoefficients`
 
 `MatrixLog3` is robust at θ = 0 (series) and θ = π (axis from the symmetric
-part of R); at exactly π both ±ω are valid and one of them is returned.
+part of R). At θ = π (to machine precision) both ±ω̂ are valid logarithms; the
+sign is chosen deterministically so that the first component of ω̂ with
+|ω̂ᵢ| > 10⁻⁶ is positive. Lesson code should still not rely on the sign at π.
 `rotZYX([α, β, γ]) = RotZ(α) RotY(β) RotX(γ)`. Quaternions are `[w, x, y, z]`.
 
 ### `se3.ts`
@@ -87,15 +89,19 @@ accepts `'rk4'` (default) or `'euler'`.
 ### `trajectory.ts`
 `CubicTimeScaling, CubicTimeScalingDerivs, QuinticTimeScaling,
 QuinticTimeScalingDerivs, trapezoidParams, TrapezoidalTimeScaling,
-trapezoidSample, JointTrajectory, ScrewTrajectory, CartesianTrajectory,
-viaPointCubic`
+trapezoidScaling, trapezoidSample, JointTrajectory, ScrewTrajectory,
+CartesianTrajectory, viaPointCubic`
 
-Time scalings are called as `(Tf, t)`; the `*Derivs` versions return
-`{ s, sdot, sddot }`. `trapezoidParams({Tf, v} | {Tf, a} | {v, a})` completes
-the missing parameter and reports `valid` / `reason`. Path methods accept
-`3` (cubic), `5` (quintic) or a custom `(Tf, t) => s`. `viaPointCubic(points,
-times, 'zero' | 'heuristic' | velocities)` returns an object with
-`evaluate(t)`, `sample(N)` and the segment coefficients.
+Time scalings are called as `(Tf, t)` – including
+`TrapezoidalTimeScaling(Tf, t, { v } | { a })`; the `*Derivs` versions and the
+trapezoid return `{ s, sdot, sddot }`. `trapezoidParams({Tf, v} | {Tf, a} |
+{v, a})` completes the missing parameter and reports `valid` / `reason`;
+inputs within 10⁻¹² of the triangular limit are snapped onto it, and a `valid`
+result never contains NaN. Path methods accept `3` (cubic), `5` (quintic) or a
+custom `(Tf, t) => s`; `trapezoidScaling({ v } | { a })` wraps a trapezoid as
+such a method. `N` must be an integer ≥ 2 (the paths throw otherwise).
+`viaPointCubic(points, times, 'zero' | 'heuristic' | velocities)` returns an
+object with `evaluate(t)`, `sample(N)` and the segment coefficients.
 
 ### `control.ts`
 `ComputedTorque, SimulateControl, plantAcceleration, pidStep, createPID,
@@ -124,8 +130,9 @@ planar2RAccel, buildPlanarChain`
 ### `robots.ts`
 `planar2R` (L = 1, 1 m; 1 kg point masses), `planar3R` (1, 0.8, 0.6 m rods),
 `ur5` (book kinematics W1 = 0.109, W2 = 0.082, L1 = 0.425, L2 = 0.392,
-H1 = 0.089, H2 = 0.095 m; URDF-derived `Mlist`/`Glist`, marked
-`dynamicsApproximate`), `rrr3` (spatial RRR arm, cylinders), and the `robots`
+H1 = 0.089, H2 = 0.095 m; `Mlist`/`Glist` with URDF masses, inertias and COM
+placements but the book's joint-to-joint distances, so the product of `Mlist`
+is exactly `M`), `rrr3` (spatial RRR arm, cylinders), and the `robots`
 map. Each `RobotModel` has `M, Slist, Blist, dof` and optionally
 `Mlist, Glist, linkLengths, jointLimits, notes`.
 

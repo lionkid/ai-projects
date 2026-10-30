@@ -13,3 +13,4 @@ export * from './trajectory';
 export * from './control';
 export * from './planar';
 export * from './robots';
+export * from './geometry2d';

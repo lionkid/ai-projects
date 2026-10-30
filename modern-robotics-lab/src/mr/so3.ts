@@ -127,7 +127,16 @@ export function MatrixLog3(R: Mat): Mat {
     let best = 0;
     for (let i = 1; i < 3; i++) if (P[i][i] > P[best][best]) best = i;
     let w = normalize([P[0][best], P[1][best], P[2][best]]);
-    if (dot(w, anti) < 0) w = vecScale(w, -1);
+    if (s > 1e-14) {
+      // Strictly below pi the antisymmetric part sin(theta) omghat fixes the sign.
+      if (dot(w, anti) < 0) w = vecScale(w, -1);
+    } else {
+      // theta = pi to machine precision: +omghat and -omghat are both valid
+      // logarithms. Choose deterministically (independent of rounding noise):
+      // the first component of omghat with magnitude above 1e-6 is positive.
+      const lead = w.find((x) => Math.abs(x) > 1e-6) ?? 1;
+      if (lead < 0) w = vecScale(w, -1);
+    }
     return VecToso3(vecScale(w, theta));
   }
   return VecToso3(vecScale(anti, theta / s));

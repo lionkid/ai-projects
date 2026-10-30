@@ -13,6 +13,7 @@ import {
   TrapezoidalTimeScaling,
   trapezoidParams,
   trapezoidSample,
+  trapezoidScaling,
   viaPointCubic,
 } from './trajectory';
 import { expectClose } from './testUtils';
@@ -78,7 +79,66 @@ describe('trapezoidal time scaling', () => {
     expect(trapezoidParams({ Tf: 1, a: 4 }).valid).toBe(true);
     expect(trapezoidParams({ v: 1, a: 0.5 }).valid).toBe(false);
     expect(trapezoidParams({ Tf: 1 }).valid).toBe(false);
-    expect(() => TrapezoidalTimeScaling(0.5, 1, { v: 0.5 })).toThrow();
+    expect(() => TrapezoidalTimeScaling(1, 0.5, { v: 0.5 })).toThrow(); // (Tf, t, spec): v Tf = 0.5 < 1
+  });
+
+  it('snaps inputs on the triangular limit (up to rounding) and a valid profile never contains NaN', () => {
+    // Tf = sqrt(4 / a) makes a Tf^2 land on either side of 4 by an ulp or two.
+    for (const a of [0.7, 1.3, 2.9, 7.3, 0.013, 250]) {
+      const Tf = Math.sqrt(4 / a);
+      const P = trapezoidParams({ Tf, a });
+      expect(P.valid, `a=${a}`).toBe(true);
+      for (const x of [P.Tf, P.v, P.a, P.tAccel]) expect(Number.isFinite(x), `a=${a}: ${JSON.stringify(P)}`).toBe(true);
+      expect(Math.abs(P.a - a) / a).toBeLessThan(1e-12);
+      expect(P.Tf - 2 * P.tAccel).toBeGreaterThanOrEqual(-1e-12); // cruise phase never negative
+      // v sits at the triangular limit 2 / Tf (the square root has infinite slope here, so only ~1e-7 is meaningful).
+      expect(P.v * P.Tf).toBeCloseTo(2, 6);
+      expect(trapezoidSample(Tf / 2, P).s).toBeCloseTo(0.5, 6);
+      expect(trapezoidSample(Tf / 2, P).sdot).toBeCloseTo(P.v, 6);
+      expect(TrapezoidalTimeScaling(Tf, Tf / 2, { a }).sddot).toBeCloseTo(a, 6); // still accelerating up to tAccel ~ Tf/2
+    }
+    // (Tf, v) and (v, a) just past the limit within the tolerance are snapped, just beyond it rejected.
+    const tv = trapezoidParams({ Tf: 3, v: 2 / 3 + 1e-13 });
+    expect(tv.valid).toBe(true);
+    expect(tv.v * tv.Tf).toBeCloseTo(2, 12);
+    expect(tv.Tf - 2 * tv.tAccel).toBeGreaterThanOrEqual(-1e-12);
+    expect(trapezoidParams({ Tf: 3, v: 2 / 3 + 1e-9 }).valid).toBe(false);
+    const va = trapezoidParams({ v: 1, a: 1 - 1e-13 });
+    expect(va.valid).toBe(true);
+    expect(va.a).toBeCloseTo(1, 12);
+    expect(va.Tf).toBeCloseTo(2, 12);
+    expect(trapezoidParams({ v: 1, a: 1 - 1e-9 }).valid).toBe(false);
+    // Exact boundary inputs are untouched.
+    const exact = trapezoidParams({ Tf: 2, a: 1 });
+    expect(exact.a).toBe(1);
+    expect(exact.v).toBe(1);
+    expect(exact.tAccel).toBe(1);
+    // Non-finite input never yields a valid profile.
+    expect(trapezoidParams({ Tf: Infinity, v: 1 }).valid).toBe(false);
+    expect(trapezoidParams({ Tf: 1, a: NaN }).valid).toBe(false);
+  });
+
+  it('takes (Tf, t, spec) like every other scaling, and trapezoidScaling plugs into the path functions', () => {
+    const Tf = 2;
+    const spec = { v: 0.75 };
+    const P = trapezoidParams({ Tf, ...spec });
+    // Symmetric profile: half way at Tf / 2, in the cruise phase.
+    expect(TrapezoidalTimeScaling(Tf, 1, spec)).toEqual(trapezoidSample(1, P));
+    expect(TrapezoidalTimeScaling(Tf, 1, spec).s).toBeCloseTo(0.5, 12);
+    expect(TrapezoidalTimeScaling(Tf, 1, spec).sdot).toBeCloseTo(0.75, 12);
+    expect(TrapezoidalTimeScaling(Tf, -1, spec)).toEqual({ s: 0, sdot: 0, sddot: 0 });
+    expect(TrapezoidalTimeScaling(Tf, 3, spec)).toEqual({ s: 1, sdot: 0, sddot: 0 });
+    const method = trapezoidScaling(spec);
+    const path = JointTrajectory([0, 1], [2, -1], Tf, 5, method);
+    for (let k = 0; k < 5; k++) {
+      const s = trapezoidSample((Tf * k) / 4, P).s;
+      expectClose(path[k], [2 * s, 1 - 2 * s], 1e-15, `k=${k}`);
+    }
+    // The wrapped method re-completes the profile when Tf changes (v Tf = 1.8 here), and throws like TrapezoidalTimeScaling when infeasible.
+    expect(method(2.4, 1.2)).toBeCloseTo(0.5, 12);
+    expect(method(2.4, 0.5)).toBeCloseTo(trapezoidSample(0.5, trapezoidParams({ Tf: 2.4, v: 0.75 })).s, 15);
+    expect(() => method(4, 2)).toThrow(/trapezoidScaling/); // v Tf = 3 > 2 would overshoot
+    expect(() => JointTrajectory([0], [1], 1, 3, trapezoidScaling({ v: 0.5 }))).toThrow(/trapezoidScaling/);
   });
 
   it('starts at 0, ends at 1, is continuous and its velocity integrates to 1', () => {
@@ -86,7 +146,7 @@ describe('trapezoidal time scaling', () => {
     for (const spec of [{ v: 1.5 }, { a: 6 }, { v: 2 / Tf }] as const) {
       const P = trapezoidParams({ Tf, ...spec });
       expect(P.valid).toBe(true);
-      expect(TrapezoidalTimeScaling(0, Tf, spec).s).toBe(0);
+      expect(TrapezoidalTimeScaling(Tf, 0, spec).s).toBe(0);
       expect(TrapezoidalTimeScaling(Tf, Tf, spec).s).toBe(1);
       // Continuity at the phase boundaries.
       for (const tb of [P.tAccel, Tf - P.tAccel]) {
@@ -125,6 +185,17 @@ describe('point-to-point trajectories', () => {
     for (let k = 1; k < 11; k++) expect(traj[k][0]).toBeGreaterThanOrEqual(traj[k - 1][0]);
     const custom = JointTrajectory([0], [2], 1, 3, (Tf, t) => t / Tf);
     expectClose(custom.map((q) => q[0]), [0, 1, 2], 1e-15);
+  });
+
+  it('path functions require an integer N >= 2 instead of silently producing NaN', () => {
+    for (const N of [0, 1, -3, 2.5, NaN]) {
+      expect(() => JointTrajectory([0], [1], 1, N, 3), `Joint N=${N}`).toThrow(/N must be an integer >= 2/);
+      expect(() => ScrewTrajectory(Xstart, Xend, 1, N, 3), `Screw N=${N}`).toThrow(/N must be an integer >= 2/);
+      expect(() => CartesianTrajectory(Xstart, Xend, 1, N, 3), `Cartesian N=${N}`).toThrow(/N must be an integer >= 2/);
+    }
+    expect(JointTrajectory([0], [1], 1, 2, 3).map((q) => q[0])).toEqual([0, 1]);
+    expect(ScrewTrajectory(Xstart, Xend, 1, 2, 3).length).toBe(2);
+    expect(CartesianTrajectory(Xstart, Xend, 1, 2, 3).length).toBe(2);
   });
 
   it('ScrewTrajectory stays in SE(3) and hits both endpoints', () => {

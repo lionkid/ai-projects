@@ -103,6 +103,36 @@ describe('MatrixLog3 <-> MatrixExp3 round trips', () => {
     }
   });
 
+  it('at theta = pi the sign of the axis is canonical: first component with |w_i| > 1e-6 is positive', () => {
+    const dirs: Vec[] = [
+      normalize([0.3, -0.5, 0.81]),
+      normalize([-0.3, 0.5, -0.81]),
+      normalize([-1, 2, 0]),
+      [0, -1, 0],
+      normalize([1e-9, -1, 1]),
+      normalize([-1e-9, 1, -1]),
+      normalize([1e-3, -1, 0]),
+    ];
+    for (const w of dirs) {
+      const lead = w.find((x) => Math.abs(x) > 1e-6) as number;
+      const expected = vecScale(w, lead > 0 ? Math.PI : -Math.PI);
+      // Three constructions of the same half turn: symmetric form, exp(+w pi), exp(-w pi).
+      const Rsym = [0, 1, 2].map((i) => [0, 1, 2].map((j) => 2 * w[i] * w[j] - (i === j ? 1 : 0)));
+      const Rplus = MatrixExp3(VecToso3(vecScale(w, Math.PI)));
+      const Rminus = MatrixExp3(VecToso3(vecScale(w, -Math.PI)));
+      for (const R of [Rsym, Rplus, Rminus]) {
+        const logR = so3ToVec(MatrixLog3(R));
+        expectClose(logR, expected, 1e-9, `w=${w}`);
+        expectClose(MatrixExp3(MatrixLog3(R)), R, 1e-12, `exp(log) w=${w}`);
+      }
+    }
+    // Just below pi the sign is dictated by R itself, not by the canonical rule.
+    const w = normalize([-0.3, 0.5, -0.81]);
+    for (const d of [1e-6, 1e-9, 1e-12]) {
+      expectClose(so3ToVec(MatrixLog3(MatrixExp3(VecToso3(vecScale(w, Math.PI - d))))), vecScale(w, Math.PI - d), 1e-9, `d=${d}`);
+    }
+  });
+
   it('handles exact theta = pi rotation matrices (diagonal cases)', () => {
     const cases = [
       [[1, 0, 0], [0, -1, 0], [0, 0, -1]],

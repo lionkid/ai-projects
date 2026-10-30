@@ -316,3 +316,21 @@ h3 { font-size: 1.08rem; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------- Toolkit extras ---------- */
+.mr-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin: 0.3rem 0; }
+.mr-chips-label { font-size: 0.8rem; color: var(--fg-muted); margin-right: 0.2rem; }
+.mr-chip { font-size: 0.78rem; padding: 0.2rem 0.65rem; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-elev); cursor: pointer; line-height: 1.4; }
+.mr-chip:hover { background: var(--bg-sunken); }
+.mr-chip.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.mr-bars { display: grid; gap: 0.25rem; font-size: 0.8rem; margin: 0.35rem 0; }
+.mr-bars-title { font-weight: 600; }
+.mr-bar-row { display: grid; grid-template-columns: minmax(2.5em, auto) 1fr 7em; align-items: center; gap: 0.5rem; }
+.mr-bar-label { color: var(--fg-muted); }
+.mr-bar-track { position: relative; height: 12px; background: var(--bg-sunken); border-radius: 6px; overflow: hidden; }
+.mr-bar-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--grid-strong); }
+.mr-bar-limit { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); opacity: 0.6; }
+.mr-bar-fill { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; transition: width 0.05s linear, left 0.05s linear; }
+.mr-bar-fill.sat { background: var(--danger) !important; }
+.mr-bar-value { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+.mr-key-hint { position: absolute; right: 0.5rem; bottom: 0.4rem; font-size: 0.75rem; background: var(--accent-soft); color: var(--accent); padding: 0.15rem 0.55rem; border-radius: 999px; pointer-events: none; z-index: 2; }

@@ -74,6 +74,15 @@ Toolkit summary (see `src/ui/*.ts` for full signatures):
 | controls | `controlPanel(host)` grid; `slider`, `angleSlider`, `toggle`, `button`, `select`, `readout`, `matrixView(...).set(M, {highlightCols:['x','y','z']})`, `playback({onPlay,onPause,onReset,onSpeed,duration,onScrub})`, `kv`, `legend`, `note`, `simTitle`, `split`, `row`. |
 | robot2d | `drawPlanarArm(cv, lengths, thetas, {frames, labels, angleArcs, alpha})` → joint points; `planarArmPoints`, `planarArmAngles`; `drawEllipse2x2(cv, center, JJt, {scale, inverse, axes})` for manipulability/force ellipses; `eig2x2Sym`; `drawTrail`. |
 | robot3d | `new Robot3D(scene, {M, Slist}, {showAxes, showJointFrames, frameSize, opacity})` → `setConfig(thetas)` returns `{T, points}`; a stick figure for any PoE chain (`ur5`, `rrr3`, planar models). `homeJointPoints(Slist)`. |
+| jointSliders | `jointSliders(panel, {model, values, onInput(thetas, i)})` → `get/set`; auto-generates θ₁…θₙ angle sliders from a RobotModel. |
+| stepper | `algorithmStepper(panel, {onStep: () => boolean, onReset, intervalMs})` single-step / auto / reset / speed / iteration count for Newton IK, A*, RRT, Newton–Euler passes, phase-plane integration. |
+| presets | `presetChips(panel, [{label, apply}])` → `activate(i)`, `clear()`; drive from `onStep`. |
+| keyboard | `keyboardDrive(cv.el, {onChange})` → `axis('down','up')`, `has('brake')`; WASD/arrows scoped to the focused canvas with a hint overlay; call `destroy()`. |
+| bars | `torqueBars(host, {labels, max, limit, unit})` → `set(values)`; signed per-joint bars with saturation marking (torques, energies). |
+| raster | `new RasterLayer(world, nx, ny).paint((x,y) => bool \| number, {color \| colormap, range})` then `layer.draw(cv)` inside the draw callback; heat maps for C-obstacles, σ_min, potential fields. Colormaps: `viridisLike`, `diverging`, `grayscale`. Re-paint only when inputs change (it is O(nx·ny)). |
+| poseHandle | `poseHandle(cv, {x,y,theta}, {onChange})` → draggable SE(2) target (position + heading knob); call `.draw()` in the draw callback. |
+| physics | `physicsRunner({h, step(h,t), onFrame(t), guard, onBlowUp, onReset})` → `start/stop/reset/advance`, `speed`; fixed sub-steps with blow-up protection. Pair with `mr.rk4Step`. |
+| plotGroup | `plotGroup([plotA, plotB]).setCursor(t)` shared time cursor + `setXRange`. |
 | loop | `createLoop((dt, t) => {...})` with `start/stop/speed`; `substep(dt, h, step)` for fixed-step physics. |
 | text | `mdElement(md)` renders markdown+LaTeX inside the sim; `mathEl(tex)` for a formula label. `fmt(x, 3)`, `fmtDeg(rad)`. |
 | theme | `cssVar('--accent')`, `--axis-x/y/z`, `--series-1..8`, `--fg`, `--fg-muted`, `--grid`. Re-read inside draw callbacks so theme switches work (Canvas2D/Plot2D/Scene3D re-render automatically on theme change). |
@@ -100,11 +109,20 @@ Function names mirror the open-source Modern Robotics library (so learners can c
 se3ToVec, Adjoint, ScrewToAxis, AxisAng6, MatrixExp6, MatrixLog6, ad, FKinBody, FKinSpace,
 JacobianBody, JacobianSpace, IKinBody, IKinSpace, InverseDynamics, MassMatrix, VelQuadraticForces,
 GravityForces, EndEffectorForces, ForwardDynamics, EulerStep, rk4Step, CubicTimeScaling,
-QuinticTimeScaling, TrapezoidalTimeScaling, JointTrajectory, ScrewTrajectory, CartesianTrajectory,
+QuinticTimeScaling, TrapezoidalTimeScaling, trapezoidScaling, JointTrajectory, ScrewTrajectory,
+CartesianTrajectory,
 ComputedTorque, SimulateControl`, plus `linalg` helpers (`matMul, matVec, transpose, inv, pinv, svd,
 eigSym, cross, norm, ...`), planar helpers (`planar.ts`) and robot models (`robots.ts`: `planar2R,
-planar3R, ur5, rrr3`). Read `src/mr/README.md` for conventions (screw axes are `[ω; v]`, Slist/Blist
+planar3R, ur5, rrr3`). 2D collision helpers live in `@/mr` too (`geometry2d.ts`: `segCircleIntersects, segPolygonIntersects, pointInPolygon, polylineCircleIntersects, polylinePolygonIntersects, distPointPolygon, rectPolygon, regularPolygon`). Read `src/mr/README.md` for conventions (screw axes are `[ω; v]`, Slist/Blist
 are 6×n with axes as columns, matrices row-major `number[][]`).
+
+## 4b. Working alongside other authors
+
+Several lessons are built concurrently in the same checkout. `src/app/registry.ts` eagerly imports every
+`src/lessons/*/meta.ts`, so a half-written `meta.ts` anywhere breaks the app for everyone: write `meta.ts`
+in a single write, and make it valid TypeScript from the first save. If a smoke run fails with an error
+that points at another lesson's files, wait ~30 s and run it again with `--lesson` limited to your ids.
+The per-lesson design briefs live in `docs/curriculum.json` (and a readable overview in `docs/curriculum.md`).
 
 ## 5. Checklist before you report
 

@@ -1,0 +1,3882 @@
+{
+ "version": "1.0.0",
+ "generatedAt": "2026-10-30",
+ "project": "Modern Robotics Lab",
+ "language": "zh-TW (English technical terms kept)",
+ "book": {
+  "title": "Modern Robotics: Mechanics, Planning, and Control",
+  "authors": "Kevin M. Lynch & Frank C. Park",
+  "edition": "v2 online preprint",
+  "usage": "Concept and section-number reference only; all lesson wording is original.",
+  "tocNote": "Section numbers verified against the reconstructed v2 table of contents supplied by the TOC step (PDF download was blocked by proxy policy)."
+ },
+ "stats": {
+  "totalLessons": 37,
+  "coreLessons": 30,
+  "advancedLessons": 7,
+  "totalMinutes": 1195,
+  "perChapter": {
+   "2": 3,
+   "3": 4,
+   "4": 2,
+   "5": 3,
+   "6": 2,
+   "7": 2,
+   "8": 4,
+   "9": 4,
+   "10": 4,
+   "11": 4,
+   "12": 2,
+   "13": 3
+  }
+ },
+ "paths": {
+  "core": [
+   "ch02-01-dof-grubler",
+   "ch02-02-cspace-topology",
+   "ch02-03-constraints-task-space",
+   "ch03-01-rotation-matrices",
+   "ch03-02-exponential-coordinates",
+   "ch03-03-transforms-twists",
+   "ch03-04-screw-motions-wrenches",
+   "ch04-01-poe-space-form",
+   "ch04-02-poe-body-form-urdf",
+   "ch05-01-jacobian-geometry",
+   "ch05-02-singularities-manipulability",
+   "ch05-03-statics-force-ellipsoid",
+   "ch06-01-analytic-ik",
+   "ch07-01-five-bar-ik-fk",
+   "ch08-01-lagrangian-mass-matrix",
+   "ch08-03-forward-dynamics-integration",
+   "ch08-04-actuation-gearing-friction",
+   "ch09-01-time-scaling",
+   "ch09-02-straight-line-paths",
+   "ch09-03-via-points",
+   "ch10-01-cspace-obstacles",
+   "ch10-02-grid-search",
+   "ch10-03-sampling-rrt-prm",
+   "ch10-04-potential-fields",
+   "ch11-01-error-dynamics-pid",
+   "ch11-02-multijoint-computed-torque",
+   "ch12-01-contact-kinematics-form-closure",
+   "ch12-02-friction-force-closure",
+   "ch13-01-omnidirectional-kinematics",
+   "ch13-02-nonholonomic-odometry"
+  ],
+  "advanced": [
+   "ch06-02-numerical-ik",
+   "ch07-02-closed-chain-singularities",
+   "ch08-02-newton-euler-inverse-dynamics",
+   "ch09-04-time-optimal-phase-plane",
+   "ch11-03-force-hybrid-control",
+   "ch11-04-impedance-admittance",
+   "ch13-03-tracking-mobile-manipulation"
+  ]
+ },
+ "conventions": [
+  "同一組「house」機器人模型貫穿全課程：planar2R（L=1,1）、planar3R、rrr3、ur5（皆在 src/mr/robots.ts），其他模型（fiveBar、unicycle、diffDrive、omniBase、planarObject、singleJoint）為該章專用。",
+  "顏色：x 紅 / y 綠 / z 藍；{s} 灰、{b} 橘；twist 藍、wrench 紅、奇異構型洋紅；2D 畫布與 Three.js 一致，透過 cssVar 讀取主題變數。",
+  "「前乘＝固定座標系、後乘＝物體座標系」是貫穿規則：ch03-01 引入，ch03-03、ch04-02、ch09-02 明確回扣。",
+  "反覆出現的迷思各課以一行提醒回扣：『R_ab p 不是轉動 p 而是換座標』、『twist 的 v 不是物體原點速度』、『奇異是構型而非位置的性質』。",
+  "每個模擬都要回應 onStep：步驟負責把模擬設成該步談論的狀態（預設組態、顯示／隱藏覆蓋層、鎖定控制項），不要求學習者自己重現設定；但不隨意清除學習者的探索。",
+  "每個模擬至少顯示一個可以手算驗證的數值（例如 det R、‖T_space−T_body‖、Grübler 結果、功率 VᵀF）。",
+  "數值衛生在課內點名：atan2 而非 atan、θ≈π 的 log 分支、接近奇異的偽逆／DLS、庫侖摩擦死區、Euler 能量漂移、角度包裹、固定子步 RK4。",
+  "核心數學一律呼叫 src/mr（exp/log、Adjoint、PoE、Jacobian、IK、Newton–Euler、RK4、時間縮放、控制），課程不自行重新實作；課程專用演算法（A*、RRT、五連桿、位能場、接觸分析）留在課程資料夾並附測試。",
+  "測驗規則：每課至少一題遷移題使用模擬中沒出現過的機構或情境；解析要說明「為什麼」，不只標對錯。",
+  "節奏：前 1–2 步用具體失敗或現象引起動機，中段建立正式工具，最後一步接到下一課或測驗。",
+  "難度標籤：intro / core 組成「核心路徑」，advanced 為延伸；側欄可依此過濾。",
+  "文字：台灣繁體中文，英文專有名詞首次出現時以括號保留（例：旋量（twist））；LaTeX 使用 R, p, T, S, V, F, J, M 等標準符號；程式註解英文。",
+  "版權：教材僅作為概念與章節編號的參考（bookRef 指向 v2 章節）；所有敘述、題目、圖說皆為原創，不得抄錄或近似改寫。"
+ ],
+ "chapters": [
+  {
+   "number": 2,
+   "title": "組態空間",
+   "titleEn": "Configuration Space",
+   "lessons": [
+    {
+     "id": "ch02-01-dof-grubler",
+     "chapter": 2,
+     "order": 1,
+     "title": "自由度與 Grübler 公式（degrees of freedom）",
+     "bookRef": "§2.1–2.2",
+     "difficulty": "intro",
+     "tags": [
+      "dof",
+      "Grübler",
+      "linkage"
+     ],
+     "summary": "學會數出剛體與連桿機構的自由度，用 Grübler 公式快速計算平面／空間機構的 dof，並認得公式失效的特殊幾何。",
+     "goals": [
+      "說明平面剛體 3 個、空間剛體 6 個自由度的來源（點座標數減去距離約束）",
+      "把關節理解為「移除相對自由度的約束」，記住 R/P/H/C/U/S 各保留與移除幾個",
+      "對任意平面連桿套用 Grübler 公式，並正確把地面算成一根連桿",
+      "辨認公式失效的情況（平行四邊形疊加、冗餘約束）並說出原因"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "linkage",
+      "description": "平面連桿積木：從預設機構（四連桿、曲柄滑塊、五連桿、平行四邊形疊加、三角桁架）出發，或自行放置連桿與 R/P 關節、指定接地桿；側欄即時顯示 N、J、Σf_i 與 Grübler 結果，可拖動自由關節驗證機構真的能動。",
+      "controls": [
+       "預設機構選單",
+       "新增／刪除連桿與關節（R、P）",
+       "指定接地桿",
+       "拖動關節手把",
+       "m=3（平面）／m=6（空間，以範例表呈現）切換"
+      ],
+      "observe": [
+       "四連桿 dof=1、五連桿 dof=2、三角桁架 dof=0（手把被鎖住）",
+       "在閉環上多加一個關節，dof 反而減少",
+       "平行四邊形疊加時公式給 0 或負值，機構卻仍能拖動"
+      ],
+      "pitfalls": [
+       "閉環求解器以小步拖動加 warm start 才穩定，避免跳到另一個裝配分支",
+       "同一點上接 k 根連桿要算成 k−1 個關節",
+       "dof≤0 時鎖定手把並顯示提示，而不是讓畫面亂跳"
+      ]
+     },
+     "steps": [
+      {
+       "title": "一個剛體有幾個自由度？",
+       "outline": "Count a body's freedoms as point coordinates minus distance constraints: 3 in the plane, 6 in space. Introduce dof as the number of independent numbers needed to pin the configuration.",
+       "simState": "Single free link on an empty canvas; dragging shows (x, y, φ) readout; counter shows N=1, J=0, dof=3."
+      },
+      {
+       "title": "關節是「拿走」自由度",
+       "outline": "A joint removes relative freedoms between two bodies rather than adding motion. Table of joints with freedoms f_i and constraints c_i = m − f_i.",
+       "simState": "Two links; adding an R joint drops dof from 6 to 4, a P joint likewise; the joint table highlights the chosen joint row."
+      },
+      {
+       "title": "Grübler 公式",
+       "outline": "Derive dof = m(N − 1 − J) + Σ f_i by subtracting constraints from the freedoms of N − 1 moving bodies; stress that the ground link is part of N.",
+       "simState": "Four-bar preset with formula panel; hovering N, J or Σf_i highlights the matching links/joints."
+      },
+      {
+       "title": "動手驗證：四連桿、曲柄滑塊、五連桿",
+       "outline": "Run through presets, predict dof before revealing it, then drag the handles to confirm the count matches actual mobility.",
+       "simState": "Preset cycle enabled; prediction input appears before the readout is unmasked."
+      },
+      {
+       "title": "公式失靈的時候",
+       "outline": "Stacked parallelogram links give dof ≤ 0 yet move: the formula assumes independent constraints. Special geometry adds mobility the count cannot see.",
+       "simState": "Parallelogram-with-extra-link preset; dof reads 0 with a warning badge, handles still move."
+      },
+      {
+       "title": "從自由度到組態空間",
+       "outline": "dof is the dimension of the configuration space; the next lesson asks about its shape, using the 2R arm.",
+       "simState": "2R preset; shows (θ₁, θ₂) readout and a small preview of the joint-angle square."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathrm{dof}=m(N-1-J)+\\sum_{i=1}^{J}f_i=m(N-1)-\\sum_{i=1}^{J}c_i$",
+      "平面 $m=3$，空間 $m=6$；R、P、H：$f=1$；C、U：$f=2$；S：$f=3$"
+     ],
+     "quizIdeas": [
+      "給一張課堂上沒看過的六桿機構（Stephenson 型）圖，算 dof 並指出哪一桿是地",
+      "空間 RRRS 開鏈末端有幾個自由度？若把末端再接回地面形成閉環呢？",
+      "設計題：在平面五連桿上加一個關節，讓 dof 從 2 變回 1，有哪些做法？"
+     ],
+     "estMinutes": 25,
+     "dependsOn": []
+    },
+    {
+     "id": "ch02-02-cspace-topology",
+     "chapter": 2,
+     "order": 2,
+     "title": "C-space 的拓撲與表示法（topology & representation）",
+     "bookRef": "§2.3",
+     "difficulty": "intro",
+     "tags": [
+      "C-space",
+      "torus",
+      "workspace"
+     ],
+     "summary": "用 2R 手臂看懂組態空間（C-space）的真正形狀是環面而非方格，並比較顯式座標與隱式表示的取捨。",
+     "goals": [
+      "區分 C-space（關節空間）與 workspace（末端可達區域）",
+      "理解 2R 手臂的 C-space 是 $T^2=S^1\\times S^1$，方格只是把環面剪開攤平的表示",
+      "比較顯式座標（角度）與隱式表示（單位向量＋約束）的優缺點",
+      "能說出平面剛體、球面擺等常見系統的 C-space 拓撲"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar2R",
+      "description": "三聯動視圖：左為 (θ₁, θ₂) 方格、中為 Three.js 環面、右為 2R 手臂與 workspace 環帶。拖任一視圖的點，其餘同步；畫一條穿越方格邊界的路徑，看它在環面上連續不斷。",
+      "controls": [
+       "拖 (θ₁, θ₂) 點、環面上的點或手臂末端",
+       "畫路徑／清除路徑",
+       "切換顯式（角度）與隱式（cos, sin）數值面板",
+       "調整 L₁、L₂ 比例",
+       "開關「黏合邊界」動畫"
+      ],
+      "observe": [
+       "方格左右邊其實是同一條線；環面上沒有邊界",
+       "方格中的直線路徑在 workspace 中是曲線",
+       "workspace 同一點對應環面上兩個不同點（elbow-up / elbow-down）",
+       "L₁≠L₂ 時 workspace 變成有洞的環帶"
+      ],
+      "pitfalls": [
+       "每幀以 atan2 重新包裹角度，避免 ±π 跳變讓路徑看起來斷掉",
+       "環面上的拖曳要把指標射線投影到曲面，不是投影到方格",
+       "黏合動畫用 morph target 由平面漸變成環面，避免重建幾何"
+      ]
+     },
+     "steps": [
+      {
+       "title": "工作空間不是組態空間",
+       "outline": "Two different arm configurations put the tip at the same point. The configuration is the pair of angles, not the tip position.",
+       "simState": "Right view shows both elbow solutions ghosted for the current tip; left/middle views highlight the two distinct configuration points."
+      },
+      {
+       "title": "把角度畫成方格",
+       "outline": "Plot (θ₁, θ₂) in [−π, π]². Dragging the arm traces a point; this is the explicit coordinate representation.",
+       "simState": "Left square active with trail; middle torus hidden."
+      },
+      {
+       "title": "黏合邊界：環面",
+       "outline": "θ = −π and θ = π are the same configuration, so opposite edges are glued; gluing both pairs gives a torus. Topology is about the shape, not the chart.",
+       "simState": "Glue animation morphs the square into the torus; path crossing the square edge appears unbroken on the torus."
+      },
+      {
+       "title": "拓撲 vs 表示法",
+       "outline": "Same torus, two representations: two angles (minimal, but wraps) or four numbers (cos, sin) with two constraints (no wrap, redundant). Each has a cost.",
+       "simState": "Numeric panel toggles between (θ₁, θ₂) and (c₁, s₁, c₂, s₂) with the constraint residuals shown as 0."
+      },
+      {
+       "title": "路徑在三個視圖中長什麼樣",
+       "outline": "A straight path in the square is a curve in the workspace and a geodesic-like curve on the torus; the three views are the same motion.",
+       "simState": "User-drawn path replayed simultaneously in all three views with a moving marker."
+      },
+      {
+       "title": "其他系統的 C-space",
+       "outline": "Planar rigid body R²×S¹, spherical pendulum S², door with knob S¹×S¹. Bridge: constraints on velocity (next lesson) do not change this shape.",
+       "simState": "Gallery cards (static sketches) replace the right view; torus stays for comparison."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathcal C_{2R}=S^1\\times S^1=T^2$",
+      "平面剛體：$\\mathcal C=\\mathbb R^2\\times S^1$",
+      "隱式表示：$(c,s)$ 滿足 $c^2+s^2=1$"
+     ],
+     "quizIdeas": [
+      "一根可自轉的指針固定在球面上滾動，其 C-space 拓撲是哪個？（$S^2\\times S^1$）",
+      "哪個系統的 C-space 與 2R 手臂同胚：門加門把，還是桌上的硬幣？為什麼？",
+      "用 9 個數字描述旋轉卻只有 3 個自由度，這是顯式還是隱式表示？代價是什麼？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch02-01-dof-grubler"
+     ]
+    },
+    {
+     "id": "ch02-03-constraints-task-space",
+     "chapter": 2,
+     "order": 3,
+     "title": "完整／非完整約束、任務空間與工作空間（holonomic, Pfaffian）",
+     "bookRef": "§2.4–2.5",
+     "difficulty": "core",
+     "tags": [
+      "Pfaffian",
+      "nonholonomic",
+      "task space"
+     ],
+     "summary": "用俯視的單輪車體會「速度被限制，構型卻沒有被限制」，學會把約束寫成 Pfaffian 形式並判斷可積性，同時釐清 task space 與 workspace。",
+     "goals": [
+      "把約束寫成 $A(q)\\dot q=0$，判斷它能否積分成 $g(q)=0$",
+      "解釋為何非完整約束減少的是瞬時速度方向，而不是 C-space 的維度",
+      "用停車入位的操作，用兩個輸入到達三維構型的任一點",
+      "分辨 task space（由任務定義）與 workspace（由機器人定義）"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "unicycle",
+      "description": "俯視圖的單輪車／硬幣：以滑桿或鍵盤給前進速度 v 與轉向率 ω，軌跡畫在地面，側欄顯示 q=(φ, x, y) 與約束矩陣 A(q)。「嘗試側滑」按鈕會畫出被禁止的速度方向；「停車挑戰」要求到達指定的側向位姿。",
+      "controls": [
+       "v、ω 滑桿或 WASD 鍵盤",
+       "按鈕：嘗試側滑（顯示違反約束）",
+       "停車挑戰：目標位姿與成功判定",
+       "切換「平面質點」對照模型",
+       "重置軌跡"
+      ],
+      "observe": [
+       "兩個輸入卻能到達三維 C-space 的任一點",
+       "側向位移需要「前進—轉—後退—轉」的組合",
+       "側滑箭頭永遠垂直於允許的速度方向",
+       "質點模型可以直接側移，差別一目了然"
+      ],
+      "pitfalls": [
+       "位姿積分用精確圓弧（或 exp 於 SE(2)）而不是 Euler，以免長時間漂移",
+       "鍵盤輸入要在 destroy() 時移除監聽",
+       "停車判定要同時比較位置與角度（包裹到 ±π）"
+      ]
+     },
+     "steps": [
+      {
+       "title": "硬幣只能往前滾",
+       "outline": "The wheel's velocity must point along its heading; sideways motion is forbidden instantly. Yet parking sideways is clearly possible.",
+       "simState": "Unicycle with heading arrow; 'try sideslip' button draws a red forbidden arrow."
+      },
+      {
+       "title": "寫成 Pfaffian 形式",
+       "outline": "Express the no-slip condition as a row A(q) q̇ = 0: ẋ sin φ − ẏ cos φ = 0. One velocity constraint, three coordinates.",
+       "simState": "A(q) matrix panel shown and updated live with φ; q̇ readout marks which direction is killed."
+      },
+      {
+       "title": "能不能積分？完整 vs 非完整",
+       "outline": "A holonomic constraint is the derivative of some g(q)=0 and removes a dimension; the rolling constraint is not integrable so the reachable set stays 3-D.",
+       "simState": "Side-by-side: pendulum-rod demo (holonomic, state locked to a circle) vs unicycle (reachable cloud fills the plane)."
+      },
+      {
+       "title": "停車挑戰",
+       "outline": "Reach a pose displaced sideways with only v and ω. The four-move sequence shows how two inputs generate the third direction.",
+       "simState": "Challenge mode: target pose ghost, success check, optional auto-replay of the four-move sequence."
+      },
+      {
+       "title": "Task space 與 workspace",
+       "outline": "Task space is chosen by the task (e.g., a pen tip in the plane has 2 or 3 coordinates); workspace is what this robot can reach. They need not match.",
+       "simState": "Overlay: task-space axes drawn at the vehicle; a gallery card compares a 6R arm's workspace with a 2-D drawing task."
+      },
+      {
+       "title": "下一步：描述剛體的位姿",
+       "outline": "To work with real robots we need a precise algebra for position and orientation: rotation matrices and transforms (Ch3).",
+       "simState": "Vehicle frame {b} and world frame {s} highlighted; readout of the 3×3 planar transform T_sb as a preview."
+      }
+     ],
+     "keyEquations": [
+      "$A(q)\\dot q=0,\\quad A(q)\\in\\mathbb R^{k\\times n}$",
+      "單輪車：$\\dot x\\sin\\phi-\\dot y\\cos\\phi=0$",
+      "完整約束 $g(q)=0\\Rightarrow\\frac{\\partial g}{\\partial q}\\dot q=0$"
+     ],
+     "quizIdeas": [
+      "只能前進後退、在環形軌道上的火車：約束是完整還是非完整？C-space 維度是多少？",
+      "焊接任務（末端位置＋焊槍方向）的 task space 維度？用 6R 手臂執行時多出來的自由度會怎樣？",
+      "若 A(q) 的每一列都能寫成某個 g(q) 的梯度，可到達的構型集合會是什麼樣子？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch02-02-cspace-topology"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 3,
+   "title": "剛體運動",
+   "titleEn": "Rigid-Body Motions",
+   "lessons": [
+    {
+     "id": "ch03-01-rotation-matrices",
+     "chapter": 3,
+     "order": 1,
+     "title": "剛體位姿與旋轉矩陣（rotation matrix, SO(3)）",
+     "bookRef": "§3.1, 3.2.1",
+     "difficulty": "intro",
+     "tags": [
+      "SO(3)",
+      "frames",
+      "pre/post-multiply"
+     ],
+     "summary": "從平面座標系暖身到三維旋轉矩陣：把 R 的三個欄位讀成 {b} 軸的方向，理解 R 的三種用途，並建立「前乘＝固定軸、後乘＝物體軸」的規則。",
+     "goals": [
+      "用 (R, p) 描述 {b} 相對 {s} 的位姿，讀懂下標順序與消去規則",
+      "理解 $R_{ab}p_b$ 是「同一點換參考座標」而不只是「轉動向量」",
+      "把旋轉矩陣的三欄讀成 {b} 軸在 {s} 中的方向，驗證 $R^{\\mathsf T}R=I$、$\\det R=1$",
+      "預測前乘（固定軸）與後乘（物體軸）合成後的姿態差異"
+     ],
+     "simulation": {
+      "kind": "3d",
+      "robotModel": "frames",
+      "description": "Three.js 場景中的 {s} 與可操作的 {b}。步驟 1–2 鎖定為俯視平面模式（只繞 z 旋轉、xy 平移），之後開放三維。右側矩陣面板即時高亮 hover 的欄位；序列編輯器可堆疊多個 Rot(ω̂, θ) 並切換前乘／後乘。",
+      "controls": [
+       "平面模式：θ 與 (x, y) 滑桿；拖動一個點看 p_s / p_b 雙欄數值",
+       "三維模式：繞 x/y/z 的角度滑桿",
+       "序列編輯器：堆疊 Rot，拖曳改順序，前乘／後乘切換",
+       "矩陣面板：hover 欄位高亮對應 3D 軸；R^T R 與 det R 讀值",
+       "按鈕：顯示 R_bs = R_sb^T 並交換角色"
+      ],
+      "observe": [
+       "點不動時，p_b 的數值隨 {b} 的位姿改變",
+       "矩陣的欄位就是畫面上 {b} 的三個軸",
+       "前乘繞 {s} 的軸轉，後乘繞 {b} 的軸轉；平面可交換，三維不行",
+       "手動把欄位改成不正交的數字，立體軸會歪斜變形（不是旋轉）"
+      ],
+      "pitfalls": [
+       "不要用 Three.js 的 Euler 順序，直接以矩陣設定姿態",
+       "多次合成後以 ProjectToSO3 重新正交化，避免累積誤差",
+       "同一畫面同時演示「移動點」與「移動座標系」會混淆，分步顯示"
+      ]
+     },
+     "steps": [
+      {
+       "title": "平面暖身：用 (R, p) 描述一個座標系",
+       "outline": "In the plane a frame {b} is a 2×2 rotation plus a 2-vector\\; p_s = R_sb p_b + p_sb. Subscripts read 'b expressed in s'.",
+       "simState": "Top-down planar mode\\; θ and (x, y) sliders\\; a draggable point shows p_s and p_b side by side."
+      },
+      {
+       "title": "同一個點，兩套座標",
+       "outline": "R_ab p_b does not move the point\\; it re-expresses it. Moving {b} changes p_b while the point stays.",
+       "simState": "Point pinned\\; {b} dragged\\; p_b numbers update, p_s stays fixed, with a 'same point' badge."
+      },
+      {
+       "title": "旋轉矩陣的三個欄位",
+       "outline": "Switch to 3-D: the columns of R_sb are the unit axes of {b} written in {s}. Hovering a column highlights that axis.",
+       "simState": "Full 3-D mode\\; matrix view with column hover → axis highlight."
+      },
+      {
+       "title": "SO(3)：正交、det = 1、三個自由度",
+       "outline": "Nine numbers, six constraints, three freedoms. det = −1 is a reflection, not a rotation.",
+       "simState": "Editable matrix cells\\; R^T R and det readouts\\; invalid matrices draw a skewed, dashed frame."
+      },
+      {
+       "title": "合成與下標消去",
+       "outline": "R_ac = R_ab R_bc\\; the inner subscripts cancel. The inverse is the transpose, and R_bs = R_sb^T.",
+       "simState": "Third frame {c} appears\\; arrow chain s→b→c\\; swap button shows R_bs."
+      },
+      {
+       "title": "前乘＝固定軸，後乘＝物體軸",
+       "outline": "Rot(ẑ, 90°)·R spins about {s}'s z\\; R·Rot(ẑ, 90°) about {b}'s z. In 3-D the order matters\\; try two different rotations swapped.",
+       "simState": "Sequence editor with pre/post toggle\\; ghost frame shows the alternative result for comparison."
+      },
+      {
+       "title": "R 的三種用途與下一步",
+       "outline": "R is a pose, a change of coordinates, and an operator that rotates vectors. Next: describe rotation by an axis and an angle.",
+       "simState": "Three-tab demo: pose, re-express, rotate-a-vector\\; a preview arrow shows an axis ω̂ for the next lesson."
+      }
+     ],
+     "keyEquations": [
+      "$p_s=R_{sb}\\,p_b+p_{sb}$",
+      "$R=[\\hat x_b\\;\\hat y_b\\;\\hat z_b],\\quad R^{\\mathsf T}R=I,\\;\\det R=1$",
+      "$R_{ac}=R_{ab}R_{bc},\\qquad R_{sb'}=\\mathrm{Rot}(\\hat\\omega,\\theta)R_{sb}\\ \\text{(固定軸)}\\ \\text{vs}\\ R_{sb}\\mathrm{Rot}(\\hat\\omega,\\theta)\\ \\text{(物體軸)}$"
+     ],
+     "quizIdeas": [
+      "已知 {b} 的 ẑ 指向 {s} 的 −x̂，x̂_b 指向 ŷ_s，寫出 R_sb 並求 ŷ_b",
+      "飛機先偏航 90° 再俯仰 90°（物體軸），等價於固定軸下的哪個順序？",
+      "相機量到 p_c，已知 T_wc；若誤用 T_cw 算 p_w，結果在幾何上代表什麼？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch02-02-cspace-topology"
+     ]
+    },
+    {
+     "id": "ch03-02-exponential-coordinates",
+     "chapter": 3,
+     "order": 2,
+     "title": "角速度與旋轉的指數座標（exponential coordinates, Rodrigues）",
+     "bookRef": "§3.2.2–3.2.3",
+     "difficulty": "core",
+     "tags": [
+      "angular velocity",
+      "exp/log",
+      "Rodrigues"
+     ],
+     "summary": "把旋轉看成「繞某軸轉某角」：由角速度導出 so(3)，用 Rodrigues 公式計算 exp，再用矩陣對數反推軸與角，並處理 θ=0、π 的特殊情況。",
+     "goals": [
+      "理解 $\\dot R R^{\\mathsf T}$ 與 $R^{\\mathsf T}\\dot R$ 分別給出 $[\\omega_s]$ 與 $[\\omega_b]$，兩者是同一向量換座標",
+      "用 Rodrigues 公式從 $(\\hat\\omega,\\theta)$ 算 R，並解釋三項各自的幾何意義",
+      "由 R 反推 $\\log R$，知道 θ 取在 $[0,\\pi]$ 且 θ=π 時有兩個軸",
+      "分辨指數座標與 Euler 角，知道 3D 角速度不能直接積分成角度"
+     ],
+     "simulation": {
+      "kind": "3d",
+      "robotModel": "frames",
+      "description": "單位球上可拖的旋轉軸 ω̂ 與一個物體座標系；拖 θ 看物體繞軸轉並留下圓弧軌跡，面板顯示 exp([ω̂]θ) 的三項分解。「反向模式」讓學習者任意旋轉物體，即時計算 log R 畫出軸與角，並以小圖畫出回傳 θ 與輸入 θ 的關係。",
+      "controls": [
+       "ω̂ 拖曳手把（球面）與 θ 滑桿（0..2π）",
+       "播放動畫並顯示 ω_s、ω_b 箭頭",
+       "反向模式：自由旋轉物體，顯示 log R",
+       "按鈕：把 θ 設為 π、設為 0.001 觀察分支",
+       "Rodrigues 三項分別開關"
+      ],
+      "observe": [
+       "ω_s 在空間中固定，ω_b 在物體上固定，兩者由 R 相連",
+       "θ 超過 π 時 log 回傳另一條較短的路徑（軸反向）",
+       "θ=π 時 ±ω̂ 給同一個 R",
+       "關掉 (1−cos θ)[ω̂]² 項後矩陣不再正交，軸會變形"
+      ],
+      "pitfalls": [
+       "θ≈π 時 (R−Rᵀ)/(2 sin θ) 失真，改由對稱部分取軸（MatrixLog3 已處理）",
+       "θ≈0 時用級數分支，避免 0/0",
+       "回傳的 θ 曲線在 π 處折返，要在圖上標出"
+      ]
+     },
+     "steps": [
+      {
+       "title": "旋轉中的物體：角速度向量",
+       "outline": "A spinning body has an instantaneous axis and rate\\; ω = ω̂ θ̇. Each body point moves with ω × p.",
+       "simState": "Animation of the frame spinning about a fixed axis\\; velocity arrows on the axis tips."
+      },
+      {
+       "title": "ω_s 與 ω_b 是同一個向量",
+       "outline": "Ṙ R^T = [ω_s] and R^T Ṙ = [ω_b]\\; [·] is the skew-symmetric map. ω_b = R^T ω_s.",
+       "simState": "Two arrows (space and body) drawn\\; numeric panel shows both skew matrices updating during playback."
+      },
+      {
+       "title": "繞固定軸轉 θ：Rodrigues 公式",
+       "outline": "Solving Ṙ = [ω̂] R with constant axis gives exp([ω̂]θ) = I + sin θ [ω̂] + (1 − cos θ)[ω̂]². Each term has a geometric role.",
+       "simState": "θ slider scrubs the motion\\; term toggles reveal the role of each Rodrigues term."
+      },
+      {
+       "title": "反向：矩陣對數",
+       "outline": "Given R, recover θ from the trace and ω̂ from the antisymmetric part\\; log returns θ ∈ [0, π].",
+       "simState": "Reverse mode: drag the frame freely, axis and angle drawn\\; θ_in vs θ_out plot shows the fold at π."
+      },
+      {
+       "title": "θ = π 與 θ = 0 的特殊情況",
+       "outline": "At π the axis sign is ambiguous and the usual formula divides by zero\\; at 0 the axis is undefined. Robust code uses separate branches.",
+       "simState": "Preset buttons jump to θ=π and θ=0.001\\; UI badge names which log branch is active."
+      },
+      {
+       "title": "指數座標不是 Euler 角",
+       "outline": "ω̂θ is one axis-angle, not three sequential angles\\; it also cannot be obtained by integrating ω over time in 3-D. Bridge to twists.",
+       "simState": "Side panel compares ZYX Euler readout with ω̂θ for the same R\\; preview of a translating-and-rotating frame."
+      }
+     ],
+     "keyEquations": [
+      "$[\\omega_s]=\\dot R R^{\\mathsf T},\\quad [\\omega_b]=R^{\\mathsf T}\\dot R$",
+      "$\\mathrm{Rot}(\\hat\\omega,\\theta)=e^{[\\hat\\omega]\\theta}=I+\\sin\\theta[\\hat\\omega]+(1-\\cos\\theta)[\\hat\\omega]^2$",
+      "$\\theta=\\cos^{-1}\\tfrac{\\mathrm{tr}R-1}{2},\\quad [\\hat\\omega]=\\tfrac{R-R^{\\mathsf T}}{2\\sin\\theta}$"
+     ],
+     "quizIdeas": [
+      "R 的跡為 1，旋轉角是多少？此時能否唯一決定軸？",
+      "陀螺儀量到物體座標角速度 ω_b，要在世界座標畫箭頭要乘什麼？",
+      "給 ω̂θ = (0, 0, 3π/2)，等價的最短指數座標是？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch03-01-rotation-matrices"
+     ]
+    },
+    {
+     "id": "ch03-03-transforms-twists",
+     "chapter": 3,
+     "order": 3,
+     "title": "齊次變換、旋量（twist）與 Adjoint",
+     "bookRef": "§3.3.1–3.3.2",
+     "difficulty": "core",
+     "tags": [
+      "SE(3)",
+      "twist",
+      "Adjoint"
+     ],
+     "summary": "把 R 與 p 裝進 4×4 的 T 來合成、求逆、換參考系；再把剛體速度寫成六維旋量，理解 V_s 與 V_b 的差異，並用 Adjoint 在座標系之間轉換。",
+     "goals": [
+      "用 $T\\in SE(3)$ 合成、求逆（不是轉置）與改變參考座標系",
+      "把 twist 解讀為「角速度＋參考原點處的線速度」，知道 v 不是物體原點的速度",
+      "區分 $\\mathcal V_s$ 與 $\\mathcal V_b$，並用 $[\\mathrm{Ad}_T]$ 轉換",
+      "把前乘／後乘規則延伸到 SE(3)"
+     ],
+     "simulation": {
+      "kind": "3d",
+      "robotModel": "frames",
+      "description": "場景中有 {s}、{b}、{c} 三個座標系；滑桿設定 T_sb、T_bc，面板顯示 T_sc 與反矩陣。第二模式讓剛體沿任意 twist 運動，畫出 ω、v 箭頭與瞬時螺旋軸，可切換 V_s / V_b 數值，拖動 {s} 位置觀察 v_s 變化。",
+      "controls": [
+       "每個座標系的位姿滑桿；下標交換按鈕",
+       "按鈕：對 T_sb 前乘／後乘同一個 T",
+       "twist 模式：設定 V_b 六個分量並播放",
+       "切換 V_s / V_b 顯示；拖動 {s} 原點",
+       "顯示 [Ad_T] 分塊與瞬時螺旋軸"
+      ],
+      "observe": [
+       "下標消去像箭頭鏈 s→b→c；反矩陣的 p 變成 −Rᵀp",
+       "v_s 是「{s} 原點若固連於物體」的速度，可以指向不直觀的方向",
+       "換參考系時 ω 只被旋轉，v 多出 p×ω 的耦合",
+       "純轉動的 twist 在遠離軸的座標系裡 v 很大"
+      ],
+      "pitfalls": [
+       "Adjoint 的 [p]R 區塊容易寫錯位置，顯示時標明",
+       "學生常把 v_s 當成物體原點速度，同時畫兩支箭頭對照",
+       "twist 播放用 exp 積分 T，不用 Euler"
+      ]
+     },
+     "steps": [
+      {
+       "title": "把 R 與 p 裝進 4×4",
+       "outline": "T = [R p\\; 0 1] turns rotate-then-translate into one matrix product\\; points become homogeneous 4-vectors.",
+       "simState": "{s} and {b}\\; T_sb matrix view\\; a point shown with homogeneous coordinates in both frames."
+      },
+      {
+       "title": "合成、求逆、換參考系",
+       "outline": "T_sc = T_sb T_bc\\; T^{-1} = [R^T −R^T p\\; 0 1]. Transpose is not the inverse.",
+       "simState": "{c} added\\; arrow chain\\; inverse button\\; a 'try transpose' button draws the wrong frame dashed."
+      },
+      {
+       "title": "前乘／後乘再一次",
+       "outline": "Pre-multiplying by T acts in {s}\\; post-multiplying acts in {b}. Same rule as for R, now including translation.",
+       "simState": "Pre/post toggle on a fixed T\\; ghost frame shows the other outcome."
+      },
+      {
+       "title": "旋量：角速度加參考原點的線速度",
+       "outline": "A moving body's velocity is a 6-vector V = (ω, v). v is the velocity of the point of the body (or its extension) at the frame origin.",
+       "simState": "Twist mode: body translates and spins\\; arrows for ω and v at the body origin\\; velocity arrows on several body points."
+      },
+      {
+       "title": "V_s 與 V_b",
+       "outline": "[V_b] = T^{-1} Ṫ (seen from the body) and [V_s] = Ṫ T^{-1} (seen from space). Drag {s} away: v_s changes, ω does not.",
+       "simState": "Toggle V_s/V_b numeric panel\\; {s} origin draggable\\; v_s arrow drawn at {s} origin."
+      },
+      {
+       "title": "Adjoint：換座標的 6×6 矩陣",
+       "outline": "V_s = [Ad_{T_sb}] V_b with [Ad_T] = [R 0\\; [p]R R]\\; the lower-left block couples rotation into linear velocity.",
+       "simState": "Adjoint matrix view with block highlighting\\; verification readout V_s − Ad·V_b ≈ 0."
+      },
+      {
+       "title": "預告：每個 twist 都有一條螺旋軸",
+       "outline": "The instantaneous screw axis of the motion is drawn\\; next lesson parametrises it and exponentiates it.",
+       "simState": "Instantaneous screw axis shown through the scene\\; pitch readout."
+      }
+     ],
+     "keyEquations": [
+      "$T=\\begin{bmatrix}R&p\\\\0&1\\end{bmatrix},\\quad T^{-1}=\\begin{bmatrix}R^{\\mathsf T}&-R^{\\mathsf T}p\\\\0&1\\end{bmatrix}$",
+      "$[\\mathcal V_b]=T^{-1}\\dot T,\\quad[\\mathcal V_s]=\\dot T T^{-1}$",
+      "$[\\mathrm{Ad}_T]=\\begin{bmatrix}R&0\\\\[p]R&R\\end{bmatrix},\\quad\\mathcal V_s=[\\mathrm{Ad}_{T_{sb}}]\\mathcal V_b$"
+     ],
+     "quizIdeas": [
+      "物體繞通過點 q、方向 ŝ 的軸以 θ̇ 純轉，{s} 中的 twist 是什麼？為何 v_s 不為零？",
+      "已知 V_b 與固定於物體上的另一座標系 {c}，V_c 與 V_b 的關係是什麼？",
+      "兩個物體有相同的 V_s，它們的運動一定相同嗎？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch03-02-exponential-coordinates"
+     ]
+    },
+    {
+     "id": "ch03-04-screw-motions-wrenches",
+     "chapter": 3,
+     "order": 4,
+     "title": "螺旋運動的指數座標與力旋量（screw motion, wrench）",
+     "bookRef": "§3.3.3–3.4",
+     "difficulty": "core",
+     "tags": [
+      "screw axis",
+      "MatrixExp6",
+      "wrench"
+     ],
+     "summary": "任何剛體位移都是沿某條螺旋軸的一段運動：由 (q, ŝ, h) 建構 S，動畫 exp([S]θ)，再用 log 反推；最後把力與力矩合成 wrench，用 Adᵀ 換座標並確認功率不變。",
+     "goals": [
+      "由 $(q,\\hat s,h)$ 建構螺旋軸 $\\mathcal S=(\\omega,v)$，含純轉（h=0）與純移（ω=0）兩種退化情況",
+      "用 $e^{[\\mathcal S]\\theta}$ 產生剛體運動，理解任意兩個位姿之間存在唯一的螺旋運動",
+      "由 T 取 $\\log$ 得回 S 與 θ",
+      "把 wrench 視為 twist 的對偶，用 $[\\mathrm{Ad}_{T_{ba}}]^{\\mathsf T}$ 轉換並驗證 $\\mathcal V^{\\mathsf T}\\mathcal F$ 不變"
+     ],
+     "simulation": {
+      "kind": "3d",
+      "robotModel": "frames",
+      "description": "可拖的螺旋軸（點 q、方向 ŝ、節距 h）；拖 θ 看座標系沿軸滑動與旋轉並留下螺旋軌跡，面板顯示 exp([S]θ)。反向模式：把座標系拖到任意位姿，顯示 log T 與連接兩位姿的螺旋軸。第二頁：在剛體上一點施力，顯示 {s}、{b} 中的 wrench 與功率。",
+      "controls": [
+       "q、ŝ 手把與 h 滑桿（含 h=0 與 ω=0 純移）",
+       "θ 滑桿與動畫；軌跡開關",
+       "反向模式：拖物體到目標位姿，顯示 log T 與螺旋軸",
+       "wrench 頁：施力點、力向量、力矩；切換 F_s / F_b",
+       "twist 滑桿計算功率 Vᵀ F"
+      ],
+      "observe": [
+       "h=0 時軌跡是圓弧，h 增大愈像直線",
+       "任意兩個位姿之間都有一條螺旋軸把它們連起來",
+       "同一力在不同座標系的 m 分量不同，功率卻相同",
+       "力作用點改變時 m 改變、f 不變"
+      ],
+      "pitfalls": [
+       "ω=0 的純移動需要分開處理（S=(0, v)，‖v‖=1）",
+       "使用 θ 之前把 ω 或 v 正規化",
+       "Adᵀ 用的是 T_ba 不是 T_ab，介面上寫清楚"
+      ]
+     },
+     "steps": [
+      {
+       "title": "Chasles：任何位移都是一段螺旋",
+       "outline": "Every rigid displacement equals a rotation about some axis plus a translation along it. Show it by connecting two poses.",
+       "simState": "Two poses (start, end) with the connecting screw axis drawn\\; scrubbing θ interpolates."
+      },
+      {
+       "title": "螺旋軸 S = (ω, v)",
+       "outline": "From a point q on the axis, direction ŝ and pitch h: ω = ŝ, v = −ŝ × q + h ŝ. Pure translation is the ω = 0 case with ‖v‖ = 1.",
+       "simState": "Axis handles live\\; S readout updates\\; pitch slider including the prismatic limit."
+      },
+      {
+       "title": "exp([S]θ) 動畫",
+       "outline": "MatrixExp6 builds T from S and θ\\; the trail is a helix whose slope is the pitch.",
+       "simState": "Playback with helix trail\\; term-wise matrix view of the translation part."
+      },
+      {
+       "title": "反向：log T",
+       "outline": "MatrixLog6 recovers S and θ from any T\\; special-case ω = 0. The screw interpolation looks natural compared with interpolating R and p separately.",
+       "simState": "Reverse mode: drag the frame\\; screw axis and θ shown\\; toggle to compare with naive R/p interpolation."
+      },
+      {
+       "title": "力旋量 wrench",
+       "outline": "A force f at point r produces moment m = r × f about the frame origin\\; stack them as F = (m, f).",
+       "simState": "Wrench page: force arrow at a draggable point on a bar\\; m and f readouts."
+      },
+      {
+       "title": "用 Adᵀ 換座標，功率不變",
+       "outline": "F_a = [Ad_{T_ba}]^T F_b (note the swapped subscript) because power V^T F must be the same in every frame.",
+       "simState": "F_s/F_b toggle\\; twist sliders\\; power readout equal in both frames."
+      },
+      {
+       "title": "下一章：把關節軸當成螺旋軸",
+       "outline": "Each robot joint is a screw axis\\; chaining exponentials gives forward kinematics.",
+       "simState": "Preview: three screw axes arranged like a 3R arm with the end frame moving."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathcal S=(\\omega,v),\\quad v=-\\omega\\times q+h\\omega$",
+      "$e^{[\\mathcal S]\\theta}=\\begin{bmatrix}e^{[\\omega]\\theta}&\\big(I\\theta+(1-\\cos\\theta)[\\omega]+(\\theta-\\sin\\theta)[\\omega]^2\\big)v\\\\0&1\\end{bmatrix}$",
+      "$\\mathcal F_a=[\\mathrm{Ad}_{T_{ba}}]^{\\mathsf T}\\mathcal F_b,\\qquad P=\\mathcal V^{\\mathsf T}\\mathcal F$"
+     ],
+     "quizIdeas": [
+      "門鉸鏈的螺旋軸參數是什麼？若改成有螺紋的門栓（h≠0）會如何？",
+      "手持扳手在 {b} 原點施力 f，{s} 原點在 1 m 外，F_s 的力矩分量從哪裡來？",
+      "已知 T₁、T₂，如何找到連接兩者的螺旋軸？為何這樣做出的動畫比分別線性內插 R 與 p 自然？"
+     ],
+     "estMinutes": 40,
+     "dependsOn": [
+      "ch03-03-transforms-twists"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 4,
+   "title": "正向運動學",
+   "titleEn": "Forward Kinematics",
+   "lessons": [
+    {
+     "id": "ch04-01-poe-space-form",
+     "chapter": 4,
+     "order": 1,
+     "title": "指數積公式的空間形式（PoE, space form）",
+     "bookRef": "§4.1.1–4.1.2",
+     "difficulty": "core",
+     "tags": [
+      "PoE",
+      "FKinSpace",
+      "screw axes"
+     ],
+     "summary": "把每個關節當成一條螺旋軸，在零位姿寫下 M 與 S_i，用連乘的指數把手臂「組」出來，並理解乘法順序的由來。",
+     "goals": [
+      "在零位姿（home configuration）定義 M 與各關節的空間螺旋軸 $\\mathcal S_i$",
+      "理解 $e^{[\\mathcal S_1]\\theta_1}\\cdots e^{[\\mathcal S_n]\\theta_n}M$ 的順序來自「後面的關節先動、前面的關節帶著它動」",
+      "對平面 3R、空間 RRR 與含 P 關節的手臂寫出完整 PoE",
+      "說明零位姿不唯一，但換了 M 與 S_i 後 FK 不變"
+     ],
+     "simulation": {
+      "kind": "3d",
+      "robotModel": "rrr3",
+      "description": "以空間 RRR（rrr3）為主、平面 3R 與 RRRP 為預設範例的 Three.js 場景：零位姿時畫出每條 S_i，關節滑桿驅動手臂；「逐項套用」按鈕從 e^{[S_n]θ_n} 開始一次乘一項，顯示中間座標系；也可只動單一關節，看下游的軸被帶走、上游的軸不動。",
+      "controls": [
+       "關節角度滑桿（n 個）",
+       "逐項套用／重置的步進按鈕",
+       "只動單一關節模式",
+       "顯示／隱藏零位姿的 S_i 與目前的關節軸",
+       "預設：rrr3、平面 3R、RRRP（SCARA 類）"
+      ],
+      "observe": [
+       "公式中的 S_i 固定在零位姿；動了前面關節後它的「實際位置」被帶走",
+       "逐項套用時，最後一個關節的指數先作用在 M 上",
+       "P 關節的 S 只有 v 分量，軸線畫成虛線方向",
+       "換零位姿（例如全部 +90°）後 M 與 S_i 一起變，T(θ) 卻相同"
+      ],
+      "pitfalls": [
+       "步進動畫要以反向索引（先 n 再 n−1…）套用因子才符合公式",
+       "UI 標明「零位姿定義」避免學生用目前構型的軸當 S_i",
+       "Robot3D 的連桿端點來自 homeJointPoints(Slist)，自訂機器人要提供 M"
+      ]
+     },
+     "steps": [
+      {
+       "title": "一個關節就是一條螺旋軸",
+       "outline": "A single revolute joint moves the end frame by exp([S]θ) applied to its home pose M; the axis S is read off at home.",
+       "simState": "One-joint arm; axis S drawn; θ slider moves M to exp([S]θ)M."
+      },
+      {
+       "title": "零位姿：寫下 M 與每條 S_i",
+       "outline": "Set all joints to zero, record the end frame M and each joint axis (ω_i, −ω_i × q_i) in {s}; prismatic axes are (0, v̂).",
+       "simState": "rrr3 at home; all S_i drawn with labels; M frame highlighted; readout of each S_i."
+      },
+      {
+       "title": "為什麼是從右邊乘起",
+       "outline": "Move only joint n: T = exp([S_n]θ_n)M. Then moving joint n−1 carries everything downstream, which is a pre-multiplication in {s}.",
+       "simState": "Step-through mode applies factors from n down to 1 with intermediate frames ghosted."
+      },
+      {
+       "title": "動一個關節，看看誰跟著動",
+       "outline": "The formula's S_i never change, but the physical axis of joint i moves whenever an upstream joint moves. Downstream axes follow, upstream ones stay.",
+       "simState": "Single-joint mode; current axes drawn solid, home axes dashed."
+      },
+      {
+       "title": "換個零位姿試試",
+       "outline": "Redefine home with all joints at +90°: M and all S_i change together, and T(θ) at the corresponding angles is unchanged.",
+       "simState": "Button 'rehome': new M and S_i computed; a difference readout confirms the same end pose."
+      },
+      {
+       "title": "平面 3R、RRRP 與下一課",
+       "outline": "Apply the recipe to the planar 3R and to an arm with a prismatic joint; next lesson rewrites the same product in the end-effector frame.",
+       "simState": "Preset switcher; formula panel shows the product with the active preset's n."
+      }
+     ],
+     "keyEquations": [
+      "$T(\\theta)=e^{[\\mathcal S_1]\\theta_1}e^{[\\mathcal S_2]\\theta_2}\\cdots e^{[\\mathcal S_n]\\theta_n}M$",
+      "R 關節：$\\mathcal S_i=(\\hat\\omega_i,\\,-\\hat\\omega_i\\times q_i)$；P 關節：$\\mathcal S_i=(0,\\hat v_i)$"
+     ],
+     "quizIdeas": [
+      "把零位姿改為所有關節 +90°，M 與 S_i 哪些改變？FK 會不會改變？",
+      "SCARA（RRRP）的第 4 關節是沿 z 的 P，寫出 S_4；若把 P 放到第 1 關節，S_1 是什麼？",
+      "解釋為何只動 θ₁ 時 S₂、S₃ 的實際位置移動了，公式裡的 S₂、S₃ 卻不變"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch03-04-screw-motions-wrenches"
+     ]
+    },
+    {
+     "id": "ch04-02-poe-body-form-urdf",
+     "chapter": 4,
+     "order": 2,
+     "title": "PoE 物體形式、UR5 範例與 URDF（body form）",
+     "bookRef": "§4.1.3, 4.2",
+     "difficulty": "core",
+     "tags": [
+      "FKinBody",
+      "UR5",
+      "URDF"
+     ],
+     "summary": "用末端座標系的螺旋軸 B_i 寫出同一個 FK，推導 B_i = Ad_{M⁻¹} S_i，在 UR5 上驗證兩種形式一致，並對照 URDF 的關節描述。",
+     "goals": [
+      "用 $\\mathcal B_i$ 寫出 $T(\\theta)=Me^{[\\mathcal B_1]\\theta_1}\\cdots e^{[\\mathcal B_n]\\theta_n}$，並推得 $\\mathcal B_i=[\\mathrm{Ad}_{M^{-1}}]\\mathcal S_i$",
+      "解釋 space form 與 body form 給出相同 T(θ) 的原因（$e^{[\\mathcal S]\\theta}M=Me^{[M^{-1}\\mathcal S M]\\theta}$）",
+      "在 UR5 的 6R 幾何上讀出 S_i、B_i 並驗證 FK 數值",
+      "看懂 URDF 的 joint origin/axis 與 PoE 「全部相對零位姿」描述的差別"
+     ],
+     "simulation": {
+      "kind": "3d",
+      "robotModel": "ur5",
+      "description": "UR5 桿狀模型（書中幾何參數 W1, W2, L1, L2, H1, H2）。六個關節滑桿；面板同步顯示 S_i 與 B_i，切換 space / body 計算路徑並顯示兩者差的範數；具名姿態可與手算對照；可展開簡化的 URDF 樹狀圖，點選 joint 高亮對應連桿與軸。",
+      "controls": [
+       "六個關節滑桿與具名姿態預設",
+       "切換 space / body 面板；顯示 ‖T_space − T_body‖",
+       "隨機 θ 按鈕",
+       "顯示 B_i（黏在末端）或 S_i（固定於 {s}）",
+       "URDF 樹狀圖展開與高亮"
+      ],
+      "observe": [
+       "B_i 是 S_i 在末端座標系的表達，隨手臂運動保持黏在末端",
+       "body form 先乘 M 再連乘：在末端座標系下的運動用後乘",
+       "兩式差值在 1e−12 量級（顯示時四捨五入）",
+       "URDF joint 的 origin 相對於父連桿，和 PoE 的零位姿描述不同但可互相換算"
+      ],
+      "pitfalls": [
+       "UR5 的 W1/W2 偏移符號容易弄反，與 robots.ts 中的 M 一致",
+       "差值顯示要四捨五入，否則學生以為兩式不同",
+       "URDF 樹狀圖為原創簡化示意，不載入外部檔案"
+      ]
+     },
+     "steps": [
+      {
+       "title": "同一條鏈，從末端看",
+       "outline": "Express each joint axis in the end-effector frame at home: B_i = Ad_{M^{-1}} S_i. These are fixed in {b}.",
+       "simState": "UR5 at home; B_i drawn attached to the end frame; S_i dashed in {s}."
+      },
+      {
+       "title": "為什麼可以把 M 移到最前面",
+       "outline": "The identity exp([S]θ) M = M exp([M^{-1} S M]θ) lets each factor pass through M, turning pre-multiplications into post-multiplications.",
+       "simState": "Formula panel animates the factor passing through M one joint at a time."
+      },
+      {
+       "title": "Body form：後乘的順序",
+       "outline": "T = M exp([B_1]θ_1)…exp([B_n]θ_n): joint 1 is applied first in body coordinates, consistent with the post-multiply rule.",
+       "simState": "Toggle to body path; step-through applies factors 1..n after M."
+      },
+      {
+       "title": "在 UR5 上驗證",
+       "outline": "Read S and B for the six joints from the geometry, compute T for a named pose both ways, compare with the hand calculation.",
+       "simState": "Named pose preset; both T matrices shown; difference norm readout."
+      },
+      {
+       "title": "URDF 說的是另一種話",
+       "outline": "URDF describes each joint relative to its parent link with origin and axis; converting to S_i means accumulating along the parent chain.",
+       "simState": "URDF tree panel; clicking a joint highlights its link and shows the accumulated S_i."
+      },
+      {
+       "title": "換工具、換零位姿與下一章",
+       "outline": "Adding a tool changes M and all B_i but no S_i. Next: how joint rates map to end-effector twists (Jacobian).",
+       "simState": "Tool-offset toggle; B_i readouts change, S_i stay; preview arrow of the end-effector twist."
+      }
+     ],
+     "keyEquations": [
+      "$T(\\theta)=M\\,e^{[\\mathcal B_1]\\theta_1}\\cdots e^{[\\mathcal B_n]\\theta_n},\\quad \\mathcal B_i=[\\mathrm{Ad}_{M^{-1}}]\\mathcal S_i$",
+      "$e^{[\\mathcal S]\\theta}M=Me^{[M^{-1}\\mathcal S M]\\theta}$"
+     ],
+     "quizIdeas": [
+      "末端加裝 0.1 m 的工具使 M 改變，S_i 要不要改？B_i 呢？",
+      "給 URDF 某 joint 的 origin 與 axis，說明如何沿父鏈累積得到 S_i",
+      "只有 θ₆ 改變時，space form 與 body form 哪個比較省計算？為什麼？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch04-01-poe-space-form"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 5,
+   "title": "速度運動學與靜力學",
+   "titleEn": "Velocity Kinematics and Statics",
+   "lessons": [
+    {
+     "id": "ch05-01-jacobian-geometry",
+     "chapter": 5,
+     "order": 1,
+     "title": "空間與物體 Jacobian 的幾何意義（space / body Jacobian）",
+     "bookRef": "§5.1.1–5.1.4",
+     "difficulty": "core",
+     "tags": [
+      "Jacobian",
+      "JacobianSpace",
+      "JacobianBody"
+     ],
+     "summary": "把 Jacobian 的每一欄讀成「該關節在目前構型的螺旋軸」，看懂末端 twist 是各欄乘關節速度的疊加，並用 Adjoint 連結 J_s 與 J_b。",
+     "goals": [
+      "把 $J(\\theta)$ 的第 i 欄讀成關節 i 在目前構型的螺旋軸",
+      "解釋為何 $J_s$ 的第 i 欄要用前 i−1 個關節的 Adjoint 更新，而 $J_b$ 用後面關節的逆",
+      "用 $J_s=[\\mathrm{Ad}_{T_{sb}}]J_b$ 轉換兩者",
+      "分辨 twist 的 v 與末端點的線速度（v + ω × p）"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar3R",
+      "description": "平面 3R（2D 畫布）為主、rrr3（3D）可切換：每個關節畫出目前的螺旋軸（即 J 的欄）。選一個 θ̇ 向量或按單關節脈衝，顯示末端 twist 與末端點速度箭頭，以及各欄貢獻的向量疊加；面板切換 J_s / J_b 並高亮欄位。",
+      "controls": [
+       "關節角滑桿",
+       "θ̇ 輸入或單關節脈衝按鈕",
+       "切換 J_s / J_b 面板與欄位高亮",
+       "切換 planar3R / rrr3",
+       "顯示各欄對末端速度的分向量"
+      ],
+      "observe": [
+       "動 θ₁ 時 J 的第 2、3 欄跟著移動，第 1 欄不動",
+       "末端速度 = 各欄 × θ̇_i 的向量和（畫面上頭尾相接）",
+       "J_b 的欄位在末端座標系看是固定方向的軸，只被後面的關節影響",
+       "twist 的 v 不是末端速度；兩支箭頭並列對照"
+      ],
+      "pitfalls": [
+       "平面 twist 以 [ω_z, v_x, v_y] 表示，與 planarJacobian 一致",
+       "末端點速度另外算 v + ω × p 並標示",
+       "高亮欄位時避免每幀重建 matrixView"
+      ]
+     },
+     "steps": [
+      {
+       "title": "一次動一個關節",
+       "outline": "Pulse joint i alone: the end-effector twist is exactly the i-th column of J. The column is that joint's current screw axis.",
+       "simState": "Pulse buttons; the active joint's axis and the resulting tip velocity arrow highlighted."
+      },
+      {
+       "title": "J_s 的欄位怎麼算",
+       "outline": "Column i of J_s is S_i transported by the motion of joints 1..i−1: Ad of their exponentials. Column 1 is always S_1.",
+       "simState": "J_s panel; moving θ₁ visibly shifts columns 2–3, column 1 stays."
+      },
+      {
+       "title": "疊加：V = J θ̇",
+       "outline": "With several joints moving, the twists add linearly; the tip velocity is the vector sum of the column contributions.",
+       "simState": "θ̇ vector input; contribution arrows chained head-to-tail at the tip."
+      },
+      {
+       "title": "J_b：從末端看同一件事",
+       "outline": "Column i of J_b is B_i transported backwards by joints i+1..n. In {b} the last column is always B_n.",
+       "simState": "Toggle to J_b; axes redrawn relative to the end frame."
+      },
+      {
+       "title": "兩個 Jacobian 之間只差一個 Adjoint",
+       "outline": "J_s = Ad_{T_sb} J_b; same physics, different frame. Verify numerically.",
+       "simState": "Readout of ‖J_s − Ad·J_b‖ ≈ 0; Adjoint matrix view."
+      },
+      {
+       "title": "v 不是末端速度，以及下一課",
+       "outline": "The v part of a space twist is the velocity of the point at the {s} origin; the tip velocity is v + ω × p_tip. Next: when J loses rank.",
+       "simState": "Two arrows (twist v at origin vs tip velocity) labelled; preview of a straightened arm."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathcal V_s=J_s(\\theta)\\dot\\theta,\\quad J_{s,i}=[\\mathrm{Ad}_{e^{[\\mathcal S_1]\\theta_1}\\cdots e^{[\\mathcal S_{i-1}]\\theta_{i-1}}}]\\mathcal S_i$",
+      "$J_{b,i}=[\\mathrm{Ad}_{e^{-[\\mathcal B_n]\\theta_n}\\cdots e^{-[\\mathcal B_{i+1}]\\theta_{i+1}}}]\\mathcal B_i$",
+      "$J_s=[\\mathrm{Ad}_{T_{sb}}]J_b$"
+     ],
+     "quizIdeas": [
+      "3R 平面手臂第 3 關節轉動時，J_s 第 3 欄會隨 θ₃ 改變嗎？隨 θ₁ 呢？",
+      "要讓末端純平移（ω=0），θ̇ 必須滿足什麼？用 J 的列說明",
+      "把末端座標系搬到工具尖端，J_b 哪些列會變？J_s 呢？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch04-02-poe-body-form-urdf"
+     ]
+    },
+    {
+     "id": "ch05-02-singularities-manipulability",
+     "chapter": 5,
+     "order": 2,
+     "title": "奇異點與可操作度橢球（singularity, manipulability ellipsoid）",
+     "bookRef": "§5.3–5.4",
+     "difficulty": "core",
+     "tags": [
+      "singularity",
+      "manipulability",
+      "SVD"
+     ],
+     "summary": "用幾何辨認 Jacobian 降秩的構型，畫出可操作度橢球並解讀長短軸，用條件數量化「離奇異點多近」。",
+     "goals": [
+      "定義運動學奇異點為 $J$ 降秩，並能用幾何（軸共線、共面）辨識",
+      "由 $JJ^{\\mathsf T}$ 的特徵分解畫出速度橢球並解讀主軸",
+      "用 $\\sigma_{\\max}/\\sigma_{\\min}$ 或 $\\sqrt{\\det JJ^{\\mathsf T}}$ 量化接近奇異的程度",
+      "說明奇異是關節空間的性質，而不是工作空間的某個位置"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "planar2R",
+      "description": "平面 2R／3R 手臂末端畫出速度橢球（由末端線速度子 Jacobian 的 JJᵀ 特徵分解）；底部曲線圖顯示 σ_max、σ_min 與條件數隨構型變化；可開啟 workspace 的 σ_min 熱圖，拖末端逼近伸直或折疊看橢球壓扁。",
+      "controls": [
+       "拖末端或關節滑桿",
+       "切換 2R / 3R（冗餘）",
+       "顯示 σ 曲線與條件數",
+       "σ_min 熱圖開關",
+       "按鈕：跳到奇異構型"
+      ],
+      "observe": [
+       "伸直時橢球壓成一條線，徑向速度無法產生",
+       "3R 在同一末端位置可能有一個構型奇異、另一個不奇異",
+       "條件數在真正到達奇異點之前就已經很大（連續現象）",
+       "熱圖的亮暗跟著構型而不是只跟著位置"
+      ],
+      "pitfalls": [
+       "橢球只用線速度子 Jacobian，避免混入角速度單位",
+       "2×n 的奇異值用 eig2x2Sym(JJᵀ) 即可；σ_min 要 clamp 避免除零",
+       "熱圖取樣解析度要與畫布尺寸匹配，離屏渲染一次後快取"
+      ]
+     },
+     "steps": [
+      {
+       "title": "伸直的手臂推不動自己",
+       "outline": "Fully extended, the two joint axes produce parallel tip velocities: no radial motion is possible. J has lost rank.",
+       "simState": "2R near full extension; tip velocity arrows for each joint drawn parallel; rank readout."
+      },
+      {
+       "title": "奇異是構型的性質",
+       "outline": "The same workspace point can be reached by a singular and a non-singular configuration (3R). Singularity lives in joint space.",
+       "simState": "3R mode; two configurations for one tip point, one flagged singular."
+      },
+      {
+       "title": "可操作度橢球",
+       "outline": "Unit-norm joint velocities map to an ellipse at the tip whose axes are the eigenvectors of JJ^T scaled by √λ.",
+       "simState": "Ellipse drawn with principal axes; eigenvalue readouts."
+      },
+      {
+       "title": "量化：σ 與條件數",
+       "outline": "σ_max/σ_min and √det(JJ^T) summarise how isotropic the ellipse is. Watch them blow up before the singular pose is reached.",
+       "simState": "Plot of σ values and condition number versus θ₂ sweep; live marker."
+      },
+      {
+       "title": "整個工作空間的地圖",
+       "outline": "The σ_min heatmap over the workspace (for a chosen branch) shows where motion is 'cheap' and where it is not.",
+       "simState": "Heatmap overlay; branch selector."
+      },
+      {
+       "title": "接近奇異的代價與下一課",
+       "outline": "Producing a modest tip speed near singularity demands huge joint rates. Statics flips the picture: the same pose carries loads with little torque.",
+       "simState": "Readout of required θ̇ for a fixed radial speed as θ₂ → 0; preview of force ellipse."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathrm{rank}\\,J(\\theta)<\\min(6,n)\\Rightarrow$ 奇異",
+      "$\\dot\\theta^{\\mathsf T}\\dot\\theta\\le1\\Rightarrow\\mathcal V^{\\mathsf T}(JJ^{\\mathsf T})^{-1}\\mathcal V\\le1$",
+      "$\\mu_1=\\sigma_{\\max}/\\sigma_{\\min},\\quad\\mu_3=\\sqrt{\\det(JJ^{\\mathsf T})}$"
+     ],
+     "quizIdeas": [
+      "2R 手臂要沿徑向以 0.1 m/s 離開奇異附近，所需 θ̇₂ 如何隨 θ₂→0 變化？",
+      "3R 冗餘手臂末端在同一點，找出一個奇異與一個非奇異構型並解釋",
+      "6R 腕部三軸交於一點，哪種構型是腕部奇異？對末端姿態速度有何影響？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch05-01-jacobian-geometry"
+     ]
+    },
+    {
+     "id": "ch05-03-statics-force-ellipsoid",
+     "chapter": 5,
+     "order": 3,
+     "title": "靜力學 τ = Jᵀ F 與力橢球（statics, force ellipsoid）",
+     "bookRef": "§5.2, 5.4",
+     "difficulty": "core",
+     "tags": [
+      "statics",
+      "wrench",
+      "force ellipsoid"
+     ],
+     "summary": "用虛功推導 τ = JᵀF，看懂力橢球與速度橢球互為對偶，並解釋為何奇異構型反而適合承受特定方向的負載。",
+     "goals": [
+      "用功率守恆推導 $\\tau=J^{\\mathsf T}\\mathcal F$，並正確配對座標系（$J_b$ 配 $\\mathcal F_b$）",
+      "畫出力橢球並說明它與速度橢球的主軸互為倒數",
+      "解釋奇異構型下為何能以接近零的力矩承受沿連桿方向的負載",
+      "分清 F 是末端對環境施的力還是環境對末端的力，符號會反"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "planar2R",
+      "description": "2R／3R 手臂末端可拖出一個外力向量 F；每個關節以弧形寬度與數值條顯示 τ_i；可疊畫速度橢球與力橢球（主軸互為倒數），並有「伸直構型沿連桿施力」的預設。",
+      "controls": [
+       "拖末端設定構型",
+       "拖外力箭頭的方向與大小",
+       "切換顯示速度／力橢球",
+       "按鈕：伸直構型 + 沿連桿施力",
+       "切換 F 的方向約定（施於環境／來自環境）"
+      ],
+      "observe": [
+       "速度橢球長的方向，力橢球是短的",
+       "伸直構型沿連桿施力時 τ ≈ 0",
+       "同一力在不同構型需要的 τ 差很多",
+       "功率 θ̇ᵀτ 與 Vᵀ F 相等"
+      ],
+      "pitfalls": [
+       "力橢球用 (JJᵀ)⁻¹，接近奇異時要用 drawEllipse2x2 的 inverse 選項並限制軸長",
+       "方向約定在 UI 上固定並標示，避免正負號混亂",
+       "力矩條要有上限夾制，避免奇異附近爆表"
+      ]
+     },
+     "steps": [
+      {
+       "title": "外力到關節力矩",
+       "outline": "Hold a load at the tip: each joint must supply a torque. Drag the force and watch the torques.",
+       "simState": "Force arrow draggable; torque bars per joint."
+      },
+      {
+       "title": "用功率推導 τ = Jᵀ F",
+       "outline": "Power in equals power out: θ̇^T τ = V^T F for all θ̇, hence τ = J^T F (frames must match).",
+       "simState": "Power readout for both sides; frame-pairing badge (J_b with F_b)."
+      },
+      {
+       "title": "力橢球",
+       "outline": "Unit-norm torques map to an ellipse of achievable tip forces; its axes are the reciprocals of the velocity ellipse's.",
+       "simState": "Both ellipses overlaid; axis-length readouts showing the reciprocal relation."
+      },
+      {
+       "title": "奇異構型反而能扛",
+       "outline": "At full extension a force along the links needs almost no torque; the arm acts like a strut.",
+       "simState": "Preset: straight arm with axial force; torques ≈ 0; ellipse degenerate along the links."
+      },
+      {
+       "title": "同一個力，不同的構型",
+       "outline": "Compare torques for the same load in several postures: posture choice is a design decision.",
+       "simState": "Posture presets with a torque-norm comparison table."
+      },
+      {
+       "title": "方向約定與下一章",
+       "outline": "Sign conventions for F (applied to vs. by the environment) flip τ. Next: inverting the kinematics to reach a target pose.",
+       "simState": "Convention toggle demo; preview of a target pose and two IK solutions."
+      }
+     ],
+     "keyEquations": [
+      "$\\tau=J_b^{\\mathsf T}(\\theta)\\mathcal F_b=J_s^{\\mathsf T}(\\theta)\\mathcal F_s$",
+      "力橢球：$\\tau^{\\mathsf T}\\tau\\le1\\Rightarrow\\mathcal F^{\\mathsf T}(JJ^{\\mathsf T})\\mathcal F\\le1$",
+      "$\\dot\\theta^{\\mathsf T}\\tau=\\mathcal V^{\\mathsf T}\\mathcal F$"
+     ],
+     "quizIdeas": [
+      "人用伸直的手臂撐牆比彎著省力，用橢球解釋",
+      "冗餘 3R 手臂上 τ = JᵀF 給唯一 τ，但 F 卻不能由 τ 唯一決定，為什麼？",
+      "要抬重物時應讓力橢球長軸朝哪個方向？對應的速度橢球會如何？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch05-02-singularities-manipulability",
+      "ch03-04-screw-motions-wrenches"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 6,
+   "title": "逆向運動學",
+   "titleEn": "Inverse Kinematics",
+   "lessons": [
+    {
+     "id": "ch06-01-analytic-ik",
+     "chapter": 6,
+     "order": 1,
+     "title": "解析逆運動學：2R 手臂的兩組解（analytic IK）",
+     "bookRef": "§6.1",
+     "difficulty": "intro",
+     "tags": [
+      "IK",
+      "atan2",
+      "reachability"
+     ],
+     "summary": "用餘弦定理與 atan2 導出 2R 手臂的 elbow-up / elbow-down 解，判斷可達性與邊界上的單解，並預覽 6R 手臂「位置三關節＋姿態三關節」的分解思路。",
+     "goals": [
+      "由餘弦定理與 atan2 推出 2R 的兩個解，並說明為何不能用 atan",
+      "判斷可達區域（環帶）、邊界上的單解與不可達的情況",
+      "拖動目標時維持同一分支，並知道分支何時被迫切換",
+      "把 6R PUMA 型手臂的 IK 分解成位置與姿態兩部分的思路說清楚"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "planar2R",
+      "description": "拖目標點，同時畫出兩個 IK 解（實線／虛線），workspace 環帶著色，目標落在環帶外時變紅；數值面板顯示餘弦定理的中間量 cos θ₂ 與 atan2 的象限；旁邊的小關節空間圖標出兩個解的位置。",
+      "controls": [
+       "拖目標點 (x, y)",
+       "L₁、L₂ 滑桿",
+       "鎖定分支（up / down）並拖目標觀察連續性",
+       "按鈕：目標移到環帶外",
+       "顯示 atan 與 atan2 的差異"
+      ],
+      "observe": [
+       "環帶內兩解、邊界一解、外部無解",
+       "拖目標跨過邊界時分支會互換",
+       "L₁ ≠ L₂ 時內圓半徑是 |L₁ − L₂|，不是 0",
+       "用 atan 取代 atan2 會在後半平面給錯象限"
+      ],
+      "pitfalls": [
+       "acos 的引數要 clamp 到 [−1, 1]，避免數值略超出時產生 NaN",
+       "關節空間小圖要用 wrapToPi 包裹角度",
+       "分支鎖定時目標穿越奇異邊界要給提示而不是突然跳解"
+      ]
+     },
+     "steps": [
+      {
+       "title": "給一個點，找兩組角度",
+       "outline": "A target tip point generally has two arm configurations (elbow up/down). IK is the reverse of FK and need not be unique.",
+       "simState": "Target draggable; both solutions drawn; joint-space inset shows two points."
+      },
+      {
+       "title": "餘弦定理給 θ₂",
+       "outline": "cos θ₂ follows from the triangle base–elbow–tip; the sign choice is the branch.",
+       "simState": "Triangle overlay with side labels; cos θ₂ readout; branch toggle."
+      },
+      {
+       "title": "atan2 給 θ₁",
+       "outline": "θ₁ is the direction to the target minus the correction angle inside the triangle; atan2 keeps the quadrant right.",
+       "simState": "Angles drawn as arcs; 'atan vs atan2' toggle shows the wrong-quadrant arm dashed."
+      },
+      {
+       "title": "可達範圍：環帶與邊界",
+       "outline": "Reachable iff |L₁ − L₂| ≤ r ≤ L₁ + L₂; on the boundary the two solutions merge into one.",
+       "simState": "Annulus shaded; target outside turns red; boundary snap shows merged solution."
+      },
+      {
+       "title": "拖著走：分支與連續性",
+       "outline": "Following a path with one branch is continuous until the path crosses the boundary or the inner hole; then the branch must switch.",
+       "simState": "Branch lock on; drag a path through the inner hole; switch warning."
+      },
+      {
+       "title": "六軸手臂怎麼辦，以及數值方法",
+       "outline": "PUMA-type arms decouple into a positioning 3R and a spherical wrist (8 solutions). When no closed form exists, iterate numerically (next lesson).",
+       "simState": "Static diagram card of the decoupling idea; preview of Newton iteration arrows."
+      }
+     ],
+     "keyEquations": [
+      "$\\cos\\theta_2=\\frac{x^2+y^2-L_1^2-L_2^2}{2L_1L_2}$",
+      "$\\theta_1=\\mathrm{atan2}(y,x)-\\mathrm{atan2}(L_2\\sin\\theta_2,\\,L_1+L_2\\cos\\theta_2)$",
+      "可達：$|L_1-L_2|\\le\\sqrt{x^2+y^2}\\le L_1+L_2$"
+     ],
+     "quizIdeas": [
+      "一條直線路徑穿過內圓，手臂要連續跟隨必須切換分支嗎？",
+      "加入關節限制 θ₂∈[0, π]，哪個區域變成只剩一個解？",
+      "PUMA 型手臂為何有 8 個解？對照 2R 的 2 個解推理"
+     ],
+     "estMinutes": 25,
+     "dependsOn": [
+      "ch05-02-singularities-manipulability",
+      "ch02-02-cspace-topology"
+     ]
+    },
+    {
+     "id": "ch06-02-numerical-ik",
+     "chapter": 6,
+     "order": 2,
+     "title": "數值逆運動學：Newton–Raphson 與阻尼最小平方（numerical IK, DLS）",
+     "bookRef": "§6.2–6.3",
+     "difficulty": "advanced",
+     "tags": [
+      "IKinBody",
+      "Newton–Raphson",
+      "pseudoinverse",
+      "DLS"
+     ],
+     "summary": "把 IK 寫成求根問題，用 log 定義 twist 誤差並逐步執行 Newton 迭代觀察收斂曲線；近奇異點時改用阻尼最小平方，並連結到逆速度運動學。",
+     "goals": [
+      "把 IK 寫成 $f(\\theta)=0$ 的求根問題，用 $\\log(T_{sb}^{-1}T_{sd})$ 定義 twist 誤差",
+      "逐步執行 $\\theta\\leftarrow\\theta+J_b^{\\dagger}\\mathcal V_b$，觀察收斂曲線與初值的影響",
+      "理解近奇異點時偽逆步長暴增，以及 DLS 用精度換穩定的代價",
+      "把逆速度運動學 $\\dot\\theta=J^{\\dagger}\\mathcal V$ 與 Newton 步長視為同一件事"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar3R",
+      "description": "3R 平面手臂加目標位姿（含朝向）。「單步」執行一次 Newton 迭代並畫出手臂軌跡與中間構型；下方曲線圖顯示 ‖ω_b‖、‖v_b‖ 隨迭代變化（對數軸）。可切換偽逆 / 轉置 / DLS 並調整 λ，拖動初始猜測。",
+      "controls": [
+       "拖目標位姿（位置＋朝向）",
+       "初始猜測 θ₀ 滑桿或拖手臂",
+       "單步／自動迭代／重置",
+       "方法：J⁺ / Jᵀ / DLS；λ 滑桿；最大步長",
+       "顯示每次的 Δθ 範數"
+      ],
+      "observe": [
+       "好的初值 3–5 步收斂，壞的初值可能發散或收斂到另一個解",
+       "遠離奇異時誤差曲線呈二次收斂的陡降",
+       "接近奇異時偽逆的 Δθ 暴增，DLS 平滑但收斂變慢",
+       "冗餘手臂用 J⁺ 得到最小範數的 Δθ"
+      ],
+      "pitfalls": [
+       "誤差要用 log（MatrixLog6 或平面版）而不是 T_sd − T_sb",
+       "角度每步包裹，步長要限制（IKinBody 的 maxStep）",
+       "目標不可達時要偵測停滯並說明，而不是無限迭代"
+      ]
+     },
+     "steps": [
+      {
+       "title": "把 IK 變成求根",
+       "outline": "Define the residual as the body twist that would move the current end frame onto the target: [V_b] = log(T_sb^{-1} T_sd). IK means driving it to zero.",
+       "simState": "Target pose and current pose; error twist arrows drawn; residual norms readout."
+      },
+      {
+       "title": "一步 Newton",
+       "outline": "Linearise with J_b and solve for Δθ = J_b^† V_b. One click, one step; watch the arm jump closer.",
+       "simState": "Single-step button; intermediate configuration ghosted; Δθ readout."
+      },
+      {
+       "title": "收斂曲線與初值",
+       "outline": "Plot the error norms per iteration on a log axis: quadratic convergence from a good guess, divergence or another solution from a bad one.",
+       "simState": "Log-scale plot active; initial-guess drag enabled; two example guesses as presets."
+      },
+      {
+       "title": "奇異附近會發生什麼",
+       "outline": "Near a singular configuration the pseudoinverse divides by a tiny singular value and the step explodes.",
+       "simState": "Preset near-singular guess; Δθ spike visible; arm overshoot animation."
+      },
+      {
+       "title": "阻尼最小平方",
+       "outline": "DLS replaces J^† by J^T(JJ^T + λ²I)^{-1}: bounded steps at the cost of a biased direction and slower convergence.",
+       "simState": "Method switch to DLS; λ slider; curves for J⁺ vs DLS overlaid."
+      },
+      {
+       "title": "冗餘與最小範數解",
+       "outline": "For 3R positioning only, J is wide; J^† picks the smallest Δθ, leaving the redundant motion untouched. Weighted pseudoinverses change this choice.",
+       "simState": "Position-only target mode; null-space arrow shown at the elbow."
+      },
+      {
+       "title": "逆速度運動學與下一章",
+       "outline": "θ̇ = J^† V is the same formula used continuously; this is how a robot tracks a moving target. Next chapter: closed chains, where FK is the hard one.",
+       "simState": "Target moves slowly along a path; arm follows with continuous θ̇ = J⁺V; preview card of a five-bar linkage."
+      }
+     ],
+     "keyEquations": [
+      "$[\\mathcal V_b]=\\log\\big(T_{sb}^{-1}(\\theta^i)\\,T_{sd}\\big)$",
+      "$\\theta^{i+1}=\\theta^i+J_b^{\\dagger}(\\theta^i)\\mathcal V_b$",
+      "DLS：$\\theta^{i+1}=\\theta^i+J_b^{\\mathsf T}(J_bJ_b^{\\mathsf T}+\\lambda^2I)^{-1}\\mathcal V_b$"
+     ],
+     "quizIdeas": [
+      "目標在環帶外，Newton 迭代會怎麼表現？用 J 的秩與殘差解釋",
+      "冗餘手臂用 J⁺ 得到的解有何幾何意義？若改用加權偽逆呢？",
+      "解釋為何逆速度運動學 θ̇ = J⁺V 與 IK 的 Newton 步長形式相同"
+     ],
+     "estMinutes": 40,
+     "dependsOn": [
+      "ch06-01-analytic-ik",
+      "ch05-01-jacobian-geometry"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 7,
+   "title": "閉鏈運動學",
+   "titleEn": "Kinematics of Closed Chains",
+   "lessons": [
+    {
+     "id": "ch07-01-five-bar-ik-fk",
+     "chapter": 7,
+     "order": 1,
+     "title": "平面五連桿並聯機構：IK 容易、FK 多解（closed chain）",
+     "bookRef": "§7.1",
+     "difficulty": "core",
+     "tags": [
+      "parallel mechanism",
+      "five-bar",
+      "loop closure"
+     ],
+     "summary": "以兩顆底座馬達驅動的五連桿為例，體會閉鏈中致動關節與被動關節的區分，IK 可拆成兩個 2R 子問題，而 FK 需解兩圓交點且通常有多個解。",
+     "goals": [
+      "區分閉鏈中的致動關節與被動關節，寫出迴路閉合（loop-closure）方程式",
+      "對 5R 寫出 IK：兩個獨立的 2R 子問題，共四種分支組合",
+      "由致動角求 FK：兩圓交點，兩個裝配模式（assembly modes）",
+      "用 Grübler 確認 dof=2，並對照 Stewart–Gough 平台的「IK 易、FK 難」"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "fiveBar",
+      "description": "兩個底座馬達驅動的平面五連桿。IK 模式：拖末端點，畫出四種分支組合（每邊 up/down）；FK 模式：拖兩個馬達角，畫出兩個 FK 解（兩圓交點）並以淡色顯示另一個裝配模式；側欄顯示 loop-closure 殘差。",
+      "controls": [
+       "IK 模式：拖末端點；選擇分支組合",
+       "FK 模式：拖兩個馬達角",
+       "顯示另一個裝配模式（淡色）",
+       "顯示 loop-closure 殘差",
+       "調整桿長與底座間距"
+      ],
+      "observe": [
+       "IK 分解成兩個獨立 2R，解析可解",
+       "FK 需解兩圓交點，通常兩解；交點重合時只剩一解",
+       "靠近兩圓相切時 FK 解變得敏感",
+       "Grübler：3(5−1) − 2·5 = 2"
+      ],
+      "pitfalls": [
+       "拖馬達角時跟隨同一個裝配模式（選離上一幀最近的交點），避免翻面",
+       "兩圓不相交時顯示「無法裝配」並保留上一組有效解",
+       "桿長改變時重新檢查裝配條件"
+      ]
+     },
+     "steps": [
+      {
+       "title": "哪些關節是馬達，哪些是被動的",
+       "outline": "A five-bar has five joints but only two actuated; the other three follow from loop closure. dof by Grübler is 2.",
+       "simState": "Five-bar drawn; actuated joints highlighted; Grübler readout panel."
+      },
+      {
+       "title": "迴路閉合方程式",
+       "outline": "Going around the loop and returning to the start gives a vector equation (two scalar equations) linking actuated and passive angles.",
+       "simState": "Loop traced with arrows; residual readout stays ≈ 0 while dragging."
+      },
+      {
+       "title": "IK：拆成兩個 2R",
+       "outline": "Given the tip, each side is a 2R chain from its base: two independent analytic problems, each with two branches.",
+       "simState": "IK mode; tip draggable; four branch combinations ghosted; branch selector."
+      },
+      {
+       "title": "FK：兩圓的交點",
+       "outline": "Given both motor angles, the two distal links sweep circles whose intersections are the possible tip positions: up to two assembly modes.",
+       "simState": "FK mode; circles drawn; both intersections marked; the active one solid."
+      },
+      {
+       "title": "解會合併、會翻面",
+       "outline": "When the circles become tangent the two FK solutions merge; past that the mechanism cannot be assembled. Near tangency the tip is very sensitive.",
+       "simState": "Preset near tangency; sensitivity readout (Δtip / Δmotor)."
+      },
+      {
+       "title": "Stewart–Gough 與下一課",
+       "outline": "The same pattern holds for a 6-leg platform: IK is six leg-length formulas, FK is a hard polynomial problem. Next: differential kinematics and two kinds of singularity.",
+       "simState": "Gallery card of a 6-leg platform (original sketch); preview of the two singularity presets."
+      }
+     ],
+     "keyEquations": [
+      "閉環：$g(\\theta_a,\\theta_p)=0$，$\\theta_a$ 致動、$\\theta_p$ 被動",
+      "FK：$\\|p-p_L\\|=L_2,\\quad\\|p-p_R\\|=L_4$ 兩圓求交",
+      "dof：$3(5-1)-2\\cdot5=2$"
+     ],
+     "quizIdeas": [
+      "Stewart 平台有 6 支腳，為何說它的 IK 比 FK 容易？對照五連桿",
+      "若把五連桿的一個馬達移到肘關節，IK 還能分解成兩個 2R 嗎？",
+      "FK 的兩個解在何時合併成一個？那個構型有什麼特別？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch06-01-analytic-ik",
+      "ch02-01-dof-grubler"
+     ]
+    },
+    {
+     "id": "ch07-02-closed-chain-singularities",
+     "chapter": 7,
+     "order": 2,
+     "title": "閉鏈的微分運動學與兩類奇異點（actuator / end-effector singularity）",
+     "bookRef": "§7.2–7.3",
+     "difficulty": "advanced",
+     "tags": [
+      "constraint Jacobian",
+      "actuator singularity",
+      "end-effector singularity"
+     ],
+     "summary": "把閉鏈的速度關係寫成致動與被動兩塊的約束 Jacobian，區分「鎖住馬達末端仍能動」的致動器奇異與「某方向動不了」的末端奇異，並在五連桿上親手製造。",
+     "goals": [
+      "由迴路閉合式微分，寫出 $H_a\\dot\\theta_a+H_p\\dot\\theta_p=0$ 形式的微分運動學",
+      "區分致動器奇異（$H_p$ 降秩、末端多出不受控自由度）與末端奇異（末端失去某方向）",
+      "在五連桿上辨認兩類奇異的幾何條件並觀察橢球的行為",
+      "說明為何致動器奇異對機構較危險，以及冗餘致動的用處"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "fiveBar",
+      "description": "五連桿上即時顯示末端速度橢球與兩個約束矩陣的行列式曲線；「鎖馬達」按鈕鎖住兩個致動角後讓學習者用外力拖末端，若仍能微動即致動器奇異；預設按鈕可跳到兩類奇異構型；有限差分 Jacobian 作為對照。",
+      "controls": [
+       "拖末端或馬達角",
+       "按鈕：鎖馬達後嘗試拖末端",
+       "顯示 det H_a、det H_p 曲線",
+       "預設：致動器奇異／末端奇異構型",
+       "切換解析 J 與有限差分 J 對照"
+      ],
+      "observe": [
+       "致動器奇異：兩中間桿共線，鎖住馬達末端仍能微動",
+       "末端奇異：單邊伸直，末端失去某方向",
+       "橢球在致動器奇異時「爆開」而不是壓扁",
+       "兩類奇異可能同時發生"
+      ],
+      "pitfalls": [
+       "兩類奇異分開示範，再合併",
+       "行列式接近零時數值放大要夾制，畫曲線用對數或 symlog",
+       "鎖馬達拖末端的「允許位移」以零空間方向投影計算"
+      ]
+     },
+     "steps": [
+      {
+       "title": "把閉合方程式微分",
+       "outline": "Differentiating g(θ_a, θ_p) = 0 gives H_a θ̇_a + H_p θ̇_p = 0. When H_p is invertible the passive rates follow from the actuated ones.",
+       "simState": "Matrix panel with H_a, H_p and their determinants; live update while dragging."
+      },
+      {
+       "title": "末端速度橢球",
+       "outline": "Chain the constraint solution with the tip Jacobian to get tip velocity from motor rates; draw the ellipse like for open chains.",
+       "simState": "Tip ellipse drawn; motor-rate unit circle shown beside it."
+      },
+      {
+       "title": "末端奇異：有方向動不了",
+       "outline": "When one side straightens, no motor combination moves the tip along the lost direction; the ellipse flattens.",
+       "simState": "Preset: one side straight; ellipse collapses; lost direction drawn."
+      },
+      {
+       "title": "致動器奇異：鎖住馬達還能動",
+       "outline": "When the two distal links are collinear, H_p loses rank: with motors locked the tip can still move. The ellipse blows up instead of flattening.",
+       "simState": "Preset: distal links collinear; lock-motors button; tip drag allowed along the free direction."
+      },
+      {
+       "title": "為什麼致動器奇異更危險",
+       "outline": "An uncontrolled degree of freedom means the mechanism can snap to another assembly mode; loads pass through with no actuator authority.",
+       "simState": "Warning overlay; animation showing a snap-through between assembly modes."
+      },
+      {
+       "title": "冗餘致動與下一章",
+       "outline": "Adding a third motor can remove actuator singularities but not end-effector ones. Next chapter: dynamics, where the mass matrix also depends on configuration.",
+       "simState": "Optional third-motor toggle; det H_p curve no longer crosses zero; preview card of a swinging 2R arm."
+      }
+     ],
+     "keyEquations": [
+      "$H_a(\\theta)\\dot\\theta_a+H_p(\\theta)\\dot\\theta_p=0$",
+      "非奇異時：$\\dot\\theta_p=-H_p^{-1}H_a\\dot\\theta_a$",
+      "致動器奇異：$H_p$ 降秩；末端奇異：末端 Jacobian 降秩"
+     ],
+     "quizIdeas": [
+      "給一個沒見過的 3RRR 平面並聯平台，猜測致動器奇異的幾何條件",
+      "為何致動器奇異對機構更危險（可能損壞）？",
+      "設計題：加裝第三個馬達（冗餘致動）能消除哪一類奇異？為什麼不能消除另一類？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch07-01-five-bar-ik-fk",
+      "ch05-02-singularities-manipulability"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 8,
+   "title": "開鏈動力學",
+   "titleEn": "Dynamics of Open Chains",
+   "lessons": [
+    {
+     "id": "ch08-01-lagrangian-mass-matrix",
+     "chapter": 8,
+     "order": 1,
+     "title": "Lagrangian 動力學與質量矩陣 M(θ)（mass matrix）",
+     "bookRef": "§8.1",
+     "difficulty": "core",
+     "tags": [
+      "Lagrangian",
+      "mass matrix",
+      "Coriolis"
+     ],
+     "summary": "由動能與位能寫出 2R 手臂的 Lagrangian，導出 τ = M(θ)θ̈ + c(θ, θ̇) + g(θ)，把 M(θ) 讀成隨構型改變的慣量橢圓，並分辨科氏／向心項與重力項的物理來源。",
+     "goals": [
+      "由 $K$ 與 $U$ 寫出 Lagrangian，並用 Euler–Lagrange 方程導出 2R 的運動方程",
+      "把 $M(\\theta)$ 讀成關節空間的慣量橢圓，知道它隨構型改變且對稱正定",
+      "分辨科氏／向心項 $c(\\theta,\\dot\\theta)$ 與重力項 $g(\\theta)$ 的來源與行為",
+      "用能量守恆檢查模擬是否可信"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar2R",
+      "description": "2R 擺臂自由擺動（RK4 固定步長），旁邊畫 M(θ) 的橢圓與能量條（K、U、總能）。可關閉重力、對各項單獨歸零；「固定 θ̇₁」模式顯示 θ₂ 受到的向心力矩；閉式 Lagrangian 結果與 Newton–Euler 函式庫結果並列對照。",
+      "controls": [
+       "拖初始 θ 與設定 θ̇",
+       "開關重力、調整質量與桿長",
+       "各項（M、c、g）分別歸零的開關",
+       "固定 θ̇₁ 模式，顯示 c(θ, θ̇) 分量",
+       "顯示 M(θ) 橢圓與特徵值；能量圖"
+      ],
+      "observe": [
+       "伸直時 M 橢圓最長（慣量最大），折疊時最小",
+       "無摩擦時總能量在 RK4 下近似平直",
+       "θ₁ 等速旋轉會對 θ₂ 產生力矩，即使 θ₂ 不動",
+       "關掉重力後 U 消失，擺動變成純慣性運動"
+      ],
+      "pitfalls": [
+       "用 RK4 固定子步；Euler 會讓能量明顯上升並誤導學生",
+       "質量矩陣橢圓以 M 的特徵分解畫在 (θ̇₁, θ̇₂) 平面，與末端橢球區分",
+       "planar2RDynamics 與 buildPlanarChain + InverseDynamics 的差值應顯示為 ~1e−12"
+      ]
+     },
+     "steps": [
+      {
+       "title": "讓手臂自己擺",
+       "outline": "Release the 2R arm and watch it swing. The motion is governed by a differential equation we are about to write down.",
+       "simState": "Free swing playing; energy bars visible; no controls locked."
+      },
+      {
+       "title": "動能、位能與 Lagrangian",
+       "outline": "K is quadratic in joint velocities, U depends on configuration; L = K − U and the Euler–Lagrange equations give the joint torques.",
+       "simState": "K and U readouts; formula panel with the Lagrangian terms highlighted as the arm moves."
+      },
+      {
+       "title": "質量矩陣是個橢圓",
+       "outline": "K = ½ θ̇^T M(θ) θ̇ defines an ellipse in joint-velocity space whose shape changes with θ₂: stretched out when straight, compact when folded.",
+       "simState": "M ellipse panel; sweep θ₂ to see the ellipse change; eigenvalue readouts."
+      },
+      {
+       "title": "科氏與向心項",
+       "outline": "Velocity-product terms appear because M depends on θ: spin joint 1 at constant rate and joint 2 feels a torque even at rest.",
+       "simState": "Fixed θ̇₁ mode; c(θ, θ̇) components plotted; joint-2 torque bar."
+      },
+      {
+       "title": "重力項",
+       "outline": "g(θ) is the gradient of U; it vanishes for a horizontal-plane arm and dominates slow motions.",
+       "simState": "Gravity toggle; g(θ) bars; horizontal-plane preset."
+      },
+      {
+       "title": "用能量檢查模擬",
+       "outline": "Without friction the total energy must stay constant; a drifting energy trace means a numerical problem, not physics.",
+       "simState": "Energy plot with RK4 vs Euler comparison toggle."
+      },
+      {
+       "title": "兩種推導，同一個答案",
+       "outline": "The closed-form Lagrangian result matches the recursive Newton–Euler library call to machine precision. Next lesson builds that recursion.",
+       "simState": "Side-by-side torque readouts: closed form vs InverseDynamics; difference ≈ 0."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathcal L=K-U,\\quad\\tau_i=\\frac{d}{dt}\\frac{\\partial\\mathcal L}{\\partial\\dot\\theta_i}-\\frac{\\partial\\mathcal L}{\\partial\\theta_i}$",
+      "$\\tau=M(\\theta)\\ddot\\theta+c(\\theta,\\dot\\theta)+g(\\theta)$",
+      "$K=\\tfrac12\\dot\\theta^{\\mathsf T}M(\\theta)\\dot\\theta$"
+     ],
+     "quizIdeas": [
+      "哪個構型下用同樣的 τ₁ 能得到最大的 θ̈₁？用 M 橢圓解釋",
+      "若 2R 手臂在水平面上運作，g(θ) 變成什麼？c 會變嗎？",
+      "花式溜冰收手加速旋轉，對應方程式中的哪一項？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch05-01-jacobian-geometry"
+     ]
+    },
+    {
+     "id": "ch08-02-newton-euler-inverse-dynamics",
+     "chapter": 8,
+     "order": 2,
+     "title": "單剛體動力學與 Newton–Euler 逆動力學（inverse dynamics）",
+     "bookRef": "§8.2–8.3",
+     "difficulty": "advanced",
+     "tags": [
+      "Newton–Euler",
+      "spatial inertia",
+      "InverseDynamics"
+     ],
+     "summary": "先用 twist–wrench 形式寫單剛體方程，再看遞迴演算法如何前向傳遞速度與加速度、後向傳遞 wrench，沿一條軌跡產生各關節的力矩曲線並拆解成慣性、速度與重力貢獻。",
+     "goals": [
+      "用空間慣量 $\\mathcal G_b$ 寫出單剛體方程 $\\mathcal F_b=\\mathcal G_b\\dot{\\mathcal V}_b-[\\mathrm{ad}_{\\mathcal V_b}]^{\\mathsf T}\\mathcal G_b\\mathcal V_b$",
+      "解釋遞迴法：前向傳 twist 與加速度、後向傳 wrench，複雜度 O(n)",
+      "沿給定軌跡產生 τ_i(t) 並拆成慣性、速度、重力貢獻",
+      "說明末端負載如何經由後向遞迴影響所有關節"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "rrr3",
+      "description": "rrr3 在 3D 場景追蹤一條預設關節軌跡（可調時長）；單步模式逐連桿高亮前向／後向遞迴的中間量（V_i、V̇_i、F_i）；下方圖表疊畫 τ_i(t)，可切換顯示慣性、速度、重力三部分的分解，並可加末端負載與開關重力。",
+      "controls": [
+       "軌跡預設與時長（快／慢）",
+       "單步前向／後向遞迴並高亮連桿",
+       "開關重力、設定末端負載 wrench",
+       "切換 τ 分解顯示",
+       "顯示每個連桿的 V_i、V̇_i、F_i 數值"
+      ],
+      "observe": [
+       "軌跡愈快，慣性與速度項愈主導；慢時幾乎只剩重力",
+       "末端負載影響所有關節（後向傳遞）",
+       "近端關節力矩最大",
+       "時長減半時慣性項約變四倍，重力項不變"
+      ],
+      "pitfalls": [
+       "空間慣量在質心座標系定義，換座標要用 Adᵀ G Ad",
+       "重力向量 g 的座標系要和 Mlist 的 {0} 一致",
+       "3D 中 ω × Iω 的 ad 項不可省略"
+      ]
+     },
+     "steps": [
+      {
+       "title": "一個剛體：twist 與 wrench 的關係",
+       "outline": "Stack mass and inertia into a 6×6 spatial inertia; the body wrench equals G V̇ minus a velocity-product term built from ad_V.",
+       "simState": "Single floating link spinning; F_b components plotted; ad term toggle."
+      },
+      {
+       "title": "換到別的座標系",
+       "outline": "Spatial inertia transforms with Ad^T G Ad; the equation keeps its form in any body-fixed frame.",
+       "simState": "Frame moved off the centre of mass; G matrix view shows off-diagonal coupling appear."
+      },
+      {
+       "title": "前向遞迴：速度與加速度往外傳",
+       "outline": "From the base outward, each link's twist is the parent's twist transported plus its joint rate along A_i; accelerations likewise plus a velocity-product term.",
+       "simState": "Step mode; links highlighted in order 1→n with V_i, V̇_i readouts."
+      },
+      {
+       "title": "後向遞迴：wrench 往回傳",
+       "outline": "From the tip inward, each link's wrench is the child's wrench transported plus its own inertial term; the joint torque is its projection on A_i.",
+       "simState": "Step mode; links highlighted n→1; F_i arrows; τ_i readouts."
+      },
+      {
+       "title": "沿軌跡的力矩曲線",
+       "outline": "Run the recursion at every sample of a trajectory to get τ_i(t); decompose into inertial, velocity and gravity parts.",
+       "simState": "Trajectory playback; stacked τ plots with decomposition toggle."
+      },
+      {
+       "title": "快一點、重一點",
+       "outline": "Halve the duration and watch inertial terms quadruple; add a tip load and see every joint respond through the backward pass.",
+       "simState": "Duration slider and tip-load input; before/after overlay on the plots."
+      },
+      {
+       "title": "O(n) 與下一課",
+       "outline": "The recursion costs O(n) per call, cheaper than expanding M(θ) explicitly. Next: using these equations forward in time to simulate motion.",
+       "simState": "Timing readout per call; preview card of forward dynamics integration."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathcal F_b=\\mathcal G_b\\dot{\\mathcal V}_b-[\\mathrm{ad}_{\\mathcal V_b}]^{\\mathsf T}\\mathcal G_b\\mathcal V_b$",
+      "前向：$\\mathcal V_i=[\\mathrm{Ad}_{T_{i,i-1}}]\\mathcal V_{i-1}+\\mathcal A_i\\dot\\theta_i$",
+      "後向：$\\mathcal F_i=[\\mathrm{Ad}_{T_{i+1,i}}]^{\\mathsf T}\\mathcal F_{i+1}+\\mathcal G_i\\dot{\\mathcal V}_i-[\\mathrm{ad}_{\\mathcal V_i}]^{\\mathsf T}\\mathcal G_i\\mathcal V_i,\\quad\\tau_i=\\mathcal F_i^{\\mathsf T}\\mathcal A_i$"
+     ],
+     "quizIdeas": [
+      "把軌跡時長減半，哪些關節力矩約變 4 倍？哪些不變？",
+      "手臂靜止但末端有 1 kg 負載，各關節的 τ 由什麼決定？",
+      "為何逆動力學可做到 O(n)，而展開 M(θ) 的閉式較貴？"
+     ],
+     "estMinutes": 40,
+     "dependsOn": [
+      "ch08-01-lagrangian-mass-matrix",
+      "ch03-04-screw-motions-wrenches"
+     ]
+    },
+    {
+     "id": "ch08-03-forward-dynamics-integration",
+     "chapter": 8,
+     "order": 3,
+     "title": "正動力學與數值積分：Euler vs RK4（forward dynamics）",
+     "bookRef": "§8.4–8.5",
+     "difficulty": "core",
+     "tags": [
+      "ForwardDynamics",
+      "RK4",
+      "energy drift"
+     ],
+     "summary": "由力矩解出加速度 θ̈ = M⁻¹(τ − c − g) 並積分出運動，比較 Euler 與 RK4 在同一步長下的能量漂移，學會選步長與積分法。",
+     "goals": [
+      "由 τ 解 $\\ddot\\theta=M^{-1}(\\tau-c-g)$，知道 M 正定所以永遠可解",
+      "用 Euler 與 RK4 積分同一系統，觀察步長與積分法對能量漂移的影響",
+      "理解閉式方程 $M,c,g$ 與遞迴 Newton–Euler 的關係：用逆動力學湊出正動力學",
+      "判斷何時模擬結果不可信（能量發散、爆走）"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar2R",
+      "description": "2R 手臂正動力學模擬，左右並排 Euler 與 RK4 兩個分身從相同初始狀態出發，下方疊畫兩者的總能量曲線；可調步長 Δt、施加開迴路 τ(t) 脈衝；爆走時自動重置並提示。",
+      "controls": [
+       "積分法對照（Euler / RK4 並排）與步長 Δt",
+       "初始狀態與開迴路 τ(t) 脈衝",
+       "開關重力",
+       "能量圖；誤差 vs Δt 的小圖",
+       "重置"
+      ],
+      "observe": [
+       "Euler 能量上升發散，RK4 在相同 Δt 下穩定",
+       "Δt 太大時兩者都失效",
+       "Δt 減半，Euler 誤差約減半，RK4 約減為 1/16",
+       "施加 τ 脈衝後兩個分身軌跡迅速分歧"
+      ],
+      "pitfalls": [
+       "用 substep 固定子步而不是依賴畫面 dt",
+       "|θ̇| 超過上限時重置並顯示警告",
+       "誤差 vs Δt 圖用 log–log 才看得出階數"
+      ]
+     },
+     "steps": [
+      {
+       "title": "反過來：從力矩算加速度",
+       "outline": "Rearrange the equation of motion: θ̈ = M^{-1}(τ − c − g). M is positive definite so the inverse always exists.",
+       "simState": "τ input; θ̈ readout; M, c, g bars."
+      },
+      {
+       "title": "用逆動力學湊出正動力學",
+       "outline": "Calling inverse dynamics with zero acceleration gives c + g; calling it with unit accelerations and no gravity builds M column by column.",
+       "simState": "Panel showing M assembled column by column from InverseDynamics calls."
+      },
+      {
+       "title": "Euler 積分",
+       "outline": "Advance state with θ ← θ + θ̇Δt, θ̇ ← θ̇ + θ̈Δt. Simple, but energy creeps upward.",
+       "simState": "Euler twin only; energy trace rising."
+      },
+      {
+       "title": "RK4 積分",
+       "outline": "Four slope evaluations per step give fourth-order accuracy; the same Δt now conserves energy almost exactly.",
+       "simState": "Both twins; energy traces overlaid."
+      },
+      {
+       "title": "步長的代價",
+       "outline": "Sweep Δt: Euler error is first order, RK4 fourth order; both fail when Δt is too large relative to the fastest dynamics.",
+       "simState": "Error-vs-Δt log–log plot auto-generated from short runs."
+      },
+      {
+       "title": "開迴路力矩與下一課",
+       "outline": "Apply a torque pulse: motion diverges quickly, showing why feedback is needed later. Next: what motors, gears and friction add to the model.",
+       "simState": "Pulse button; twins diverge; preview card of a geared joint."
+      }
+     ],
+     "keyEquations": [
+      "$\\ddot\\theta=M^{-1}(\\theta)\\big(\\tau-c(\\theta,\\dot\\theta)-g(\\theta)\\big)$",
+      "RK4：$x_{k+1}=x_k+\\tfrac{\\Delta t}{6}(k_1+2k_2+2k_3+k_4)$",
+      "Euler 誤差 $O(\\Delta t)$，RK4 誤差 $O(\\Delta t^4)$"
+     ],
+     "quizIdeas": [
+      "Δt 減半，Euler 的能量誤差大約如何變？RK4 呢？",
+      "若關節被鎖死，正動力學的 M⁻¹ 會發生什麼？",
+      "為何能量上升一定是數值問題而不是物理現象？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch08-01-lagrangian-mass-matrix"
+     ]
+    },
+    {
+     "id": "ch08-04-actuation-gearing-friction",
+     "chapter": 8,
+     "order": 4,
+     "title": "致動、齒輪與摩擦（gearing, reflected inertia, friction）",
+     "bookRef": "§8.9",
+     "difficulty": "core",
+     "tags": [
+      "DC motor",
+      "gear ratio",
+      "friction"
+     ],
+     "summary": "把馬達與減速機加進模型：齒輪比帶來 G²J_m 的表觀慣量使動態近似解耦，摩擦模型帶來低速黏滑，並理解高減速比對背驅動性與安全的代價。",
+     "goals": [
+      "寫出含齒輪比 G 與轉子慣量 $J_m$ 的有效慣量 $M_{\\rm eff}=M(\\theta)+G^2J_mI$",
+      "解釋為何高齒輪比讓對角項主導、耦合相對變弱，但也放大反射慣量與摩擦",
+      "區分黏滯摩擦與庫侖摩擦，觀察低速時的黏滑（stick–slip）",
+      "用背驅動性與碰撞安全說明協作機器人為何偏好低減速比"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar2R",
+      "description": "上方：單關節的馬達—減速機—連桿示意圖，可調 G、J_m、摩擦係數，顯示從馬達側與關節側看的慣量；下方：2R 正動力學加入齒輪與摩擦後的響應圖，與無齒輪情況並列，顯示耦合程度指標。",
+      "controls": [
+       "齒輪比 G 與轉子慣量 J_m",
+       "黏滯係數 b 與庫侖力矩 τ_c",
+       "施加開迴路力矩脈衝或外力推動（背驅動測試）",
+       "切換單關節示意／2R 模擬",
+       "顯示 M_eff 的對角／非對角比值"
+      ],
+      "observe": [
+       "G 愈大，對角項被 G²J_m 主導，耦合相對變弱",
+       "從外部推動關節時，高 G 下幾乎推不動（背驅動性差）",
+       "庫侖摩擦造成低速時走走停停",
+       "黏滯摩擦使自由擺動指數衰減"
+      ],
+      "pitfalls": [
+       "庫侖摩擦 sign(θ̇) 在零速附近會抖動，需加小死區或 tanh 平滑",
+       "高 G 時系統變硬，RK4 子步要縮小",
+       "反射慣量要用 G² 不是 G"
+      ]
+     },
+     "steps": [
+      {
+       "title": "馬達、減速機、連桿",
+       "outline": "A DC motor spins fast with little torque; a gearbox trades speed for torque by the ratio G. Torque and speed scale oppositely.",
+       "simState": "Single-joint diagram; motor and joint speed/torque readouts linked by G."
+      },
+      {
+       "title": "反射慣量",
+       "outline": "Seen from the joint, the rotor inertia appears multiplied by G². With large G this term dominates the link inertia.",
+       "simState": "Inertia bars: link vs G²J_m; G slider."
+      },
+      {
+       "title": "耦合變弱了",
+       "outline": "Adding G²J_m to the diagonal of M makes the arm behave like independent joints; off-diagonal coupling becomes relatively small.",
+       "simState": "2R mode; coupling ratio readout; response with and without gearing overlaid."
+      },
+      {
+       "title": "背驅動性與安全",
+       "outline": "Push the joint from outside: high G makes it stiff and hard to move, and a collision transfers more reflected inertia.",
+       "simState": "Backdrive test button; required external torque readout."
+      },
+      {
+       "title": "摩擦模型",
+       "outline": "Viscous friction is proportional to speed; Coulomb friction has constant magnitude and flips sign, causing stick–slip at low speed.",
+       "simState": "Friction sliders; velocity trace showing stick–slip; dead-zone toggle."
+      },
+      {
+       "title": "修正後的逆動力學與下一章",
+       "outline": "Motor inertia and friction are folded into the inverse-dynamics recursion. Next chapter: generating the trajectories those torques must follow.",
+       "simState": "τ decomposition now includes friction and rotor terms; preview card of a time-scaling plot."
+      }
+     ],
+     "keyEquations": [
+      "$M_{\\rm eff}=M(\\theta)+G^2J_m I$",
+      "$\\tau_f=b\\dot\\theta+\\tau_c\\,\\mathrm{sgn}(\\dot\\theta)$",
+      "馬達側：$\\tau_{\\rm joint}=G\\tau_m,\\quad\\dot\\theta_{\\rm joint}=\\dot\\theta_m/G$"
+     ],
+     "quizIdeas": [
+      "為何協作機器人常用低齒輪比？從表觀慣量與碰撞安全推理",
+      "齒輪比加倍，反射慣量變幾倍？外部推動所需力矩大約變幾倍？",
+      "庫侖摩擦為何會讓位置控制出現小幅極限環（limit cycle）？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch08-03-forward-dynamics-integration"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 9,
+   "title": "軌跡生成",
+   "titleEn": "Trajectory Generation",
+   "lessons": [
+    {
+     "id": "ch09-01-time-scaling",
+     "chapter": 9,
+     "order": 1,
+     "title": "路徑 vs 軌跡：時間縮放 s(t)（time scaling）",
+     "bookRef": "§9.1, 9.2.2",
+     "difficulty": "intro",
+     "tags": [
+      "time scaling",
+      "cubic",
+      "quintic",
+      "trapezoid"
+     ],
+     "summary": "把軌跡拆成幾何路徑 θ(s) 與時間縮放 s(t)，比較三次、五次、梯形與 S 曲線的 ṡ、s̈ 特性，並依速度／加速度上限選擇合適的縮放。",
+     "goals": [
+      "區分路徑（幾何）與軌跡（含時間），寫出 $\\dot\\theta=\\theta'(s)\\dot s$ 的鏈鎖律",
+      "比較 cubic、quintic、trapezoid、S-curve 的 $s,\\dot s,\\ddot s$ 與 jerk",
+      "給定 $v_{\\max},a_{\\max}$ 判斷梯形縮放是否可行並求最短 T",
+      "解釋加速度不連續為何會激發機械振動"
+     ],
+     "simulation": {
+      "kind": "plot",
+      "robotModel": "singleJoint",
+      "description": "上方：單關節從 0 到 1 的動畫。下方三張同步圖：s、ṡ、s̈（可加 jerk）。切換縮放類型並拖動 T、v_max、a_max；梯形退化成三角形或不可行時以提示說明。",
+      "controls": [
+       "縮放類型：cubic / quintic / trapezoid / S-curve",
+       "總時間 T",
+       "v_max、a_max（梯形與 S 曲線）",
+       "顯示 jerk 曲線",
+       "播放／暫停／拖曳時間"
+      ],
+      "observe": [
+       "三次多項式起末點加速度不為零（有跳變）",
+       "梯形在同樣 T 下峰值速度最低但加速度不連續",
+       "T 太短時梯形無法同時滿足 v_max 與 a_max",
+       "五次多項式最平滑但峰值速度／加速度較高"
+      ],
+      "pitfalls": [
+       "梯形要處理退化成三角形的情況（trapezoidParams 回報 valid/reason）",
+       "三張圖的 x 軸要同步縮放與游標",
+       "動畫用 createLoop 並在 destroy 停止"
+      ]
+     },
+     "steps": [
+      {
+       "title": "路徑不是軌跡",
+       "outline": "The same geometric path can be traversed fast or slow; the trajectory adds a time law s(t) with s(0)=0, s(T)=1.",
+       "simState": "Single joint animating; s slider only; path bar vs time bar."
+      },
+      {
+       "title": "鏈鎖律：速度和加速度怎麼來",
+       "outline": "θ̇ = θ'(s) ṡ and θ̈ = θ''(s) ṡ² + θ'(s) s̈: the time scaling controls the whole velocity profile.",
+       "simState": "Formula panel; ṡ and s̈ plots appear."
+      },
+      {
+       "title": "三次與五次多項式",
+       "outline": "Cubic matches position and velocity at both ends but leaves acceleration jumps; quintic also matches acceleration at the cost of higher peaks.",
+       "simState": "Cubic vs quintic overlaid; end-point acceleration markers."
+      },
+      {
+       "title": "梯形速度曲線",
+       "outline": "Constant acceleration, cruise, constant deceleration: lowest peak speed for a given T, but acceleration is discontinuous.",
+       "simState": "Trapezoid selected; v_max/a_max sliders; infeasible warning when T is too short."
+      },
+      {
+       "title": "S 曲線與 jerk",
+       "outline": "Smoothing the acceleration corners bounds the jerk and reduces vibration; compare jerk plots.",
+       "simState": "S-curve selected; jerk plot visible; comparison table of peaks."
+      },
+      {
+       "title": "選哪一個？以及下一課",
+       "outline": "Pick by constraints: smoothness, peak limits, simplicity. Next: what the path θ(s) itself should be for a robot arm.",
+       "simState": "Decision table; preview card of three path types on an arm."
+      }
+     ],
+     "keyEquations": [
+      "$\\theta(t)=\\theta(s(t)),\\quad\\dot\\theta=\\theta'(s)\\dot s,\\quad\\ddot\\theta=\\theta''(s)\\dot s^2+\\theta'(s)\\ddot s$",
+      "Cubic：$s(t)=3(t/T)^2-2(t/T)^3$；Quintic：$s(t)=10(t/T)^3-15(t/T)^4+6(t/T)^5$",
+      "梯形可行：$v^2/a\\le1$ 且 $T=\\tfrac{a+v^2}{va}$（$v,a$ 為 $\\dot s,\\ddot s$ 的上限）"
+     ],
+     "quizIdeas": [
+      "給 v_max、a_max，求梯形時間縮放的最短 T 並判斷是否出現等速段",
+      "同一條路徑用不同時間縮放，末端軌跡的形狀會變嗎？速度向量呢？",
+      "為何加速度不連續會激發機械振動？從 s̈ 的跳變推理"
+     ],
+     "estMinutes": 25,
+     "dependsOn": [
+      "ch04-01-poe-space-form"
+     ]
+    },
+    {
+     "id": "ch09-02-straight-line-paths",
+     "chapter": 9,
+     "order": 2,
+     "title": "直線路徑：關節空間、螺旋與笛卡兒（joint / screw / Cartesian paths）",
+     "bookRef": "§9.2.1",
+     "difficulty": "core",
+     "tags": [
+      "JointTrajectory",
+      "ScrewTrajectory",
+      "CartesianTrajectory"
+     ],
+     "summary": "在同一對起終點位姿上比較三種「直線」：關節空間直線、螺旋內插與解耦的笛卡兒直線，看末端軌跡與關節角曲線的差異，並判斷何時該用哪一種。",
+     "goals": [
+      "在關節空間做直線內插並觀察末端走弧線",
+      "用 $\\exp/\\log$ 做螺旋內插，以及 R、p 分開的笛卡兒直線內插",
+      "說明笛卡兒路徑需要 IK，可能遇到奇異、不可達或分支跳變",
+      "根據避障、奇異與關節限制選擇路徑類型"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "rrr3",
+      "description": "3D 場景中 rrr3 從起點位姿到終點位姿，三種路徑的末端軌跡同時疊畫（不同顏色），下方圖表顯示對應的關節角與關節速度曲線；可拖起終點、放置球形障礙，並在 2D 模式切到平面 3R 觀察 IK 分支跳變。",
+      "controls": [
+       "拖起終點位姿；預設組合",
+       "切換三種路徑並播放",
+       "放置球形障礙物",
+       "顯示關節角與 θ̇ 曲線",
+       "切換 rrr3 / planar3R（2D）模式"
+      ],
+      "observe": [
+       "關節空間直線 → 末端走弧線，可能撞到障礙",
+       "螺旋路徑的原點走圓弧（繞螺旋軸）而非直線",
+       "笛卡兒直線可能穿過奇異帶或離開可達區",
+       "笛卡兒路徑在 IK 分支切換時關節角跳變"
+      ],
+      "pitfalls": [
+       "螺旋內插用 log(X_start⁻¹ X_end)，不是 log(X_end) − log(X_start)",
+       "笛卡兒路徑每個樣本用上一個解當 IK 初值以保持連續",
+       "三條軌跡用 --series 顏色並在圖例標示"
+      ]
+     },
+     "steps": [
+      {
+       "title": "三種「直線」",
+       "outline": "Straight in joint space, straight along a screw, or straight for the origin with separately interpolated rotation: same endpoints, different motions.",
+       "simState": "All three trails drawn; legend; playback paused at mid-path."
+      },
+      {
+       "title": "關節空間直線",
+       "outline": "Interpolate θ linearly in s; each joint moves smoothly but the tip sweeps an arc.",
+       "simState": "Only the joint-space trail; joint plots are straight lines."
+      },
+      {
+       "title": "螺旋內插",
+       "outline": "X(s) = X_start exp(log(X_start^{-1} X_end) s) rotates and translates about one screw axis; the origin traces a helix-like arc.",
+       "simState": "Screw trail with the screw axis drawn; rotation and translation coupled."
+      },
+      {
+       "title": "解耦的笛卡兒直線",
+       "outline": "Interpolate p linearly and R by its own exp/log: the tip goes straight, which is what welding or gluing needs.",
+       "simState": "Cartesian trail; straight tip line; R(s) frames along the path."
+      },
+      {
+       "title": "笛卡兒路徑的代價",
+       "outline": "The arm must solve IK along the path: near singularities joint rates spike, branches may flip, and parts of the line may be unreachable.",
+       "simState": "2D planar3R mode; path through a singular band; θ̇ spike and branch-flip markers."
+      },
+      {
+       "title": "避障與選擇，以及經過點",
+       "outline": "Place an obstacle: the joint-space arc may collide while the Cartesian line passes, or vice versa. Next: paths through several via points.",
+       "simState": "Obstacle placed; collision flags per path; preview card of via-point spline."
+      }
+     ],
+     "keyEquations": [
+      "關節空間：$\\theta(s)=\\theta_{\\rm start}+s(\\theta_{\\rm end}-\\theta_{\\rm start})$",
+      "螺旋：$X(s)=X_{\\rm start}\\exp\\big(\\log(X_{\\rm start}^{-1}X_{\\rm end})\\,s\\big)$",
+      "解耦：$p(s)=p_0+s(p_1-p_0),\\quad R(s)=R_0\\exp\\big(\\log(R_0^{\\mathsf T}R_1)\\,s\\big)$"
+     ],
+     "quizIdeas": [
+      "焊縫需要直線，但起終點之間有奇異帶，應如何規劃？",
+      "螺旋路徑和解耦路徑的 R(s) 相同嗎？p(s) 呢？",
+      "關節空間路徑通過 θ₂ = 0 附近，末端速度會發生什麼？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch09-01-time-scaling",
+      "ch06-02-numerical-ik",
+      "ch03-04-screw-motions-wrenches"
+     ]
+    },
+    {
+     "id": "ch09-03-via-points",
+     "chapter": 9,
+     "order": 3,
+     "title": "經過點多項式軌跡（via points, cubic splines）",
+     "bookRef": "§9.3",
+     "difficulty": "core",
+     "tags": [
+      "via points",
+      "viaPointCubic",
+      "spline"
+     ],
+     "summary": "用分段三次多項式通過多個經過點並保證速度連續，比較指定經過點速度的策略（零速、啟發式、自訂），並辨識過衝與不合理的中間速度。",
+     "goals": [
+      "由每段起末的位置與速度四個條件決定三次多項式係數",
+      "比較經過點速度策略：零速（停頓）、啟發式平均斜率、自訂箭頭",
+      "辨識段間時間分配不當造成的過衝",
+      "知道要求加速度連續時需要更高次或整體樣條"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "pointOrPlanar2R",
+      "description": "平面上拖放經過點並設定時間戳；畫出分段三次曲線與速度箭頭，下方圖表顯示每個座標的位置、速度、加速度曲線；可選擇經過點速度策略，並可切換成 2R 手臂跟隨該路徑。",
+      "controls": [
+       "拖放／新增／刪除經過點與時間",
+       "速度策略：零速／啟發式／使用者拖箭頭",
+       "顯示速度與加速度曲線",
+       "播放動畫",
+       "切換點機器人／2R 手臂跟隨"
+      ],
+      "observe": [
+       "零速策略導致每個經過點停頓",
+       "相鄰段時間差太大會產生過衝",
+       "自訂速度方向可讓路徑更圓滑",
+       "加速度在經過點處跳變（三次樣條只保證速度連續）"
+      ],
+      "pitfalls": [
+       "段時間為零或負值要擋掉（時間嚴格遞增）",
+       "經過點拖動時即時重算係數，避免每幀重建 DOM",
+       "2R 跟隨模式用上一個 IK 解作初值"
+      ]
+     },
+     "steps": [
+      {
+       "title": "不只兩個點",
+       "outline": "Real tasks pass through several waypoints at given times; one polynomial for everything would wiggle, so use one cubic per segment.",
+       "simState": "Three via points; piecewise cubic drawn; playback."
+      },
+      {
+       "title": "每段四個條件",
+       "outline": "Position and velocity at both ends determine a cubic's four coefficients; the formulas for a₂ and a₃ follow directly.",
+       "simState": "Segment selected; coefficient panel; boundary values highlighted."
+      },
+      {
+       "title": "經過點的速度該是多少",
+       "outline": "Zero velocity stops at every point; a heuristic uses the average slope of neighbouring segments; the user may also set it.",
+       "simState": "Strategy switch; velocity arrows at via points update."
+      },
+      {
+       "title": "過衝從哪裡來",
+       "outline": "Unequal segment durations force large mid-segment speeds and overshoot; adjust times to fix it.",
+       "simState": "Preset with a very short segment; overshoot highlighted; time sliders."
+      },
+      {
+       "title": "加速度連續嗎？",
+       "outline": "Cubic segments leave acceleration jumps at via points; quintic segments or a global spline fix that at extra cost.",
+       "simState": "Acceleration plot with jump markers; quintic comparison toggle."
+      },
+      {
+       "title": "手臂跟著走，以及時間最佳化",
+       "outline": "Let a 2R arm follow the spline; next lesson asks how fast a path can be traversed given torque limits.",
+       "simState": "2R follow mode; preview card of the (s, ṡ) phase plane."
+      }
+     ],
+     "keyEquations": [
+      "段 $j$：$\\theta(t)=a_0+a_1t+a_2t^2+a_3t^3$，由起末 $\\theta,\\dot\\theta$ 四條件決定",
+      "$a_2=\\tfrac{3\\Delta\\theta-(2\\dot\\theta_0+\\dot\\theta_1)T}{T^2},\\quad a_3=\\tfrac{-2\\Delta\\theta+(\\dot\\theta_0+\\dot\\theta_1)T}{T^3}$"
+     ],
+     "quizIdeas": [
+      "三個經過點在一條直線上，為何用啟發式速度仍可能離開直線？",
+      "若要求加速度也連續，每段至少需要幾次多項式？",
+      "拾取—放置任務中，哪些點應該零速、哪些應保持速度？"
+     ],
+     "estMinutes": 25,
+     "dependsOn": [
+      "ch09-01-time-scaling"
+     ]
+    },
+    {
+     "id": "ch09-04-time-optimal-phase-plane",
+     "chapter": 9,
+     "order": 4,
+     "title": "時間最佳時間縮放：(s, ṡ) 相平面（time-optimal time scaling）",
+     "bookRef": "§9.4",
+     "difficulty": "advanced",
+     "tags": [
+      "phase plane",
+      "bang-bang",
+      "velocity limit curve"
+     ],
+     "summary": "把致動器力矩限制轉成相平面上的可行加速度區間與速度極限曲線，理解最快軌跡的 bang-bang 結構，並用前向／後向積分找出切換點。",
+     "goals": [
+      "把沿路徑的動力學寫成 $m(s)\\ddot s+c(s)\\dot s^2+g(s)=\\tau$ 並由力矩上限得到 $L(s,\\dot s)\\le\\ddot s\\le U(s,\\dot s)$",
+      "畫出速度極限曲線並理解曲線上方不可行",
+      "用前向最大加速、後向最大減速的積分找出切換點（bang-bang）",
+      "說明路徑形狀與動力學「重」的構型如何壓低極限曲線"
+     ],
+     "simulation": {
+      "kind": "plot",
+      "robotModel": "planar2R",
+      "description": "2R 手臂沿固定路徑運動；相平面顯示速度極限曲線與每點可行的 s̈ 區間 [L, U]（以小箭頭場表示）。按鈕可從起點前向積分最大加速、從終點後向積分最大減速，自動找到切換點；也可手繪 ṡ(s) 曲線檢查可行性，並同步播放手臂動畫。",
+      "controls": [
+       "力矩上限 τ_max（各關節）",
+       "按鈕：前向積分／後向積分／自動求解",
+       "手繪 ṡ(s) 並檢查可行性",
+       "切換路徑形狀",
+       "播放對應的手臂動畫與 τ(t) 圖"
+      ],
+      "observe": [
+       "速度極限曲線下方才可行；上方 L > U",
+       "最佳曲線貼著極限曲線並在切換點改變加速方向",
+       "降低 τ_max 整條極限曲線下壓，總時間變長",
+       "路徑經過「重」的構型時極限曲線凹陷"
+      ],
+      "pitfalls": [
+       "極限曲線需要數值穩定地求 L = U 的交會（二分法）",
+       "積分曲線觸碰極限曲線時要沿曲線搜尋切點，不能硬穿",
+       "Plot2D 用 equalAspect 關閉、x 軸 s∈[0,1]"
+      ]
+     },
+     "steps": [
+      {
+       "title": "沿著路徑的一維動力學",
+       "outline": "Restrict the arm to a fixed path θ(s): the equations of motion collapse to one scalar relation in s, ṡ, s̈ with configuration-dependent coefficients.",
+       "simState": "Arm on path; m(s), c(s), g(s) plotted along s."
+      },
+      {
+       "title": "力矩限制變成加速度區間",
+       "outline": "Each joint's torque bounds give an interval for s̈; the intersection over joints is [L(s, ṡ), U(s, ṡ)].",
+       "simState": "Phase plane with the feasible s̈ interval drawn as a small arrow pair at the cursor."
+      },
+      {
+       "title": "速度極限曲線",
+       "outline": "Where L exceeds U no motion is feasible; the boundary is the velocity limit curve. Lower torque limits push it down.",
+       "simState": "Limit curve drawn; τ_max slider moves it."
+      },
+      {
+       "title": "最快就是 bang-bang",
+       "outline": "Time-optimal motion always uses maximal acceleration or maximal deceleration; the only question is where to switch.",
+       "simState": "Forward and backward integration buttons; curves drawn from both ends."
+      },
+      {
+       "title": "找切換點",
+       "outline": "Integrate forward with U and backward with L; where the curves meet (or touch the limit curve) is a switch. Iterate if the forward curve hits the limit first.",
+       "simState": "Auto-solve animation; switch points marked; resulting ṡ(s) highlighted."
+      },
+      {
+       "title": "手繪檢查",
+       "outline": "Draw your own ṡ(s) and see where it violates the interval; feasibility means staying below the limit curve with slopes inside [L, U].",
+       "simState": "Freehand drawing mode; violated segments coloured."
+      },
+      {
+       "title": "假設與下一章",
+       "outline": "The method assumes the path is given and torque limits are the only constraints; velocity limits and friction change the picture. Next: finding the path itself (motion planning).",
+       "simState": "Velocity-limit toggle modifies the feasible region; preview card of a C-space obstacle map."
+      }
+     ],
+     "keyEquations": [
+      "$m(s)\\ddot s+c(s)\\dot s^2+g(s)=\\tau$",
+      "$L(s,\\dot s)\\le\\ddot s\\le U(s,\\dot s)$",
+      "速度極限曲線：$\\{(s,\\dot s):L(s,\\dot s)=U(s,\\dot s)\\}$"
+     ],
+     "quizIdeas": [
+      "若路徑經過動力學上「重」的構型，極限曲線會如何？",
+      "為何最佳解在相平面上不能有水平段（ṡ 固定不變）？",
+      "加入速度上限（非力矩）後，相平面的可行區如何改變？"
+     ],
+     "estMinutes": 40,
+     "dependsOn": [
+      "ch09-01-time-scaling",
+      "ch08-03-forward-dynamics-integration"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 10,
+   "title": "運動規劃",
+   "titleEn": "Motion Planning",
+   "lessons": [
+    {
+     "id": "ch10-01-cspace-obstacles",
+     "chapter": 10,
+     "order": 1,
+     "title": "C-space 障礙物與碰撞檢測（C-obstacles）",
+     "bookRef": "§10.1–10.2.2",
+     "difficulty": "core",
+     "tags": [
+      "C-obstacle",
+      "collision detection",
+      "planning problem"
+     ],
+     "summary": "把工作空間裡的障礙映射成 2R 手臂的 C-space 障礙，理解規劃就是在 C-free 中找連續曲線，並認識以球體覆蓋做碰撞檢測與距離計算的做法。",
+     "goals": [
+      "說明運動規劃問題的要素：C-space、起終點、C-free 中的連續路徑",
+      "把 workspace 障礙映射成 2R 手臂的 C-obstacle，並理解形狀為何不同",
+      "認識以圓／球覆蓋近似做碰撞查詢與距離計算",
+      "說明為何多數規劃器只做碰撞查詢而不顯式建構 C-obstacle"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "planar2R",
+      "description": "左：workspace 中的 2R 手臂與可拖放／縮放的圓形障礙；右：(θ₁, θ₂) 環面展開圖即時著色 C-obstacle（離屏柵格化）。拖右圖的點，左圖手臂跟著動，碰撞時變紅；可畫一條關節空間路徑並檢查是否穿越障礙。",
+      "controls": [
+       "拖放／縮放障礙物（多個）",
+       "拖關節空間的點或工作空間的手臂",
+       "畫關節空間路徑並檢查",
+       "切換球覆蓋顯示與最短距離值",
+       "解析度選單"
+      ],
+      "observe": [
+       "小障礙在 C-space 可能是大區塊；靠近基座的障礙幾乎切斷整個 C-space",
+       "C-obstacle 在環面邊界繞回，展開圖上被切成多塊",
+       "workspace 看似可繞過，C-space 卻可能被切斷成兩個連通區",
+       "手臂第二桿加長時只有部分 C-obstacle 區域改變"
+      ],
+      "pitfalls": [
+       "C-obstacle 柵格用離屏 canvas 一次算完後快取，障礙移動才重算",
+       "線段—圓碰撞測試要含端點與連桿粗細",
+       "環面繞回要在路徑檢查中處理（跨越 ±π）"
+      ]
+     },
+     "steps": [
+      {
+       "title": "規劃問題長什麼樣",
+       "outline": "Given start and goal configurations and obstacles, find a continuous path in C-free. The arm, not the tip, must avoid the obstacles.",
+       "simState": "Workspace with one obstacle; start/goal arms ghosted; empty C-space panel."
+      },
+      {
+       "title": "一個障礙在 C-space 裡的樣子",
+       "outline": "Sweep all configurations and mark the colliding ones: the C-obstacle has a different shape and size from the workspace obstacle.",
+       "simState": "C-space panel fills progressively (animated raster); drag the C-space point to see the arm collide."
+      },
+      {
+       "title": "環面上的障礙",
+       "outline": "Because joint angles wrap, a C-obstacle may appear as several pieces in the unwrapped square but is one region on the torus.",
+       "simState": "Wrap highlighting at the square edges; optional torus glue animation reused from Ch2."
+      },
+      {
+       "title": "碰撞查詢與距離",
+       "outline": "Cover links and obstacles with circles; collision is a quick centre-distance test, and the smallest clearance is a useful distance measure.",
+       "simState": "Circle covers drawn; clearance readout; nearest pair highlighted."
+      },
+      {
+       "title": "連通性：繞得過去嗎",
+       "outline": "Move an obstacle until C-free splits into two components: a workspace detour that looks possible is impossible for the arm.",
+       "simState": "Preset obstacle near the base; two components tinted; path check fails."
+      },
+      {
+       "title": "畫一條路徑，以及下一課",
+       "outline": "Draw a joint-space path and check it against the map. Planners mostly query collisions along candidate paths rather than build this map; next: graph search on a grid.",
+       "simState": "Path drawing mode with collision markers; preview card of a grid overlay."
+      }
+     ],
+     "keyEquations": [
+      "$\\mathcal C_{\\rm free}=\\mathcal C\\setminus\\mathcal C_{\\rm obs}$",
+      "路徑：$q:[0,1]\\to\\mathcal C_{\\rm free}$ 連續",
+      "圓覆蓋距離：$d=\\|c_i-c_j\\|-r_i-r_j$"
+     ],
+     "quizIdeas": [
+      "障礙物縮小一半，C-obstacle 的面積會縮小一半嗎？",
+      "把手臂第二桿加長，哪些 C-obstacle 區域會變？",
+      "為何多數規劃器只做碰撞查詢而不顯式建構 C-obstacle？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch02-02-cspace-topology"
+     ]
+    },
+    {
+     "id": "ch10-02-grid-search",
+     "chapter": 10,
+     "order": 2,
+     "title": "格點法：Dijkstra、A* 與 wavefront（grid search）",
+     "bookRef": "§10.2.3–10.4",
+     "difficulty": "core",
+     "tags": [
+      "A*",
+      "Dijkstra",
+      "wavefront",
+      "resolution complete"
+     ],
+     "summary": "把 C-space 離散成格點圖，逐步播放 Dijkstra、A* 與 wavefront 的展開順序，理解可容許啟發式與最佳性、解析度完備性與格點數爆炸。",
+     "goals": [
+      "把 C-space 離散成格點圖並定義邊的代價（4／8 連通）",
+      "比較 Dijkstra、A*（可容許啟發式）與 wavefront 的展開順序與節點數",
+      "解釋啟發式權重 ε 對速度與最佳性的取捨",
+      "說明解析度完備性與高維格點數爆炸"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "gridRobot",
+      "description": "可塗抹障礙的格點地圖（可載入上一課的 2R C-space 柵格）。單步或自動播放三種演算法，開放／封閉集合以顏色擴散，顯示展開節點數與路徑長；可調啟發式權重 ε、4／8 連通與解析度。",
+      "controls": [
+       "畫障礙／清除；設定起終點",
+       "演算法：Dijkstra / A* / wavefront；單步／自動",
+       "啟發式權重 ε（0 = Dijkstra）",
+       "4／8 連通與解析度",
+       "載入 2R C-space 地圖"
+      ],
+      "observe": [
+       "A* 展開節點遠少於 Dijkstra 但路徑等長（可容許啟發式）",
+       "ε > 1 更快但路徑可能次優",
+       "wavefront 從終點倒推，一次給所有格點的導航方向",
+       "解析度加倍，格點數變四倍，時間明顯變長"
+      ],
+      "pitfalls": [
+       "8 連通時對角穿越障礙角落要擋",
+       "對角邊代價 √2，平手要有一致的 tie-breaking",
+       "大型地圖用 typed array 與二元堆積，避免每步重排"
+      ]
+     },
+     "steps": [
+      {
+       "title": "把空間切成格子",
+       "outline": "Discretise C-space into cells; neighbours are 4 or 8 adjacent cells with costs 1 and √2. Planning becomes graph search.",
+       "simState": "Empty grid; connectivity toggle shows neighbour patterns."
+      },
+      {
+       "title": "Dijkstra：按代價一圈圈擴散",
+       "outline": "Expand the cheapest frontier node first; guaranteed shortest paths but explores in all directions.",
+       "simState": "Dijkstra auto-run; expansion wave visible; node count."
+      },
+      {
+       "title": "A*：加上往目標的估計",
+       "outline": "Order by f = g + h; an admissible h never overestimates, so the first time the goal is popped the path is optimal.",
+       "simState": "A* with ε=1; far fewer nodes; same path length readout."
+      },
+      {
+       "title": "啟發式的權重",
+       "outline": "Inflating h (ε > 1) speeds up search but can return longer paths; ε = 0 recovers Dijkstra.",
+       "simState": "ε slider sweep; table of nodes expanded vs path length."
+      },
+      {
+       "title": "Wavefront：從終點倒推",
+       "outline": "Breadth-first distances from the goal give every cell a downhill direction, handy for many starts.",
+       "simState": "Wavefront numbers rendered; arrows field; click any start to follow."
+      },
+      {
+       "title": "格點的極限與下一課",
+       "outline": "Resolution complete but cells grow exponentially with dimension; next lesson samples instead of gridding.",
+       "simState": "Resolution slider with cell-count readout; 6-D extrapolation card; preview of a random tree."
+      }
+     ],
+     "keyEquations": [
+      "$f(n)=g(n)+h(n)$，$h$ 可容許 $\\Rightarrow$ A* 最佳",
+      "Dijkstra：$h\\equiv0$；Wavefront：BFS 距離場 $d(n)$",
+      "格點數：$k^n$（每軸 $k$ 格，$n$ 維）"
+     ],
+     "quizIdeas": [
+      "哪種啟發式對 8 連通格點可容許：曼哈頓還是歐氏？為何？",
+      "6 維關節空間每軸 100 格，格點數是多少？",
+      "Wavefront 適合哪種任務：單次查詢還是多次查詢？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch10-01-cspace-obstacles"
+     ]
+    },
+    {
+     "id": "ch10-03-sampling-rrt-prm",
+     "chapter": 10,
+     "order": 3,
+     "title": "取樣式規劃：RRT 與 PRM（sampling-based planning）",
+     "bookRef": "§10.5",
+     "difficulty": "core",
+     "tags": [
+      "RRT",
+      "PRM",
+      "probabilistic completeness"
+     ],
+     "summary": "逐步執行 RRT 的 sample–nearest–steer–connect 迴圈，理解 Voronoi 偏置讓樹快速探索空曠區，比較單查詢（RRT）與多查詢（PRM）的適用場景與窄通道問題。",
+     "goals": [
+      "執行 RRT 的四個步驟，並理解目標偏置與步長的作用",
+      "解釋 Voronoi 偏置為何讓樹往空曠處生長",
+      "建構 PRM 路網並比較單查詢與多查詢的成本結構",
+      "說明機率完備性與窄通道為何困難"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "planar2R",
+      "description": "在 2D 地圖或 2R 的 C-space 環面上動畫生長 RRT / 雙向 RRT / PRM；可調步長、目標偏置機率、PRM 節點數與鄰居半徑；顯示迭代次數、路徑長與樹的 Voronoi 區域（選配）。窄通道地圖預設可切換。",
+      "controls": [
+       "演算法：RRT / RRT-Connect / PRM",
+       "步長、目標偏置 p_goal、隨機種子",
+       "PRM 節點數與鄰居半徑 k",
+       "按鈕：窄通道地圖／2R C-space 地圖",
+       "單步／自動；路徑平滑（捷徑法）"
+      ],
+      "observe": [
+       "RRT 早期往空曠處長（Voronoi 偏置）",
+       "p_goal 太大會讓樹卡在障礙後面",
+       "窄通道讓 PRM 取樣效率驟降",
+       "雙向 RRT 在複雜地圖快很多；路徑需要後處理平滑"
+      ],
+      "pitfalls": [
+       "最近鄰在環面度量下計算（跨越 ±π）",
+       "節點數上限與簡單的格網索引避免頁面卡頓",
+       "局部規劃器的碰撞檢查以固定間距取樣線段"
+      ]
+     },
+     "steps": [
+      {
+       "title": "不要格子，改用亂數",
+       "outline": "Sample random configurations and connect them; collisions are checked only along attempted edges.",
+       "simState": "Empty map; a few random samples appear; collision checks visualised."
+      },
+      {
+       "title": "RRT 的一個迭代",
+       "outline": "Sample, find the nearest tree node, steer one step toward the sample, add if collision-free. Repeat.",
+       "simState": "Single-step mode with the four stages annotated."
+      },
+      {
+       "title": "為什麼樹會往空曠處長",
+       "outline": "Nodes with large Voronoi regions are more likely to be nearest to a random sample, so the frontier expands fastest.",
+       "simState": "Voronoi overlay toggle; tree grows in auto mode."
+      },
+      {
+       "title": "目標偏置與雙向生長",
+       "outline": "Occasionally sample the goal to pull the tree; growing from both ends (RRT-Connect) speeds up hard maps.",
+       "simState": "p_goal slider; RRT-Connect mode with two trees meeting."
+      },
+      {
+       "title": "PRM：先建路網，再回答很多問題",
+       "outline": "Sample N nodes, connect near neighbours, then answer queries by graph search; good when the map is fixed and queries are many.",
+       "simState": "PRM build animation; multiple query pairs answered quickly."
+      },
+      {
+       "title": "窄通道、完備性與下一課",
+       "outline": "Narrow passages are rarely sampled, so success is probabilistic, not guaranteed in finite time. Next: a reactive alternative, potential fields.",
+       "simState": "Narrow-passage map; success-rate counter over seeds; preview card of a potential heatmap."
+      }
+     ],
+     "keyEquations": [
+      "$q_{\\rm new}=q_{\\rm near}+\\delta\\frac{q_{\\rm rand}-q_{\\rm near}}{\\|q_{\\rm rand}-q_{\\rm near}\\|}$",
+      "機率完備：$P(\\text{找到解})\\to1$ 當 $N\\to\\infty$"
+     ],
+     "quizIdeas": [
+      "把 p_goal 設成 1 會變成什麼演算法？為何容易卡住？",
+      "倉庫固定佈局、多次查詢的場景應選 PRM 還是 RRT？",
+      "RRT 的路徑為何通常需要後處理平滑？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch10-02-grid-search"
+     ]
+    },
+    {
+     "id": "ch10-04-potential-fields",
+     "chapter": 10,
+     "order": 4,
+     "title": "虛擬位能場與局部極小（potential fields）",
+     "bookRef": "§10.6",
+     "difficulty": "core",
+     "tags": [
+      "potential field",
+      "local minimum",
+      "navigation function"
+     ],
+     "summary": "建構吸引與排斥位能並以梯度下降導航，親手製造局部極小陷阱與震盪，認識導航函數的概念與位能場作為規劃器啟發式的用途。",
+     "goals": [
+      "建構吸引＋排斥位能並以梯度下降（或加阻尼的二階動態）導航",
+      "觀察凹形障礙造成的局部極小與增益過大造成的震盪",
+      "說明導航函數需要唯一極小與其建構的限制",
+      "把位能場當成即時反應層或規劃器的啟發式來使用"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "pointRobot",
+      "description": "點機器人在 2D 位能場中滑動，背景顯示等高線（或熱圖）與梯度箭頭；可拖障礙物製造 U 形陷阱、調整增益與影響距離，切換一階梯度下降與加阻尼的二階動態，並可用隨機擾動嘗試逃逸。",
+      "controls": [
+       "吸引／排斥增益與影響距離 d₀",
+       "拖放障礙（含凹形預設）",
+       "切換梯度下降／二階動態＋阻尼",
+       "按鈕：隨機擾動逃逸",
+       "顯示等高線／熱圖／梯度場"
+      ],
+      "observe": [
+       "凹形障礙產生局部極小，機器人停住",
+       "排斥增益太大引發振盪或無法穿越窄道",
+       "二階動態加阻尼較平滑但會繞過目標再回來",
+       "用位能場當 RRT 的取樣偏置可加快找到解"
+      ],
+      "pitfalls": [
+       "排斥場梯度在邊界附近數值很大，需裁剪",
+       "熱圖離屏渲染並在障礙移動時才重算",
+       "二階動態要用固定子步"
+      ]
+     },
+     "steps": [
+      {
+       "title": "把目標當成山谷",
+       "outline": "An attractive quadratic potential pulls the robot toward the goal; following the negative gradient is a simple controller.",
+       "simState": "Only attractive field; contour lines; robot slides to the goal."
+      },
+      {
+       "title": "把障礙當成山丘",
+       "outline": "Add repulsive potentials that grow near obstacles and vanish beyond an influence distance.",
+       "simState": "Obstacles added; combined field; gradient arrows."
+      },
+      {
+       "title": "局部極小的陷阱",
+       "outline": "A concave obstacle creates a valley that is not the goal; the gradient vanishes and the robot stops.",
+       "simState": "U-shaped obstacle preset; robot stuck; local-minimum marker."
+      },
+      {
+       "title": "增益、震盪與動態",
+       "outline": "Large repulsive gains cause oscillation in corridors; a second-order model with damping is smoother but can overshoot.",
+       "simState": "Gain sweep; 1st/2nd-order toggle; trace comparison."
+      },
+      {
+       "title": "導航函數",
+       "outline": "A potential with a unique minimum at the goal would fix the problem; such functions exist for special worlds but are hard to build in general.",
+       "simState": "Card comparing a star-shaped world with a general map; conceptual only."
+      },
+      {
+       "title": "位能場的正確用法與下一章",
+       "outline": "Use potentials as a fast reactive layer or as a bias inside sampling planners. Next chapter: controlling the robot to actually follow the plan.",
+       "simState": "Potential-biased RRT demo toggle; preview card of a PID step response."
+      }
+     ],
+     "keyEquations": [
+      "$U=\\tfrac{k_p}{2}\\|q-q_{\\rm goal}\\|^2+\\sum_i\\tfrac{k}{2}\\big(\\tfrac1{d_i}-\\tfrac1{d_0}\\big)^2\\ (d_i<d_0)$",
+      "$\\dot q=-\\nabla U(q)$ 或 $\\ddot q=-\\nabla U-b\\dot q$"
+     ],
+     "quizIdeas": [
+      "給一張地圖，指出位能場會卡住的起點集合",
+      "為何導航函數需要「唯一極小」，且在球狀世界才容易建構？",
+      "如何把位能場當作 RRT 的取樣偏置？"
+     ],
+     "estMinutes": 25,
+     "dependsOn": [
+      "ch10-01-cspace-obstacles"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 11,
+   "title": "機器人控制",
+   "titleEn": "Robot Control",
+   "lessons": [
+    {
+     "id": "ch11-01-error-dynamics-pid",
+     "chapter": 11,
+     "order": 1,
+     "title": "誤差動態與單關節 PID（error dynamics, PID）",
+     "bookRef": "§11.1–11.3.1, 11.4.1",
+     "difficulty": "core",
+     "tags": [
+      "error dynamics",
+      "PID",
+      "anti-windup"
+     ],
+     "summary": "把閉迴路行為寫成誤差的線性微分方程，用阻尼比與自然頻率預測超調與安定時間，觀察 I 項消除穩態誤差的代價與積分飽和。",
+     "goals": [
+      "把閉迴路寫成誤差 $\\theta_e$ 的二階線性方程，並由 $\\zeta,\\omega_n$ 預測超調與安定時間",
+      "區分速度輸入（一階）與力矩輸入（二階）的誤差動態",
+      "觀察恆定擾動下 PD 的穩態誤差與 I 項的修正，以及積分飽和（windup）",
+      "知道致動器飽和讓線性分析失效的時機與抗飽和的作法"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "singleJoint",
+      "description": "單關節慣量＋重力／摩擦＋力矩飽和，PID 控制。即時曲線：θ、θ_d、τ、積分器狀態；可施加階躍、斜坡、正弦目標與擾動力矩；小圖顯示特徵根位置隨 K_p、K_d 移動；可切換速度輸入模式對照。",
+      "controls": [
+       "K_p、K_i、K_d 滑桿",
+       "輸入型態：階躍／斜坡／正弦",
+       "擾動力矩與飽和上限",
+       "抗飽和（anti-windup）開關",
+       "切換速度輸入／力矩輸入模式；特徵根小圖"
+      ],
+      "observe": [
+       "K_p 提高 → 快但超調；K_d 增加阻尼；特徵根在複平面移動",
+       "恆定擾動下 PD 留穩態誤差，I 項才歸零",
+       "飽和時積分器累積，解除後大幅超調；抗飽和改善",
+       "斜坡輸入下 PD 的穩態誤差與斜率成正比"
+      ],
+      "pitfalls": [
+       "離散微分對雜訊敏感，用 derivative-on-measurement（pidStep 已提供）",
+       "模擬步長要遠小於閉迴路週期，否則出現假不穩",
+       "特徵根圖用連續模型計算，與模擬分開"
+      ]
+     },
+     "steps": [
+      {
+       "title": "控制就是讓誤差消失",
+       "outline": "Define θ_e = θ_d − θ and ask how it evolves in time; good control means the error dynamics are stable and fast.",
+       "simState": "Step response with P only; θ_e trace highlighted."
+      },
+      {
+       "title": "速度輸入：一階誤差動態",
+       "outline": "If the joint accepts a velocity command, P control gives θ̇_e = −K_p θ_e: exponential decay with time constant 1/K_p.",
+       "simState": "Velocity-input mode; exponential fit overlay."
+      },
+      {
+       "title": "力矩輸入：二階誤差動態",
+       "outline": "With torque input and PD control the error obeys a mass–spring–damper equation; ζ and ω_n set overshoot and settling time.",
+       "simState": "Torque-input mode; ζ, ω_n readouts; root-locus inset."
+      },
+      {
+       "title": "擾動與穩態誤差",
+       "outline": "A constant disturbance (gravity, friction) leaves a steady-state error under PD; the error is proportional to the disturbance over K_p.",
+       "simState": "Disturbance toggle; steady-state error marker."
+      },
+      {
+       "title": "加上積分項",
+       "outline": "The I term integrates the error until the disturbance is cancelled; too much I causes overshoot and slow oscillation.",
+       "simState": "K_i slider; error returns to zero; overshoot vs K_i."
+      },
+      {
+       "title": "飽和與積分飽和",
+       "outline": "Real actuators saturate; the integrator keeps winding up and causes large overshoot when control authority returns. Anti-windup clamps it.",
+       "simState": "Saturation limit lowered; windup visible; anti-windup toggle comparison."
+      },
+      {
+       "title": "多關節會怎樣？",
+       "outline": "Joints are coupled through M(θ) and gravity; next lesson shows why independent PID struggles and how model-based control helps.",
+       "simState": "Preview card of a 2R arm sagging under PD."
+      }
+     ],
+     "keyEquations": [
+      "$\\ddot\\theta_e+\\tfrac{b+K_d}{M}\\dot\\theta_e+\\tfrac{K_p}{M}\\theta_e=0$",
+      "$\\zeta=\\tfrac{b+K_d}{2\\sqrt{K_pM}},\\quad\\omega_n=\\sqrt{K_p/M}$",
+      "PID：$\\tau=K_p\\theta_e+K_i\\int\\theta_e\\,dt+K_d\\dot\\theta_e$"
+     ],
+     "quizIdeas": [
+      "要讓安定時間減半且不增加超調，K_p、K_d 應如何同時調？",
+      "斜坡輸入下 PD 控制的穩態誤差與什麼成正比？",
+      "給一段響應曲線（超調 20%、週期 1 s），反推 ζ 與 ω_n"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch08-03-forward-dynamics-integration"
+     ]
+    },
+    {
+     "id": "ch11-02-multijoint-computed-torque",
+     "chapter": 11,
+     "order": 2,
+     "title": "多關節：PD＋重力補償 vs 計算力矩法（computed torque）",
+     "bookRef": "§11.4.2–11.4.3",
+     "difficulty": "core",
+     "tags": [
+      "gravity compensation",
+      "computed torque",
+      "feedback linearisation"
+     ],
+     "summary": "看關節耦合如何讓單關節 PID 在多關節手臂失效，用重力補償消除靜態誤差、用計算力矩法把整個系統線性化並解耦，再評估模型誤差的影響與任務空間控制的差異。",
+     "goals": [
+      "說明耦合與重力如何讓獨立 PID 在 2R 手臂上下垂或追蹤不佳",
+      "用 PD＋重力補償消除靜態誤差，並說明它不處理動態耦合",
+      "用計算力矩法把閉迴路化成解耦的線性誤差方程，理解前饋與回饋各自的角色",
+      "評估模型誤差（±20%）對計算力矩的影響，並比較關節空間與任務空間控制"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar2R",
+      "description": "2R 手臂追蹤一條可調速度的關節軌跡（或任務空間直線），三種控制器可切換（PD / PD+g / computed torque），疊畫追蹤誤差曲線與力矩中前饋／回饋的比例；模型質量可故意加入 ±20% 誤差，並可切換任務空間控制觀察奇異附近的行為。",
+      "controls": [
+       "控制器：PD / PD+g / computed torque",
+       "K_p、K_d（對角）與軌跡速度",
+       "模型質量誤差百分比",
+       "顯示 τ 的前饋 vs 回饋比例",
+       "切換關節空間／任務空間控制"
+      ],
+      "observe": [
+       "PD 靜止時下垂（重力），PD+g 修正靜態誤差",
+       "快速軌跡下只有計算力矩追蹤得好，誤差曲線解耦",
+       "模型誤差變大時計算力矩退化，回饋項接手",
+       "任務空間控制在奇異附近關節速度暴增"
+      ],
+      "pitfalls": [
+       "前饋使用期望狀態 θ_d, θ̇_d, θ̈_d，不是實際狀態",
+       "用 SimulateControl 的介面，控制器模型與真實模型分開傳入",
+       "任務空間模式用 DLS 保護奇異附近"
+      ]
+     },
+     "steps": [
+      {
+       "title": "兩個獨立 PID 的下場",
+       "outline": "Run per-joint PD on the 2R arm: it sags under gravity and the joints disturb each other during fast motion.",
+       "simState": "PD controller; static sag visible; tracking error plot."
+      },
+      {
+       "title": "補上重力",
+       "outline": "Add the model's gravity torque g̃(θ): static error disappears, but dynamic coupling during motion remains.",
+       "simState": "PD+g controller; sag gone; fast-trajectory error still coupled."
+      },
+      {
+       "title": "計算力矩：先抵消，再當線性系統控制",
+       "outline": "τ = M̃(θ̈_d + K_p e + K_d ė) + h̃ cancels the nonlinear dynamics; ideally each joint's error obeys an independent linear equation.",
+       "simState": "Computed-torque controller; decoupled error curves; feedforward/feedback split bars."
+      },
+      {
+       "title": "前饋與回饋各做什麼",
+       "outline": "Feedforward supplies most of the torque along the nominal trajectory; feedback corrects the residual. Watch the split change with speed.",
+       "simState": "Split bars during slow vs fast trajectories."
+      },
+      {
+       "title": "模型不準怎麼辦",
+       "outline": "Introduce ±20% mass error: performance degrades gracefully; feedback absorbs the mismatch and integral action can remove the bias.",
+       "simState": "Mismatch slider; error curves with and without mismatch; K_i toggle."
+      },
+      {
+       "title": "任務空間控制與下一課",
+       "outline": "Controlling tip error directly needs the Jacobian and inherits its singularities. Next: controlling forces, not just motion.",
+       "simState": "Task-space mode on a straight line passing near singularity; joint-rate spike warning; preview card of contact with a table."
+      }
+     ],
+     "keyEquations": [
+      "PD+g：$\\tau=K_p\\theta_e+K_d\\dot\\theta_e+\\tilde g(\\theta)$",
+      "計算力矩：$\\tau=\\tilde M(\\theta)\\big(\\ddot\\theta_d+K_p\\theta_e+K_d\\dot\\theta_e\\big)+\\tilde h(\\theta,\\dot\\theta)$",
+      "理想下：$\\ddot\\theta_e+K_d\\dot\\theta_e+K_p\\theta_e=0$（解耦）"
+     ],
+     "quizIdeas": [
+      "手臂靜止時 PD+g 控制誤差為零；開始加速時誤差來自哪一項？",
+      "若只知道 M 不知道 c，計算力矩在高速時會剩下什麼誤差項？",
+      "任務空間控制與關節空間控制在奇異附近各有何問題？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch11-01-error-dynamics-pid",
+      "ch08-01-lagrangian-mass-matrix"
+     ]
+    },
+    {
+     "id": "ch11-03-force-hybrid-control",
+     "chapter": 11,
+     "order": 3,
+     "title": "力控制與混合運動—力控制（force control, hybrid motion–force）",
+     "bookRef": "§11.5–11.6",
+     "difficulty": "advanced",
+     "tags": [
+      "force control",
+      "hybrid control",
+      "natural constraints"
+     ],
+     "summary": "理解純力控制需要重力補償與阻尼，把環境約束寫成 A(θ)V = 0 分離運動與力的子空間，並用投影矩陣設計擦桌子任務的混合控制器。",
+     "goals": [
+      "寫出含重力補償與阻尼的力控制律，並說明為何剛性環境下純力控制容易不穩",
+      "把環境接觸寫成自然約束與人工約束，分離運動子空間與力子空間",
+      "用投影矩陣 P 設計混合運動—力控制器（切向追位置、法向追力）",
+      "說明在同一方向同時指定位置與力為何會衝突"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar2R",
+      "description": "2R 手臂末端接觸一面可調剛度的桌面（單邊彈簧—阻尼接觸模型）：沿切線追蹤位置、沿法線追蹤力。曲線顯示法向力、切向位置誤差與力矩；面板顯示約束矩陣 A 與投影矩陣 P；「錯誤示範」按鈕同時指定法向位置與力。",
+      "controls": [
+       "目標法向力與切向軌跡",
+       "環境剛度（硬／軟）",
+       "力回饋增益、積分與阻尼",
+       "按鈕：錯誤地同時指定法向位置與力",
+       "顯示 A(θ)、P 與子空間箭頭"
+      ],
+      "observe": [
+       "環境愈硬，力控制增益要愈小否則震盪",
+       "混合控制下切向誤差與法向力互不干擾",
+       "同時指定法向位置與力 → 衝突，力暴增或離開桌面",
+       "離開桌面時力為零（單邊接觸）"
+      ],
+      "pitfalls": [
+       "接觸用單邊彈簧（離開桌面力為零）並以子步積分剛性 ODE",
+       "力感測器量到的力與末端施的力符號相反，UI 標明",
+       "P 的計算用 M̃⁻¹ 加權，奇異附近要正則化"
+      ]
+     },
+     "steps": [
+      {
+       "title": "推桌子：位置控制會出什麼事",
+       "outline": "Commanding a position slightly inside a stiff table produces huge forces; contact tasks need force control.",
+       "simState": "Position controller pushing into table; force spike plot."
+      },
+      {
+       "title": "純力控制",
+       "outline": "Command a desired wrench through J^T with gravity compensation and velocity damping; without damping a stiff environment oscillates.",
+       "simState": "Force controller; stiffness slider; damping toggle shows oscillation."
+      },
+      {
+       "title": "自然約束與人工約束",
+       "outline": "The table forbids normal motion (natural motion constraint) and cannot supply tangential force (natural force constraint); the task specifies the rest.",
+       "simState": "Constraint diagram at the contact; A(θ) matrix view."
+      },
+      {
+       "title": "投影矩陣 P",
+       "outline": "P projects twists onto the motion subspace; I − P onto the force subspace. Motion and force goals live in complementary directions.",
+       "simState": "P and I−P panels; arrows for allowed motion and controllable force."
+      },
+      {
+       "title": "擦桌子：混合控制器",
+       "outline": "Track tangential position with motion control and normal force with force control; the two loops do not fight.",
+       "simState": "Hybrid controller running; tangential error and normal force plots both converge."
+      },
+      {
+       "title": "矛盾的指令與下一課",
+       "outline": "Specifying both position and force along the normal is inconsistent; the controller fights the environment. Next: shaping the robot's apparent dynamics instead.",
+       "simState": "Conflict demo button; force runaway warning; preview card of a mass–spring–damper end-effector."
+      }
+     ],
+     "keyEquations": [
+      "力控制：$\\tau=\\tilde g(\\theta)+J^{\\mathsf T}\\big(\\mathcal F_d+K_{fp}\\mathcal F_e+K_{fi}\\int\\mathcal F_e\\big)-K_d\\dot\\theta$",
+      "約束：$A(\\theta)\\mathcal V=0$，$P=I-A^{\\mathsf T}(A\\tilde M^{-1}A^{\\mathsf T})^{-1}A\\tilde M^{-1}$",
+      "混合：運動子空間用 $P$，力子空間用 $I-P$"
+     ],
+     "quizIdeas": [
+      "擦窗戶任務：哪些方向是運動控制、哪些是力控制？",
+      "為何剛性環境下純力控制容易不穩，而加上速度阻尼有幫助？",
+      "若約束面在移動（輸送帶），A(θ) 還正確嗎？需要改什麼？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch11-02-multijoint-computed-torque",
+      "ch05-03-statics-force-ellipsoid"
+     ]
+    },
+    {
+     "id": "ch11-04-impedance-admittance",
+     "chapter": 11,
+     "order": 4,
+     "title": "阻抗控制與導納控制（impedance / admittance）",
+     "bookRef": "§11.7",
+     "difficulty": "advanced",
+     "tags": [
+      "impedance",
+      "admittance",
+      "compliance"
+     ],
+     "summary": "把機器人末端設計成虛擬的質量—彈簧—阻尼器，分辨阻抗控制（量運動、出力）與導納控制（量力、出運動），並觀察自由空間與硬接觸時各自的優缺點。",
+     "goals": [
+      "用 $M\\ddot x+B\\dot x+Kx=f_{\\rm ext}$ 指定末端的表觀動態",
+      "分辨阻抗控制（量運動、輸出力）與導納控制（量力、輸出運動）的實作方式",
+      "觀察牆面剛度、感測器延遲與虛擬參數對穩定性與接觸力的影響",
+      "依手臂特性（背驅動性、減速比）選擇適合的實作方式"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "planar2R",
+      "description": "2R 末端（或 1-DOF 簡化模型）對一面牆：使用者拖動目標位置或對末端施加外力；可切換阻抗／導納模式，調整虛擬 M、B、K、牆面剛度與感測器延遲，曲線顯示位置、接觸力與能量，觀察彈回、穿牆與震盪。",
+      "controls": [
+       "虛擬 M、B、K",
+       "控制模式：impedance / admittance",
+       "拖目標位置或施加外力脈衝",
+       "牆面剛度與感測器延遲",
+       "切換 1-DOF／2R"
+      ],
+      "observe": [
+       "K 小 → 柔順，接觸力小但追蹤差",
+       "導納在硬接觸加延遲時容易震盪；阻抗在自由空間受摩擦影響位置誤差大",
+       "B 增加後接觸更平穩",
+       "高減速比手臂適合導納實作，背驅動好的手臂適合阻抗實作"
+      ],
+      "pitfalls": [
+       "導納控制需要內層位置迴路，模擬分兩層並各自固定步長",
+       "接觸事件要子步處理避免穿牆",
+       "延遲用環形緩衝實作"
+      ]
+     },
+     "steps": [
+      {
+       "title": "把手臂變成彈簧",
+       "outline": "Instead of tracking a position exactly, make the end-effector behave like a chosen mass–spring–damper around the target.",
+       "simState": "Impedance mode in free space; drag target; spring-like response."
+      },
+      {
+       "title": "阻抗控制：量運動、出力",
+       "outline": "Measure position and velocity, compute the force the virtual system would produce, apply it through J^T; natural for backdrivable arms.",
+       "simState": "Block diagram overlay; force output plot."
+      },
+      {
+       "title": "導納控制：量力、出運動",
+       "outline": "Measure the external force, integrate the virtual dynamics to get a motion command, track it with a stiff inner loop; natural for geared arms.",
+       "simState": "Admittance mode; inner-loop position trace; force sensor readout."
+      },
+      {
+       "title": "碰牆",
+       "outline": "Approach a stiff wall: impedance stays stable but drifts with friction; admittance with sensor delay chatters.",
+       "simState": "Wall contact; delay slider; oscillation appears in admittance mode."
+      },
+      {
+       "title": "調 M、B、K",
+       "outline": "Lower K for softer contact, raise B to calm bounces, change M to alter how fast the arm yields.",
+       "simState": "Parameter sweeps with contact-force peak readout."
+      },
+      {
+       "title": "選哪一種？與本章總結",
+       "outline": "Match the implementation to the hardware; both shape the same target dynamics. Next chapter: contacts between objects and fingers.",
+       "simState": "Decision card; preview card of contact normals and friction cones."
+      }
+     ],
+     "keyEquations": [
+      "$M\\ddot x+B\\dot x+Kx=f_{\\rm ext}$",
+      "阻抗控制：$\\tau=J^{\\mathsf T}\\big(\\tilde\\Lambda\\ddot x+\\tilde\\eta-(M\\ddot x+B\\dot x+Kx)\\big)$",
+      "導納：由 $f_{\\rm ext}$ 解 $\\ddot x$，再送位置內迴路"
+     ],
+     "quizIdeas": [
+      "協作機器人與人互動時應選高阻抗還是低阻抗？為何？",
+      "高齒輪比、低背驅動性的手臂更適合哪種實作方式？",
+      "若感測器延遲 20 ms，哪種模式下與硬牆接觸更危險？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch11-03-force-hybrid-control"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 12,
+   "title": "抓取與操作",
+   "titleEn": "Grasping and Manipulation",
+   "lessons": [
+    {
+     "id": "ch12-01-contact-kinematics-form-closure",
+     "chapter": 12,
+     "order": 1,
+     "title": "接觸運動學與形封閉（contact kinematics, form closure）",
+     "bookRef": "§12.1",
+     "difficulty": "core",
+     "tags": [
+      "contact",
+      "rolling/sliding",
+      "form closure"
+     ],
+     "summary": "用接觸法線做一階分析判斷滾動、滑動或脫離，在平面用旋轉中心圖法找出可行運動，並判斷一組無摩擦點接觸是否達成形封閉。",
+     "goals": [
+      "用接觸法線的 wrench 與物體 twist 的內積做一階分析：$\\ge0$ 不穿透，$=0$ 滾動／滑動，$>0$ 脫離",
+      "在平面用旋轉中心（CoR）圖法找出多個接觸下的可行運動",
+      "判斷一組無摩擦點接觸是否形封閉，知道平面至少 4 個、空間至少 7 個",
+      "說明單邊約束只推不拉，以及形封閉與力封閉的差別"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "planarObject",
+      "description": "平面多邊形物體與可拖放的無摩擦點接觸。每個接觸在旋轉中心平面畫出 ± 區域，交集顯示可行運動；拖物體嘗試移動時違規會變紅；接觸數足夠且法線配置合適時標示形封閉；「推一下」模式顯示接觸的滾動／滑動／脫離分類。",
+      "controls": [
+       "拖放接觸點於物體邊緣（自動取法線）",
+       "拖物體嘗試移動（違規變紅）",
+       "顯示各接觸的 CoR 可行區與交集",
+       "推一下：給手指速度，顯示接觸模式",
+       "按鈕：自動找最少接觸達形封閉"
+      ],
+      "observe": [
+       "平面至少 4 個接觸才可能形封閉",
+       "三個接觸總留下可逃逸的旋轉中心",
+       "接觸法線全部共點時再多也不閉合",
+       "手指速度不同時同一接觸可在滾動／滑動／脫離間切換"
+      ],
+      "pitfalls": [
+       "一階分析對曲面接觸可能誤判，先用多邊形",
+       "CoR 區域以符號標記（+/−/±）並用交集判斷，避免浮點邊界閃爍",
+       "形封閉判定用線性規劃或正係數檢查，避免只靠數接觸數"
+      ]
+     },
+     "steps": [
+      {
+       "title": "一個接觸能做什麼",
+       "outline": "A frictionless point contact pushes along its normal only; the body may roll, slide or break away but never penetrate.",
+       "simState": "One contact on a polygon; body dragged; normal arrow; penetration flagged red."
+      },
+      {
+       "title": "一階分析：內積的符號",
+       "outline": "Compute F_i^T V for the contact normal wrench and the body twist: zero keeps contact, positive breaks it, negative is impossible.",
+       "simState": "Push mode; finger velocity vs body twist; mode label (rolling / sliding / breaking)."
+      },
+      {
+       "title": "旋轉中心圖法",
+       "outline": "Every planar twist is a rotation about some centre (or a translation); each contact labels regions of the plane with allowed senses.",
+       "simState": "CoR overlay for one contact; ± regions shaded."
+      },
+      {
+       "title": "多個接觸：交集",
+       "outline": "Feasible motions are the intersection of the contacts' allowed regions; shrink it by adding contacts.",
+       "simState": "Several contacts; intersection highlighted; remaining escape rotation shown."
+      },
+      {
+       "title": "形封閉",
+       "outline": "When no twist survives except zero the body is immobilised by geometry alone: four contacts in the plane, seven in space, with well-spread normals.",
+       "simState": "Auto-arrange button; form-closure badge; counterexample with concurrent normals."
+      },
+      {
+       "title": "只推不拉，以及摩擦",
+       "outline": "Unilateral contacts cannot pull; with friction fewer contacts suffice, which is the next lesson's force closure.",
+       "simState": "Pull attempt demo; preview card of friction cones."
+      }
+     ],
+     "keyEquations": [
+      "一階：$\\mathcal F_i^{\\mathsf T}\\mathcal V\\ge0$；$=0$ 滾動／滑動，$>0$ 脫離",
+      "形封閉：$\\{\\mathcal V:\\mathcal F_i^{\\mathsf T}\\mathcal V\\ge0\\ \\forall i\\}=\\{0\\}$",
+      "平面需 $\\ge4$ 個、空間需 $\\ge7$ 個無摩擦點接觸"
+     ],
+     "quizIdeas": [
+      "給一個 L 形物體與三個接觸點，判斷它能往哪個方向轉",
+      "為何形封閉需要的接觸數在空間變為 7？",
+      "設計題：用最少的無摩擦接觸固定一個正方形"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch03-04-screw-motions-wrenches",
+      "ch02-03-constraints-task-space"
+     ]
+    },
+    {
+     "id": "ch12-02-friction-force-closure",
+     "chapter": 12,
+     "order": 2,
+     "title": "摩擦錐與力封閉（friction cone, force closure）",
+     "bookRef": "§12.2",
+     "difficulty": "core",
+     "tags": [
+      "friction cone",
+      "force closure",
+      "duality"
+     ],
+     "summary": "用摩擦係數建構摩擦錐並以邊緣向量近似，判斷兩指抓取是否力封閉（連線落在兩個錐內），並理解力與運動自由度的對偶關係。",
+     "goals": [
+      "由 $\\mu$ 建構摩擦錐，並以邊緣向量近似錐",
+      "判斷兩指抓取是否力封閉（連線在雙錐內），以及多指情況的 wrench 錐張滿檢查",
+      "說明力封閉只保證「存在抵抗力」，不保證施力足夠",
+      "用力與運動自由度的對偶解讀未閉合時剩下的自由運動"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "planarObject",
+      "description": "平面物體上放置帶摩擦的指尖，顯示摩擦錐；程式計算所有接觸 wrench 的正錐是否張滿整個平面 wrench 空間（線性規劃或凸包含原點檢查）。拖 μ 看錐張開，拖指尖看閉合條件；可施加外部擾動 wrench 測試，並疊加上一課的 CoR 圖做對偶解讀。",
+      "controls": [
+       "摩擦係數 μ",
+       "拖放指尖位置與數量",
+       "顯示兩指連線與錐；wrench 空間凸包圖",
+       "施加外部擾動 wrench 測試",
+       "切換 μ=0（回到形封閉）"
+      ],
+      "observe": [
+       "μ 增大錐變寬，更多位置可閉合",
+       "兩指連線落在兩錐內 ⇔ 力封閉",
+       "力封閉但施力不足時物體仍會滑（擾動測試）",
+       "未閉合時剩下的自由運動方向對應無法抵抗的 wrench"
+      ],
+      "pitfalls": [
+       "凸包含原點檢查在退化（共線）情況要特別處理",
+       "力封閉判斷需求解凸錐張滿，用線性規劃或正係數檢查",
+       "邊緣向量近似在 3D 需多邊形錐，本課平面只需兩條邊"
+      ]
+     },
+     "steps": [
+      {
+       "title": "有摩擦的接觸",
+       "outline": "With friction the contact can exert any force inside a cone of half-angle atan μ about the normal.",
+       "simState": "One finger with cone drawn; μ slider widens it."
+      },
+      {
+       "title": "兩指抓取的判據",
+       "outline": "Two frictional fingers achieve force closure iff the line between the contacts lies inside both cones.",
+       "simState": "Two fingers; connecting line; closure badge toggles as fingers move."
+      },
+      {
+       "title": "多指：wrench 錐是否張滿",
+       "outline": "Represent each cone by edge wrenches; force closure means their positive combinations span all wrenches (origin strictly inside the hull).",
+       "simState": "Wrench-space hull plot; origin marker; closure test readout."
+      },
+      {
+       "title": "閉合不等於抓得住",
+       "outline": "Force closure guarantees resisting wrenches exist, not that the fingers supply enough force; apply a disturbance to see slip.",
+       "simState": "Disturbance wrench slider; slip animation with finger force limits."
+      },
+      {
+       "title": "力與運動的對偶",
+       "outline": "Directions the grasp cannot resist are exactly the body's remaining free motions; overlay the CoR map from the previous lesson.",
+       "simState": "Dual overlay: unresisted wrench direction and the corresponding free twist."
+      },
+      {
+       "title": "回顧與下一章",
+       "outline": "Form closure by geometry, force closure by friction; next chapter leaves the arm for wheeled bases.",
+       "simState": "Summary card; preview of an omnidirectional base."
+      }
+     ],
+     "keyEquations": [
+      "摩擦錐：$|f_t|\\le\\mu f_n,\\quad\\alpha=\\tan^{-1}\\mu$",
+      "力封閉（平面）：$\\mathrm{pos}\\{\\mathcal F_1,\\ldots,\\mathcal F_j\\}=\\mathbb R^3$"
+     ],
+     "quizIdeas": [
+      "兩指抓圓盤，什麼位置會失去力封閉？",
+      "給 μ = 0.3，計算兩指在平行面夾持時的允許偏角",
+      "對偶題：若物體仍剩一個自由運動方向，哪類 wrench 無法抵抗？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch12-01-contact-kinematics-form-closure",
+      "ch05-03-statics-force-ellipsoid"
+     ]
+    }
+   ]
+  },
+  {
+   "number": 13,
+   "title": "輪式移動機器人",
+   "titleEn": "Wheeled Mobile Robots",
+   "lessons": [
+    {
+     "id": "ch13-01-omnidirectional-kinematics",
+     "chapter": 13,
+     "order": 1,
+     "title": "全向移動機器人運動學（omniwheel / mecanum）",
+     "bookRef": "§13.1–13.2.1",
+     "difficulty": "core",
+     "tags": [
+      "omnidirectional",
+      "mecanum",
+      "H matrix"
+     ],
+     "summary": "由輪子幾何建立底盤 twist 到輪速的關係 u = H(0)V_b，理解輪速限制如何變成底盤速度的多面體，並比較三輪 omni 與四輪 mecanum。",
+     "goals": [
+      "由每顆輪子的位置、方向與滾子角寫出 $H(0)$ 的一列，建立 $u=H(0)\\mathcal V_b$",
+      "理解 $H$ 是 $m\\times3$（m 顆輪）：三輪恰定、四輪過定，後者有不一致的輪速組合",
+      "把輪速上限映射成底盤速度的多面體，知道全向不等於各方向等速",
+      "把底盤 twist 積分到世界座標 $\\dot q$"
+     ],
+     "simulation": {
+      "kind": "2d",
+      "robotModel": "omniBase",
+      "description": "俯視的三輪 omni 或四輪 mecanum 底盤：以虛擬搖桿給 V_b = (ω, v_x, v_y)，顯示每顆輪子的轉速與滾子方向，旁圖畫出可行速度多面體（輪速上限下的 (v_x, v_y) 切片）；也可反向只驅動一顆輪子看底盤怎麼動。",
+      "controls": [
+       "搖桿設定 V_b；鍵盤駕駛",
+       "切換 omni(3) / mecanum(4)",
+       "輪速上限",
+       "按鈕：單一輪子驅動",
+       "顯示 H 矩陣與每列的幾何標註"
+      ],
+      "observe": [
+       "側向移動時 mecanum 輪子對角成對同向",
+       "可行速度集合是多面體，不是圓",
+       "四輪 mecanum 有一個輪速組合不產生運動（打滑／內耗）",
+       "把滾子角都設成 0 會退化成無法側移的車"
+      ],
+      "pitfalls": [
+       "H 的每列要含滾子角 γ 與輪向 β，常見符號錯誤；提供與手算對照的數值",
+       "搖桿輸入映射到 V_b 要夾制在多面體內並提示",
+       "軌跡積分用 exp 於 SE(2)"
+      ]
+     },
+     "steps": [
+      {
+       "title": "全向底盤能做什麼",
+       "outline": "Drive sideways, spin in place, or both at once: an omnidirectional base has three chassis freedoms.",
+       "simState": "Joystick control; trail drawn; wheel speed bars."
+      },
+      {
+       "title": "一顆輪子的一列",
+       "outline": "For wheel i at (x_i, y_i) with orientation β_i and roller angle γ_i, the driving speed is a linear function of the chassis twist: one row of H.",
+       "simState": "Single wheel highlighted; its H row annotated with the geometric terms."
+      },
+      {
+       "title": "u = H(0) V_b",
+       "outline": "Stack the rows: three wheels give a square H, four give 4×3. Wheel speeds follow from any desired chassis twist.",
+       "simState": "Full H matrix view; V_b → u computation live."
+      },
+      {
+       "title": "輪速上限 → 速度多面體",
+       "outline": "Bounded wheel speeds map to a polytope of achievable chassis velocities; the fastest direction is not always forward.",
+       "simState": "Polytope plot; joystick clamps to it."
+      },
+      {
+       "title": "四輪的不一致",
+       "outline": "With four wheels some wheel-speed combinations correspond to no chassis motion; they only cause slip and wear.",
+       "simState": "Mecanum; null-space combination button; slip indicator."
+      },
+      {
+       "title": "積分到世界座標，與下一課",
+       "outline": "q̇ = R(φ)-rotated V_b; integrate to move on the map. Next: bases that cannot move sideways.",
+       "simState": "World-frame integration shown with heading; preview card of a differential-drive robot."
+      }
+     ],
+     "keyEquations": [
+      "$u=H(0)\\mathcal V_b,\\quad h_i(0)=\\tfrac1{r_i\\cos\\gamma_i}\\begin{bmatrix}x_i\\sin(\\beta_i+\\gamma_i)-y_i\\cos(\\beta_i+\\gamma_i)\\\\\\cos(\\beta_i+\\gamma_i)\\\\\\sin(\\beta_i+\\gamma_i)\\end{bmatrix}^{\\mathsf T}$",
+      "$\\dot q=\\begin{bmatrix}1&0&0\\\\0&\\cos\\phi&-\\sin\\phi\\\\0&\\sin\\phi&\\cos\\phi\\end{bmatrix}\\mathcal V_b$"
+     ],
+     "quizIdeas": [
+      "把 mecanum 的滾子角都設成 0 會變成什麼車？",
+      "要讓 mecanum 原地旋轉，四輪速度的符號如何？",
+      "為何 4 輪 mecanum 的 H 是 4×3？這意味著什麼？"
+     ],
+     "estMinutes": 30,
+     "dependsOn": [
+      "ch02-03-constraints-task-space",
+      "ch03-03-transforms-twists"
+     ]
+    },
+    {
+     "id": "ch13-02-nonholonomic-odometry",
+     "chapter": 13,
+     "order": 2,
+     "title": "非完整機器人：差速、車型與里程計（nonholonomic, odometry）",
+     "bookRef": "§13.3.1–13.3.2, 13.4",
+     "difficulty": "core",
+     "tags": [
+      "unicycle",
+      "differential drive",
+      "car-like",
+      "odometry"
+     ],
+     "summary": "寫出單輪車、差速與車型機器人的控制系統 q̇ = G(q)u，用 Lie bracket 的直覺理解側滑方向為何仍可達（可控性），並由輪子編碼器積分里程計觀察漂移。",
+     "goals": [
+      "寫出 unicycle、差速、車型的 $\\dot q=G(q)u$，並指出各自的輸入限制（最小轉彎半徑）",
+      "用四段運動序列（Lie bracket 直覺）解釋為何側向方向雖不能瞬時移動卻可達",
+      "由輪子編碼器增量積分里程計（用 SE(2) 的 exp），並觀察漂移如何累積",
+      "說明角度誤差如何放大位置誤差"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "diffDrive",
+      "description": "俯視地圖，鍵盤駕駛差速或車型機器人；真實軌跡與里程計估計軌跡並列，輪子加入滑移雜訊，曲線圖顯示位置與角度誤差隨距離累積。「停車挑戰」要求側向移動 1 m；「Lie bracket」按鈕自動示範四段序列。",
+      "controls": [
+       "模型：unicycle / diff-drive / car",
+       "速度與轉向限制（車型最小轉彎半徑）",
+       "輪子滑移雜訊強度",
+       "按鈕：重置里程計、播放四段序列、停車挑戰",
+       "顯示 G(q) 與目前輸入"
+      ],
+      "observe": [
+       "車型無法原地轉，差速可以",
+       "來回前進轉向的四段序列產生淨側移",
+       "里程計誤差隨距離累積，角度誤差放大位置誤差",
+       "兩輪半徑略有差異時里程計沿一個方向彎曲"
+      ],
+      "pitfalls": [
+       "里程計用 body twist 的 exp 積分，不是把 Δθ 直接加到 x, y",
+       "雜訊用固定種子的 PRNG 便於重現",
+       "鍵盤監聽在 destroy 時移除"
+      ]
+     },
+     "steps": [
+      {
+       "title": "三種底盤，一種限制",
+       "outline": "Unicycle, differential drive and car all forbid sideways velocity; the car additionally limits its steering angle.",
+       "simState": "Model switch; forbidden-direction arrow; min-turning-radius circle for the car."
+      },
+      {
+       "title": "q̇ = G(q) u",
+       "outline": "Each model is a drift-free control system with two inputs; write G(q) and read off how inputs map to heading and position rates.",
+       "simState": "G(q) matrix view updating with φ; input readouts."
+      },
+      {
+       "title": "側向可達：四段序列",
+       "outline": "Forward, turn, back, turn-back produces net sideways motion; this is the geometric meaning of the Lie bracket of the two input fields.",
+       "simState": "Auto-play four-move sequence; net displacement vector drawn."
+      },
+      {
+       "title": "停車挑戰",
+       "outline": "Move 1 m sideways with the car model; feel the minimum turning radius constraint.",
+       "simState": "Challenge mode with target pose and success check."
+      },
+      {
+       "title": "里程計",
+       "outline": "From wheel encoder increments compute the body twist over Δt and integrate with the SE(2) exponential; compare with the true pose.",
+       "simState": "Estimated vs true trails; per-step update formula shown."
+      },
+      {
+       "title": "漂移與下一課",
+       "outline": "Slip noise and unequal wheel radii make odometry drift, and heading error grows position error with distance. Next: feedback to follow a reference trajectory.",
+       "simState": "Noise slider; error plots; preview card of a reference path."
+      }
+     ],
+     "keyEquations": [
+      "Unicycle：$\\dot q=\\begin{bmatrix}\\dot\\phi\\\\\\dot x\\\\\\dot y\\end{bmatrix}=\\begin{bmatrix}0&1\\\\\\cos\\phi&0\\\\\\sin\\phi&0\\end{bmatrix}\\begin{bmatrix}v\\\\\\omega\\end{bmatrix}$",
+      "差速：$v=\\tfrac r2(u_L+u_R),\\quad\\omega=\\tfrac r{2d}(u_R-u_L)$",
+      "里程計：$T_{k+1}=T_k\\exp([\\mathcal V_b]\\Delta t)$"
+     ],
+     "quizIdeas": [
+      "車型機器人要在窄巷把車頭轉 180°，至少需要幾段運動？",
+      "兩輪半徑略有差異，里程計會產生什麼形狀的誤差？",
+      "為何差速機器人的里程計更新用 exp，而不是直接加 v·Δt·(cos φ, sin φ)？"
+     ],
+     "estMinutes": 35,
+     "dependsOn": [
+      "ch13-01-omnidirectional-kinematics"
+     ]
+    },
+    {
+     "id": "ch13-03-tracking-mobile-manipulation",
+     "chapter": 13,
+     "order": 3,
+     "title": "軌跡追蹤回授控制與移動操作（trajectory tracking, mobile manipulation）",
+     "bookRef": "§13.2.3, 13.3.3–13.3.4, 13.5",
+     "difficulty": "advanced",
+     "tags": [
+      "tracking control",
+      "feedforward",
+      "mobile manipulation"
+     ],
+     "summary": "理解為何直線插值對車型機器人不可行而需要可行參考軌跡，設計前饋＋回授的追蹤控制律並觀察收斂，最後把底盤與手臂合併成移動操作的 Jacobian。",
+     "goals": [
+      "說明可行參考軌跡的必要性（直線插值對非完整底盤不可行）",
+      "設計以機器人座標定義誤差的前饋＋回授控制律，並觀察增益對收斂與振盪的影響",
+      "對全向底盤用 twist 誤差的回授（含積分）追蹤參考",
+      "把底盤與手臂的貢獻合併成移動操作 Jacobian $J_e=[J_{\\rm base}\\ J_{\\rm arm}]$ 並利用冗餘"
+     ],
+     "simulation": {
+      "kind": "mixed",
+      "robotModel": "diffDriveArm",
+      "description": "差速（或全向）機器人追蹤參考軌跡（虛線），可加初始誤差與擾動，曲線顯示機器人座標下的 (φ_e, x_e, y_e)；第二頁：底盤＋2R 手臂讓末端沿直線走，顯示 J_base 與 J_arm 的貢獻，並可選擇冗餘解法讓手臂遠離奇異。",
+      "controls": [
+       "追蹤增益 k₁, k₂, k₃；前饋開關",
+       "初始誤差與擾動",
+       "參考軌跡：圓／S 彎／停車",
+       "切換差速／全向底盤",
+       "移動操作頁：冗餘解法選單（最小範數／偏好手臂居中）"
+      ],
+      "observe": [
+       "純前饋無法修正初始誤差；純回授追不上快軌跡",
+       "增益太大引發側向振盪；角度誤差要包裹",
+       "全向底盤的 twist 回授加積分可消除穩態誤差",
+       "移動操作時底盤緩慢移動補償手臂可達範圍"
+      ],
+      "pitfalls": [
+       "誤差要在機器人座標系定義，世界座標 PID 會失效",
+       "參考軌跡必須可行（由同一模型產生），否則追蹤律不成立",
+       "移動操作的 J_base 用 Ad 轉到末端座標"
+      ]
+     },
+     "steps": [
+      {
+       "title": "參考軌跡要可行",
+       "outline": "A nonholonomic base cannot follow an arbitrary curve; the reference must come from the same model (e.g., arcs for a car).",
+       "simState": "Infeasible straight-sideways reference flagged; feasible references listed."
+      },
+      {
+       "title": "只有前饋會怎樣",
+       "outline": "Replaying the reference inputs reproduces the path only from the exact start; any initial error persists or grows.",
+       "simState": "Feedforward only; initial offset; divergence visible."
+      },
+      {
+       "title": "在機器人座標定義誤差",
+       "outline": "Express the pose error in the robot frame (φ_e, x_e, y_e) so the control law is independent of heading.",
+       "simState": "Error frame drawn on the robot; error plots."
+      },
+      {
+       "title": "前饋＋回授的追蹤律",
+       "outline": "v = v_d cos φ_e + k₁ x_e, ω = ω_d + v_d(k₂ y_e + k₃ sin φ_e): converges for v_d ≠ 0; tune gains and watch oscillation.",
+       "simState": "Full controller; gain sliders; convergence from offset."
+      },
+      {
+       "title": "全向底盤的追蹤",
+       "outline": "For an omnidirectional base use twist feedback with proportional and integral terms; integral action removes steady-state bias.",
+       "simState": "Omni mode; K_p, K_i sliders; bias disturbance."
+      },
+      {
+       "title": "移動操作：底盤加手臂",
+       "outline": "Stack base and arm columns into one Jacobian for the end-effector twist; the extra freedoms let the base keep the arm away from singularities.",
+       "simState": "Mobile manipulation page; J_base and J_arm contributions; redundancy resolution selector."
+      },
+      {
+       "title": "課程總結",
+       "outline": "From configuration space to a mobile manipulator: every chapter's tool reappears here. Revisit the course map to find weak spots.",
+       "simState": "Summary card linking back to earlier lessons by id."
+      }
+     ],
+     "keyEquations": [
+      "誤差（機器人座標）：$q_e=(\\phi_e,x_e,y_e)$",
+      "$(v,\\omega)=\\big(v_d\\cos\\phi_e+k_1x_e,\\ \\omega_d+v_d(k_2y_e+k_3\\sin\\phi_e)\\big)$",
+      "移動操作：$\\mathcal V_e=J_e(\\theta)\\begin{bmatrix}u\\\\\\dot\\theta\\end{bmatrix}=[J_{\\rm base}\\ J_{\\rm arm}]\\begin{bmatrix}u\\\\\\dot\\theta\\end{bmatrix}$"
+     ],
+     "quizIdeas": [
+      "參考軌跡要求原地側移，差速機器人的追蹤控制會怎樣？",
+      "v_d = 0 時上述控制律還能修正 y_e 嗎？為何？",
+      "移動操作中底盤＋手臂冗餘，應如何分配使手臂遠離奇異？"
+     ],
+     "estMinutes": 40,
+     "dependsOn": [
+      "ch13-02-nonholonomic-odometry",
+      "ch11-01-error-dynamics-pid",
+      "ch05-01-jacobian-geometry"
+     ]
+    }
+   ]
+  }
+ ],
+ "sharedComponents": [
+  {
+   "name": "planarArmRenderer",
+   "status": "exists",
+   "where": "@/ui robot2d: drawPlanarArm / planarArmPoints / drawTrail",
+   "purpose": "平面 2R/3R 手臂繪製（座標系、角度弧、半透明 ghost、尾跡）",
+   "usedBy": [
+    "ch02-02",
+    "ch05-01",
+    "ch05-02",
+    "ch05-03",
+    "ch06-01",
+    "ch06-02",
+    "ch08-01",
+    "ch08-03",
+    "ch08-04",
+    "ch09-02",
+    "ch09-03",
+    "ch10-01",
+    "ch11-02",
+    "ch11-03",
+    "ch11-04",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "frameTriad",
+   "status": "exists",
+   "where": "Canvas2D.frame / Scene3D.addFrame(...).setTransform",
+   "purpose": "2D/3D 座標系三軸（含標籤、可調大小）",
+   "usedBy": [
+    "ch02-03",
+    "ch03-01",
+    "ch03-02",
+    "ch03-03",
+    "ch03-04",
+    "ch04-01",
+    "ch04-02",
+    "ch13-01",
+    "ch13-02"
+   ]
+  },
+  {
+   "name": "robot3dStick",
+   "status": "exists",
+   "where": "@/ui robot3d: Robot3D / homeJointPoints",
+   "purpose": "任意 PoE 鏈的 3D 桿狀機器人（關節座標系、透明度）",
+   "usedBy": [
+    "ch04-01",
+    "ch04-02",
+    "ch05-01",
+    "ch08-02",
+    "ch09-02"
+   ]
+  },
+  {
+   "name": "screwAxisGizmo",
+   "status": "exists",
+   "where": "Scene3D.addScrewAxis(...).setScrew",
+   "purpose": "3D 螺旋軸（方向、通過點、節距標示）",
+   "usedBy": [
+    "ch03-03",
+    "ch03-04",
+    "ch04-01",
+    "ch05-01",
+    "ch09-02"
+   ]
+  },
+  {
+   "name": "matrixViewHighlight",
+   "status": "exists",
+   "where": "@/ui controls: matrixView(...).set(M,{highlightCols})",
+   "purpose": "矩陣面板與欄／區塊高亮",
+   "usedBy": [
+    "ch03-01",
+    "ch03-02",
+    "ch03-03",
+    "ch03-04",
+    "ch04-01",
+    "ch04-02",
+    "ch05-01",
+    "ch07-02",
+    "ch13-01",
+    "ch13-02"
+   ]
+  },
+  {
+   "name": "ellipseDrawer",
+   "status": "exists",
+   "where": "@/ui robot2d: drawEllipse2x2 / eig2x2Sym",
+   "purpose": "由 2×2 對稱矩陣畫橢圓（速度／力／質量橢圓，inverse 選項）",
+   "usedBy": [
+    "ch05-02",
+    "ch05-03",
+    "ch07-02",
+    "ch08-01"
+   ]
+  },
+  {
+   "name": "playbackScrubber",
+   "status": "exists",
+   "where": "@/ui controls: playback / createLoop",
+   "purpose": "播放、暫停、速度、拖曳時間",
+   "usedBy": [
+    "ch03-02",
+    "ch03-04",
+    "ch08-02",
+    "ch09-01",
+    "ch09-02",
+    "ch09-03",
+    "ch09-04"
+   ]
+  },
+  {
+   "name": "syncedPlots",
+   "status": "new",
+   "where": "建議 src/ui/plotGroup.ts",
+   "purpose": "多張 Plot2D 共享 x 範圍與時間游標（s/ṡ/s̈、θ/τ/誤差疊圖）",
+   "usedBy": [
+    "ch08-02",
+    "ch09-01",
+    "ch09-03",
+    "ch11-01",
+    "ch11-02",
+    "ch11-03",
+    "ch11-04",
+    "ch13-02",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "physicsRunner",
+   "status": "new",
+   "where": "建議 src/ui/physicsRunner.ts（包 createLoop + substep + mr.rk4Step）",
+   "purpose": "固定子步 RK4 積分器、能量讀值、爆走保護與重置",
+   "usedBy": [
+    "ch02-03",
+    "ch08-01",
+    "ch08-03",
+    "ch08-04",
+    "ch11-01",
+    "ch11-02",
+    "ch11-03",
+    "ch11-04",
+    "ch13-02",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "gainPanel",
+   "status": "new",
+   "where": "建議 src/ui/gainPanel.ts（配 mr.createPID / pidStep）",
+   "purpose": "K_p/K_i/K_d（或 M/B/K）滑桿組、飽和與抗飽和開關、特徵根小圖",
+   "usedBy": [
+    "ch11-01",
+    "ch11-02",
+    "ch11-03",
+    "ch11-04",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "jointSliderBank",
+   "status": "new",
+   "where": "建議 src/ui/jointSliders.ts",
+   "purpose": "依機器人模型自動產生 n 個 angleSlider，含預設姿態、單關節脈衝與隨機按鈕",
+   "usedBy": [
+    "ch04-01",
+    "ch04-02",
+    "ch05-01",
+    "ch05-02",
+    "ch05-03",
+    "ch08-02",
+    "ch09-02"
+   ]
+  },
+  {
+   "name": "algorithmStepper",
+   "status": "new",
+   "where": "建議 src/ui/stepper.ts",
+   "purpose": "單步／自動／重置／速度與迭代計數，給迭代式演算法（Newton IK、A*、RRT、NE 遞迴、相平面積分）",
+   "usedBy": [
+    "ch06-02",
+    "ch08-02",
+    "ch09-04",
+    "ch10-02",
+    "ch10-03"
+   ]
+  },
+  {
+   "name": "torusMap",
+   "status": "new",
+   "where": "建議 src/ui/torusMap.ts",
+   "purpose": "(θ₁,θ₂) 方格的 wrap-aware 繪圖：可拖點、畫路徑、柵格覆蓋、邊界黏合提示",
+   "usedBy": [
+    "ch02-02",
+    "ch10-01",
+    "ch10-03"
+   ]
+  },
+  {
+   "name": "rasterLayer",
+   "status": "new",
+   "where": "建議 src/ui/raster.ts",
+   "purpose": "離屏柵格化一個 2D 謂詞／純量場並快取成熱圖（C-obstacle、σ_min、位能場）",
+   "usedBy": [
+    "ch05-02",
+    "ch10-01",
+    "ch10-04"
+   ]
+  },
+  {
+   "name": "collision2D",
+   "status": "new",
+   "where": "建議 src/mr/geometry2d.ts（純函式＋測試）",
+   "purpose": "線段—圓、圓—圓、點—多邊形、線段取樣碰撞與最短距離",
+   "usedBy": [
+    "ch09-02",
+    "ch10-01",
+    "ch10-02",
+    "ch10-03"
+   ]
+  },
+  {
+   "name": "gridMapEditor",
+   "status": "new",
+   "where": "建議 src/ui/gridMap.ts",
+   "purpose": "塗抹障礙、設定起終點、解析度與連通性；輸出占據格",
+   "usedBy": [
+    "ch10-02",
+    "ch10-03",
+    "ch10-04"
+   ]
+  },
+  {
+   "name": "draggablePose2D",
+   "status": "new",
+   "where": "建議 src/ui/poseHandle.ts",
+   "purpose": "SE(2) 手把（位置＋朝向旋鈕），用於目標位姿",
+   "usedBy": [
+    "ch02-03",
+    "ch06-02",
+    "ch09-02",
+    "ch13-02",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "wheeledBaseRenderer",
+   "status": "new",
+   "where": "建議 src/ui/wheeledBase.ts",
+   "purpose": "俯視底盤（unicycle / diff / car / omni / mecanum）、輪速指示、尾跡、{s}/{b}",
+   "usedBy": [
+    "ch02-03",
+    "ch13-01",
+    "ch13-02",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "keyboardDrive",
+   "status": "new",
+   "where": "建議 src/ui/keyboard.ts",
+   "purpose": "WASD／方向鍵輸入（含 destroy 清理與焦點處理）",
+   "usedBy": [
+    "ch02-03",
+    "ch13-01",
+    "ch13-02",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "contactPolygonEditor",
+   "status": "new",
+   "where": "建議 src/lessons/ch12-*/shared 或 src/ui/contacts.ts",
+   "purpose": "多邊形物體、貼邊接觸點與法線、摩擦錐、旋轉中心區域、wrench 空間凸包",
+   "usedBy": [
+    "ch12-01",
+    "ch12-02"
+   ]
+  },
+  {
+   "name": "wallContactModel",
+   "status": "new",
+   "where": "建議 src/mr/contact.ts（純函式＋測試）",
+   "purpose": "單邊彈簧—阻尼接觸（桌面／牆），支援子步與延遲",
+   "usedBy": [
+    "ch11-03",
+    "ch11-04"
+   ]
+  },
+  {
+   "name": "torqueBars",
+   "status": "new",
+   "where": "建議 src/ui/bars.ts",
+   "purpose": "每關節帶符號、可夾制的力矩條／弧；亦用於能量條（K/U/總能）",
+   "usedBy": [
+    "ch05-03",
+    "ch08-01",
+    "ch08-02",
+    "ch08-03",
+    "ch08-04",
+    "ch11-02"
+   ]
+  },
+  {
+   "name": "presetChips",
+   "status": "new",
+   "where": "建議 src/ui/presets.ts",
+   "purpose": "一排預設按鈕，可由 onStep 觸發，顯示目前啟用的預設",
+   "usedBy": [
+    "ch02-01",
+    "ch03-02",
+    "ch04-01",
+    "ch05-02",
+    "ch07-02",
+    "ch09-02",
+    "ch10-03",
+    "ch13-03"
+   ]
+  },
+  {
+   "name": "galleryCard",
+   "status": "new",
+   "where": "建議 src/ui/card.ts",
+   "purpose": "小型原創示意卡（inline SVG＋說明），用於「下一課預告」與概念對照",
+   "usedBy": [
+    "ch02-02",
+    "ch02-03",
+    "ch06-01",
+    "ch07-01",
+    "ch10-02",
+    "ch10-04",
+    "ch11-01",
+    "ch12-02",
+    "ch13-01"
+   ]
+  },
+  {
+   "name": "linkageSolver",
+   "status": "new (lesson-local)",
+   "where": "src/lessons/ch02-01-dof-grubler/linkage.ts",
+   "purpose": "平面連桿迴路閉合求解（小步＋warm start）與 Grübler 計數",
+   "usedBy": [
+    "ch02-01"
+   ]
+  },
+  {
+   "name": "fiveBarKinematics",
+   "status": "new (chapter-local)",
+   "where": "src/lessons/ch07-01-five-bar-ik-fk/fivebar.ts（ch07-02 複製或共享）",
+   "purpose": "五連桿 IK（兩個 2R）、FK（兩圓交點）、約束 Jacobian H_a/H_p",
+   "usedBy": [
+    "ch07-01",
+    "ch07-02"
+   ]
+  }
+ ]
+}

@@ -2,9 +2,10 @@
  * Trajectory generation (book chapter 9): time scalings s(t) in [0, 1] and
  * point-to-point paths in joint space and in SE(3).
  *
- * Time-scaling functions take `(Tf, t)` in that order, as the book's code
- * does; `t` outside [0, Tf] is clamped so that samples before the start or
- * after the end stay at rest.
+ * Every time-scaling function takes `(Tf, t)` in that order, as the book's
+ * code does (this includes `TrapezoidalTimeScaling(Tf, t, spec)`); `t` outside
+ * [0, Tf] is clamped so that samples before the start or after the end stay at
+ * rest. Point-to-point paths need N >= 2 samples and throw otherwise.
  */
 
 import { type Mat, type Vec, clamp, matMul, matScale, vecAdd, vecScale, vecSub } from './linalg';
@@ -69,6 +70,9 @@ export interface TrapezoidParams {
   reason?: string;
 }
 
+/** Tolerance for accepting inputs that sit on a feasibility boundary up to rounding. */
+const TRAPEZOID_TOL = 1e-12;
+
 /**
  * Completes and validates a trapezoidal (constant-acceleration) profile from
  * any two of {Tf, v, a}. The constraints are
@@ -76,42 +80,92 @@ export interface TrapezoidParams {
  * which for (Tf, v) read 1 < v Tf <= 2 and for (Tf, a) read a Tf^2 >= 4.
  * Invalid combinations are returned with `valid: false` instead of throwing so
  * that a UI can explain the problem.
+ *
+ * Inputs within 1e-12 of the triangular limit (v Tf = 2, a Tf^2 = 4, v^2 = a)
+ * are accepted and snapped onto it, so a `valid` result always describes an
+ * exactly feasible profile: finite numbers and a cruise phase of duration
+ * Tf - 2 tAccel >= 0 (up to rounding).
  */
 export function trapezoidParams(spec: { Tf?: number; v?: number; a?: number }): TrapezoidParams {
+  const invalid = (reason: string): TrapezoidParams => ({
+    Tf: spec.Tf ?? NaN,
+    v: spec.v ?? NaN,
+    a: spec.a ?? NaN,
+    tAccel: NaN,
+    valid: false,
+    reason,
+  });
   const given = [spec.Tf, spec.v, spec.a].filter((x) => x !== undefined).length;
-  if (given !== 2) {
-    return { Tf: NaN, v: NaN, a: NaN, tAccel: NaN, valid: false, reason: 'exactly two of Tf, v, a must be given' };
-  }
+  if (given !== 2) return invalid('exactly two of Tf, v, a must be given');
   let { Tf, v, a } = spec;
-  let reason: string | undefined;
   if (Tf !== undefined && v !== undefined) {
-    if (!(Tf > 0 && v > 0)) reason = 'Tf and v must be positive';
-    else if (v * Tf <= 1) reason = `v Tf = ${(v * Tf).toFixed(3)} must exceed 1 (otherwise the motion cannot complete)`;
-    else if (v * Tf > 2 + 1e-12) reason = `v Tf = ${(v * Tf).toFixed(3)} must not exceed 2 (the profile would need to overshoot)`;
-    a = reason ? NaN : (v * v) / (v * Tf - 1);
+    if (!(Tf > 0 && v > 0)) return invalid('Tf and v must be positive');
+    if (v * Tf <= 1) return invalid(`v Tf = ${(v * Tf).toFixed(3)} must exceed 1 (otherwise the motion cannot complete)`);
+    if (v * Tf > 2 + TRAPEZOID_TOL) return invalid(`v Tf = ${(v * Tf).toFixed(3)} must not exceed 2 (the profile would need to overshoot)`);
+    if (v * Tf > 2) v = 2 / Tf; // just past the triangular limit by rounding: snap onto it
+    a = (v * v) / (v * Tf - 1);
   } else if (Tf !== undefined && a !== undefined) {
-    if (!(Tf > 0 && a > 0)) reason = 'Tf and a must be positive';
-    else if (a * Tf * Tf < 4 - 1e-12) reason = `a Tf^2 = ${(a * Tf * Tf).toFixed(3)} must be at least 4 (too slow to arrive in time)`;
-    v = reason ? NaN : 0.5 * (a * Tf - Math.sqrt(a * a * Tf * Tf - 4 * a));
+    if (!(Tf > 0 && a > 0)) return invalid('Tf and a must be positive');
+    if (a * Tf * Tf < 4 - TRAPEZOID_TOL) return invalid(`a Tf^2 = ${(a * Tf * Tf).toFixed(3)} must be at least 4 (too slow to arrive in time)`);
+    if (a * Tf * Tf <= 4) {
+      // On the triangular limit (or just below it by rounding): snap onto it. The
+      // square root below has an infinite slope here, so it must not be evaluated.
+      a = 4 / (Tf * Tf);
+      v = 2 / Tf;
+    } else {
+      // v is the smaller root of v^2 - a Tf v + a = 0 (the one with v Tf < 2),
+      // written in the cancellation-free form 2 / (Tf + sqrt(Tf^2 - 4/a)); the
+      // clamp guards the discriminant against rounding right above the limit.
+      v = 2 / (Tf + Math.sqrt(Math.max(0, Tf * Tf - 4 / a)));
+    }
   } else if (v !== undefined && a !== undefined) {
-    if (!(v > 0 && a > 0)) reason = 'v and a must be positive';
-    else if (v * v > a * (1 + 1e-12)) reason = `v^2 / a = ${((v * v) / a).toFixed(3)} must not exceed 1 (v is never reached)`;
-    Tf = reason ? NaN : (a + v * v) / (v * a);
+    if (!(v > 0 && a > 0)) return invalid('v and a must be positive');
+    if (v * v > a * (1 + TRAPEZOID_TOL)) return invalid(`v^2 / a = ${((v * v) / a).toFixed(3)} must not exceed 1 (v is never reached)`);
+    if (v * v > a) a = v * v; // just past the triangular limit by rounding: snap onto it
+    Tf = 1 / v + v / a;
   }
-  if (reason) return { Tf: Tf ?? NaN, v: v ?? NaN, a: a ?? NaN, tAccel: NaN, valid: false, reason };
-  return { Tf: Tf as number, v: v as number, a: a as number, tAccel: (v as number) / (a as number), valid: true };
+  const tAccel = (v as number) / (a as number);
+  // Last line of defence: a profile is only `valid` when every number in it is finite.
+  if (![Tf, v, a, tAccel].every((x) => Number.isFinite(x))) {
+    return invalid('the profile could not be completed with finite numbers');
+  }
+  return { Tf: Tf as number, v: v as number, a: a as number, tAccel, valid: true };
 }
+
+/** The parameter of a trapezoid that is not fixed by its duration: cruise velocity or acceleration. */
+export type TrapezoidSpec = { v: number } | { a: number };
 
 /**
  * Trapezoidal time scaling s(t), sdot(t), sddot(t) for a motion of duration
  * `Tf` with either the cruise velocity `v` or the acceleration `a` given.
- * Throws when the parameters are infeasible (check with `trapezoidParams`
- * first in interactive code).
+ * The argument order is `(Tf, t, spec)`, the same `(Tf, t)` convention as the
+ * polynomial scalings and the custom `TimeScalingMethod` callbacks. Throws
+ * when the parameters are infeasible (check with `trapezoidParams` first in
+ * interactive code).
  */
-export function TrapezoidalTimeScaling(t: number, Tf: number, spec: { v: number } | { a: number }): TimeScalingSample {
+export function TrapezoidalTimeScaling(Tf: number, t: number, spec: TrapezoidSpec): TimeScalingSample {
   const P = trapezoidParams({ Tf, ...spec });
   if (!P.valid) throw new Error(`TrapezoidalTimeScaling: ${P.reason}`);
   return trapezoidSample(t, P);
+}
+
+/**
+ * Packages a trapezoid specification as a `TimeScalingMethod`, so that it can
+ * be handed to JointTrajectory / ScrewTrajectory / CartesianTrajectory in
+ * place of 3 or 5. The profile is completed for whatever `Tf` the path uses
+ * and, like TrapezoidalTimeScaling, throws when that combination is
+ * infeasible.
+ */
+export function trapezoidScaling(spec: TrapezoidSpec): (Tf: number, t: number) => number {
+  let cached: TrapezoidParams | undefined;
+  return (Tf, t) => {
+    if (!cached || cached.Tf !== Tf) {
+      const P = trapezoidParams({ Tf, ...spec });
+      if (!P.valid) throw new Error(`trapezoidScaling: ${P.reason}`);
+      cached = P;
+    }
+    return trapezoidSample(t, cached).s;
+  };
 }
 
 /** Evaluates a validated trapezoid profile at time t. */
@@ -137,11 +191,17 @@ function scaling(method: TimeScalingMethod): (Tf: number, t: number) => number {
   return method;
 }
 
+/** Point-to-point paths divide Tf into N - 1 steps, so fewer than two samples is an error (not NaN). */
+function checkSampleCount(fn: string, N: number): void {
+  if (!(Number.isInteger(N) && N >= 2)) throw new Error(`${fn}: N must be an integer >= 2 (got ${N})`);
+}
+
 /**
  * Straight line in joint space from `thetastart` to `thetaend` sampled at N
  * points (N >= 2) that are equally spaced in time; returns N joint vectors.
  */
 export function JointTrajectory(thetastart: Vec, thetaend: Vec, Tf: number, N: number, method: TimeScalingMethod): Vec[] {
+  checkSampleCount('JointTrajectory', N);
   const s = scaling(method);
   const out: Vec[] = [];
   const delta = vecSub(thetaend, thetastart);
@@ -158,6 +218,7 @@ export function JointTrajectory(thetastart: Vec, thetaend: Vec, Tf: number, N: n
  * along a straight line.
  */
 export function ScrewTrajectory(Xstart: Mat, Xend: Mat, Tf: number, N: number, method: TimeScalingMethod): Mat[] {
+  checkSampleCount('ScrewTrajectory', N);
   const s = scaling(method);
   const logRel = MatrixLog6(matMul(TransInv(Xstart), Xend));
   const out: Mat[] = [];
@@ -173,6 +234,7 @@ export function ScrewTrajectory(Xstart: Mat, Xend: Mat, Tf: number, N: number, m
  * the orientation follows the rotation geodesic R(s) = Rs exp(log(Rs^T Re) s).
  */
 export function CartesianTrajectory(Xstart: Mat, Xend: Mat, Tf: number, N: number, method: TimeScalingMethod): Mat[] {
+  checkSampleCount('CartesianTrajectory', N);
   const s = scaling(method);
   const [Rs, ps] = TransToRp(Xstart);
   const [Re, pe] = TransToRp(Xend);
