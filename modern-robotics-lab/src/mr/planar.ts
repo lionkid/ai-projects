@@ -129,6 +129,49 @@ export function planarJacobian(linkLengths: number[], thetas: Vec): Mat {
   return J;
 }
 
+/**
+ * The book's planar SPACE Jacobian J_s (3 x n, rows [omega_z; v_x; v_y]). Column i is the planar
+ * twist of revolute joint i expressed in {s}: (1, y_i, -x_i), where (x_i, y_i) is the current
+ * position of joint i. Its linear part is the velocity of the body point that is momentarily at
+ * the origin of {s}, NOT the tip velocity; the tip velocity is v_s + omega x p_tip, which is
+ * what `planarJacobian` returns. Equals rows [2, 3, 4] of `JacobianSpace` for `buildPlanarChain`.
+ */
+export function planarSpaceJacobian(linkLengths: number[], thetas: Vec): Mat {
+  const { joints } = planarFK(linkLengths, thetas);
+  const n = linkLengths.length;
+  const J = zeros(3, n);
+  for (let i = 0; i < n; i++) {
+    J[0][i] = 1;
+    J[1][i] = joints[i][1];
+    J[2][i] = -joints[i][0];
+  }
+  return J;
+}
+
+/**
+ * The book's planar BODY Jacobian J_b (3 x n, rows [omega_z; v_x; v_y]) in the tip frame {b}
+ * (x_b along the last link). Column i is (1, b_i, -a_i), where (a_i, b_i) = R^T (q_i - p_tip) is
+ * the position of joint i seen from {b}. Equals rows [2, 3, 4] of `JacobianBody` for
+ * `buildPlanarChain`, and J_s = [Ad_{T_sb}] J_b.
+ */
+export function planarBodyJacobian(linkLengths: number[], thetas: Vec): Mat {
+  const fk = planarFK(linkLengths, thetas);
+  const n = linkLengths.length;
+  const c = Math.cos(fk.phi);
+  const s = Math.sin(fk.phi);
+  const J = zeros(3, n);
+  for (let i = 0; i < n; i++) {
+    const dx = fk.joints[i][0] - fk.tip[0];
+    const dy = fk.joints[i][1] - fk.tip[1];
+    const a = c * dx + s * dy;
+    const b = -s * dx + c * dy;
+    J[0][i] = 1;
+    J[1][i] = b;
+    J[2][i] = -a;
+  }
+  return J;
+}
+
 /** The 2 x n position rows [v_x; v_y] of `planarJacobian` (used for manipulability ellipses). */
 export function planarTipJacobian(linkLengths: number[], thetas: Vec): Mat {
   const J = planarJacobian(linkLengths, thetas);

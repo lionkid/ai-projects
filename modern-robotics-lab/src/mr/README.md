@@ -115,10 +115,14 @@ and derivative-on-measurement.
 
 ### `planar.ts`
 `rot2, trans2, se2, transInv2, transformPoint2, planarFK, planarJacobian,
-planarTipJacobian, planar2RIK, planar2RParams, planar2RDynamics,
+planarTipJacobian, planarSpaceJacobian, planarBodyJacobian, planar2RIK, planar2RParams, planar2RDynamics,
 planar2RAccel, buildPlanarChain`
 
 * `planarJacobian` rows are `[ωz; vx; vy]` of the **tip point** in the fixed frame.
+* `planarSpaceJacobian` / `planarBodyJacobian` are the book's planar J_s / J_b
+  (rows `[ωz; vx; vy]`, column i = twist of joint i in {s} / {b}). Use these when a lesson
+  talks about space or body Jacobians; use `planarJacobian` / `planarTipJacobian` for tip-point
+  velocities, manipulability and force ellipses, and τ = Jᵀ f with a force at the tip.
 * `planar2RIK` returns both elbow solutions (`elbow: 'down'` for θ₂ ≥ 0) and a
   `reachable` flag.
 * `planar2RDynamics` is the Lagrangian closed form with COM distances `r_i` and

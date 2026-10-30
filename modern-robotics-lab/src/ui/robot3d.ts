@@ -2,8 +2,7 @@
 import * as THREE from 'three';
 import type { Mat, Vec } from '@/mr';
 import { spaceJointTransforms, Adjoint, matMul, matVec, getCol, cross, dot, norm } from '@/mr';
-import { Scene3D, Frame3D, Link3D, ScrewAxis3D, vec3 } from './scene3d';
-import { cssVar } from './dom';
+import { Scene3D, Frame3D, Link3D, ScrewAxis3D, vec3, themedStandardMaterial } from './scene3d';
 
 /**
  * Home-configuration "joint points" derived from the screw axes alone: p_1 is the point on axis 1
@@ -72,13 +71,13 @@ export class Robot3D {
     this.n = model.Slist[0].length;
     this.homePts = opts.jointPoints ?? homeJointPoints(model.Slist);
     const op = opts.opacity ?? 1;
-    const linkColor = opts.linkColor ?? cssVar('--fg-muted', '#8a94a6');
-    const jointColor = opts.jointColor ?? cssVar('--fg', '#333');
+    const linkColor = opts.linkColor ?? '--fg-muted';
+    const jointColor = opts.jointColor ?? '--fg';
     const r = opts.linkRadius ?? 0.03;
     for (let i = 0; i < this.n; i++) {
       const l = new Link3D(r, linkColor, op);
       this.links.push(l); this.group.add(l.mesh);
-      const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.6, 16, 12), new THREE.MeshStandardMaterial({ color: jointColor, transparent: op < 1, opacity: op, roughness: 0.4 }));
+      const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.6, 16, 12), themedStandardMaterial(jointColor, { transparent: op < 1, opacity: op, roughness: 0.4 }));
       this.joints.push(j); this.group.add(j);
       if (opts.showJointFrames) { const f = new Frame3D({ size: (opts.frameSize ?? 0.25) * 0.8, opacity: op, label: `{${i + 1}}` }); this.jointFrames.push(f); this.group.add(f.group); }
       if (opts.showAxes) { const a = new ScrewAxis3D({ length: opts.axisLength ?? 0.6 }); this.axes.push(a); this.group.add(a.group); }

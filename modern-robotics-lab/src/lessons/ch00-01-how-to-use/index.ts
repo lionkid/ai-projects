@@ -114,8 +114,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // we draw the pendulum in the x–z plane of {s}: rod from origin along direction (sin θ, 0, −cos θ).
   const frameB = scene.addFrame({ size: 0.45, label: '{b}' });
   const rod = scene.addLink({ radius: 0.025 });
-  const bob = scene.addSphere(0.11, cssVar('--accent', '#2563eb'));
-  const pivot = scene.addSphere(0.05, cssVar('--fg-muted', '#888'));
+  const bob = scene.addSphere(0.11, '--accent');
+  const pivot = scene.addSphere(0.05, '--fg-muted');
   pivot.position.set(0, 0, 0);
 
   // ---- 2D drawing

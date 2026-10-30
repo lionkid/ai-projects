@@ -55,6 +55,44 @@ export function axisColors(): { x: string; y: string; z: string } {
   return { x: cssVar('--axis-x', '#e11d48'), y: cssVar('--axis-y', '#16a34a'), z: cssVar('--axis-z', '#2563eb') };
 }
 
+/**
+ * Theme binding: a colour given as a CSS custom-property name (a string starting with "--",
+ * e.g. '--axis-x', '--fg', '--accent') is resolved now and re-resolved by Scene3D whenever the
+ * theme changes. Any other THREE colour (hex number, '#rrggbb', a cssVar(...) result) stays fixed.
+ */
+export function resolveColor(c: THREE.ColorRepresentation, fallback = '#888888'): THREE.ColorRepresentation {
+  return typeof c === 'string' && c.startsWith('--') ? cssVar(c, fallback) : c;
+}
+
+type ColoredMaterial = THREE.Material & { color: THREE.Color };
+
+/** Set a material colour and remember its CSS variable (if any) for theme refreshes. */
+export function setThemedColor(mat: ColoredMaterial, c: THREE.ColorRepresentation): void {
+  if (typeof c === 'string' && c.startsWith('--')) mat.userData.themeVar = c;
+  else delete mat.userData.themeVar;
+  mat.color.set(resolveColor(c));
+}
+
+/** MeshStandardMaterial whose colour may be a CSS variable name (see resolveColor). */
+export function themedStandardMaterial(c: THREE.ColorRepresentation, params: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial(params);
+  setThemedColor(m, c);
+  return m;
+}
+
+/** Re-resolve every theme-bound material colour and text sprite under `root` (Scene3D calls this on theme change). */
+export function refreshThemeColors(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    const mats = Array.isArray(mat) ? mat : mat ? [mat] : [];
+    for (const m of mats) {
+      const v = m.userData?.themeVar as string | undefined;
+      if (v && (m as ColoredMaterial).color) (m as ColoredMaterial).color.set(cssVar(v, '#888888'));
+    }
+    if ((o as THREE.Sprite).isSprite && o.userData.themeText) redrawTextSprite(o as THREE.Sprite);
+  });
+}
+
 /** An arrow mesh (shaft + head) pointing along local +Y with unit length; use setLength/setFromTo. */
 export class Arrow3D {
   readonly group = new THREE.Group();
@@ -64,13 +102,13 @@ export class Arrow3D {
   private radius: number;
   constructor(color: THREE.ColorRepresentation, radius = 0.012, headLen = 0.08, opacity = 1) {
     this.radius = radius; this.headLen = headLen;
-    const mat = new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, roughness: 0.6 });
+    const mat = themedStandardMaterial(color, { transparent: opacity < 1, opacity, roughness: 0.6 });
     this.shaft = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 1, 12), mat);
     this.head = new THREE.Mesh(new THREE.ConeGeometry(radius * 2.6, headLen, 16), mat);
     this.group.add(this.shaft, this.head);
     this.setLength(1);
   }
-  setColor(c: THREE.ColorRepresentation): void { (this.shaft.material as THREE.MeshStandardMaterial).color.set(c); }
+  setColor(c: THREE.ColorRepresentation): void { setThemedColor(this.shaft.material as THREE.MeshStandardMaterial, c); }
   setLength(L: number): void {
     const hl = Math.min(this.headLen, L * 0.5);
     const sl = Math.max(1e-4, L - hl);
@@ -106,7 +144,7 @@ export class Frame3D {
   private label?: THREE.Sprite;
   constructor(opts: { size?: number; label?: string; opacity?: number; thickness?: number } = {}) {
     const size = opts.size ?? 0.3;
-    const c = axisColors();
+    const c = { x: '--axis-x', y: '--axis-y', z: '--axis-z' };
     const r = opts.thickness ?? size * 0.04;
     const head = size * 0.22;
     const op = opts.opacity ?? 1;
@@ -115,7 +153,7 @@ export class Frame3D {
     this.axes.z.group.rotation.x = Math.PI / 2;  // +Y → +Z
     for (const a of Object.values(this.axes)) { a.setLength(size); this.group.add(a.group); }
     if (opts.label) {
-      this.label = makeTextSprite(opts.label, cssVar('--fg', '#222'));
+      this.label = makeTextSprite(opts.label, '--fg');
       this.label.position.set(-size * 0.25, -size * 0.25, size * 0.25);
       this.group.add(this.label);
     }
@@ -124,7 +162,7 @@ export class Frame3D {
   setVisible(v: boolean): void { this.group.visible = v; }
   setLabel(text: string): void {
     if (this.label) this.group.remove(this.label);
-    this.label = makeTextSprite(text, cssVar('--fg', '#222'));
+    this.label = makeTextSprite(text, '--fg');
     this.label.position.set(-0.08, -0.08, 0.08);
     this.group.add(this.label);
   }
@@ -144,7 +182,7 @@ export class Link3D {
   constructor(radius = 0.03, color: THREE.ColorRepresentation = 0x888888, opacity = 1) {
     this.mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(radius, radius, 1, 16),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1, transparent: opacity < 1, opacity }),
+      themedStandardMaterial(color, { roughness: 0.5, metalness: 0.1, transparent: opacity < 1, opacity }),
     );
   }
   setEndpoints(a: Vec3Like, b: Vec3Like): void {
@@ -156,7 +194,7 @@ export class Link3D {
     this.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
     this.mesh.scale.set(1, L, 1);
   }
-  setColor(c: THREE.ColorRepresentation): void { (this.mesh.material as THREE.MeshStandardMaterial).color.set(c); }
+  setColor(c: THREE.ColorRepresentation): void { setThemedColor(this.mesh.material as THREE.MeshStandardMaterial, c); }
 }
 
 /** Visualization of a screw axis S = (ω, v): a line through a point on the axis, direction arrow, pitch marker. */
@@ -171,10 +209,12 @@ export class ScrewAxis3D {
     const color = opts.color ?? 0xd97706;
     this.length = opts.length ?? 1.5;
     const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
-    this.line = new THREE.Line(geo, new THREE.LineDashedMaterial({ color, dashSize: 0.06, gapSize: 0.04 }));
+    const lineMat = new THREE.LineDashedMaterial({ dashSize: 0.06, gapSize: 0.04 });
+    setThemedColor(lineMat, color);
+    this.line = new THREE.Line(geo, lineMat);
     this.arrow = new Arrow3D(color, 0.014, 0.1);
-    this.dot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12), new THREE.MeshStandardMaterial({ color }));
-    this.ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.008, 8, 40), new THREE.MeshStandardMaterial({ color }));
+    this.dot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12), themedStandardMaterial(color));
+    this.ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.008, 8, 40), themedStandardMaterial(color));
     this.group.add(this.line, this.arrow.group, this.dot, this.ring);
   }
   /** Update from S = [ω; v] (6-vector). Pure translation (ω = 0) is drawn as an arrow along v. */
@@ -202,17 +242,26 @@ export class ScrewAxis3D {
   setVisible(v: boolean): void { this.group.visible = v; }
 }
 
-/** Text label rendered to a sprite (always faces the camera). */
-export function makeTextSprite(text: string, color = '#222', fontPx = 48): THREE.Sprite {
+function drawTextCanvas(text: string, color: string, fontPx: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
-  ctx.font = `${fontPx}px ${cssVar('--font') || 'sans-serif'}`;
+  const font = `${fontPx}px ${cssVar('--font') || 'sans-serif'}`;
+  ctx.font = font;
   const w = Math.ceil(ctx.measureText(text).width) + 16;
   canvas.width = Math.max(2, w); canvas.height = fontPx + 16;
-  ctx.font = `${fontPx}px ${cssVar('--font') || 'sans-serif'}`;
+  ctx.font = font;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = color;
   ctx.fillText(text, 8, canvas.height / 2);
+  return canvas;
+}
+
+/**
+ * Text label rendered to a sprite (always faces the camera). `color` defaults to the theme
+ * foreground; pass a CSS variable name ('--accent') to keep it theme-aware, or a fixed colour.
+ */
+export function makeTextSprite(text: string, color: string = '--fg', fontPx = 48): THREE.Sprite {
+  const canvas = drawTextCanvas(text, String(resolveColor(color, '#222222')), fontPx);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
@@ -220,7 +269,20 @@ export function makeTextSprite(text: string, color = '#222', fontPx = 48): THREE
   const scale = 0.0028;
   sprite.scale.set(canvas.width * scale, canvas.height * scale, 1);
   sprite.renderOrder = 999;
+  if (color.startsWith('--')) sprite.userData.themeText = { text, color, fontPx };
   return sprite;
+}
+
+/** Redraw a theme-bound text sprite with the current theme colour (keeps its scale). */
+function redrawTextSprite(sprite: THREE.Sprite): void {
+  const { text, color, fontPx } = sprite.userData.themeText as { text: string; color: string; fontPx: number };
+  const mat = sprite.material as THREE.SpriteMaterial;
+  const old = mat.map;
+  const tex = new THREE.CanvasTexture(drawTextCanvas(text, cssVar(color, '#222222'), fontPx));
+  tex.colorSpace = THREE.SRGBColorSpace;
+  mat.map = tex;
+  mat.needsUpdate = true;
+  old?.dispose();
 }
 
 export class Scene3D {
@@ -295,6 +357,7 @@ export class Scene3D {
 
   private applyTheme(): void {
     this.renderer?.setClearColor(new THREE.Color(cssVar('--sim-bg', '#ffffff')));
+    refreshThemeColors(this.scene);
     if (this.grid) {
       const mat = this.grid.material as THREE.LineBasicMaterial;
       mat.color.set(cssVar('--grid-strong', '#cccccc'));
@@ -377,22 +440,22 @@ export class Scene3D {
     return f;
   }
   addLink(opts: { radius?: number; color?: THREE.ColorRepresentation; opacity?: number } = {}): Link3D {
-    const l = new Link3D(opts.radius, opts.color ?? cssVar('--fg-muted', '#888'), opts.opacity);
+    const l = new Link3D(opts.radius, opts.color ?? '--fg-muted', opts.opacity);
     this.scene.add(l.mesh);
     return l;
   }
   addArrow(opts: { color?: THREE.ColorRepresentation; radius?: number; head?: number } = {}): Arrow3D {
-    const a = new Arrow3D(opts.color ?? cssVar('--accent', '#36f'), opts.radius, opts.head);
+    const a = new Arrow3D(opts.color ?? '--accent', opts.radius, opts.head);
     this.scene.add(a.group);
     return a;
   }
   addSphere(radius = 0.05, color: THREE.ColorRepresentation = 0x2563eb, opacity = 1): THREE.Mesh {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 16), new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, roughness: 0.5 }));
+    const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 16), themedStandardMaterial(color, { transparent: opacity < 1, opacity, roughness: 0.5 }));
     this.scene.add(m);
     return m;
   }
   addBox(size: [number, number, number], color: THREE.ColorRepresentation = 0x94a3b8, opacity = 1): THREE.Mesh {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, roughness: 0.6 }));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), themedStandardMaterial(color, { transparent: opacity < 1, opacity, roughness: 0.6 }));
     this.scene.add(m);
     return m;
   }
@@ -404,7 +467,8 @@ export class Scene3D {
   /** Polyline (trail / path). Call `update(points)` to change it. */
   addPolyline(points: Vec3Like[], color: THREE.ColorRepresentation = 0xd97706, opts: { dashed?: boolean } = {}): { line: THREE.Line; update(pts: Vec3Like[]): void } {
     const geo = new THREE.BufferGeometry().setFromPoints(points.map(vec3));
-    const mat = opts.dashed ? new THREE.LineDashedMaterial({ color, dashSize: 0.05, gapSize: 0.03 }) : new THREE.LineBasicMaterial({ color });
+    const mat = opts.dashed ? new THREE.LineDashedMaterial({ dashSize: 0.05, gapSize: 0.03 }) : new THREE.LineBasicMaterial();
+    setThemedColor(mat, color);
     const line = new THREE.Line(geo, mat);
     if (opts.dashed) line.computeLineDistances();
     this.scene.add(line);
@@ -414,7 +478,7 @@ export class Scene3D {
     };
   }
   addLabel(text: string, pos: Vec3Like, color?: string): THREE.Sprite {
-    const s = makeTextSprite(text, color ?? cssVar('--fg', '#222'));
+    const s = makeTextSprite(text, color ?? '--fg');
     s.position.copy(vec3(pos));
     this.scene.add(s);
     return s;

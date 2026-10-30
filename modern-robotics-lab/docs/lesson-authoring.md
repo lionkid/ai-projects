@@ -73,6 +73,7 @@ Toolkit summary (see `src/ui/*.ts` for full signatures):
 | `Plot2D` | line plots. Streaming: `push(x, [y1,y2])` with `xWindow`; static: `setSeries(i, pts)` / `setXY(i, xs, ys)`; `setMarkers([{x}, {y}, {x,y,label}])`; `equalAspect` for phase planes. |
 | controls | `controlPanel(host)` grid; `slider`, `angleSlider`, `toggle`, `button`, `select`, `readout`, `matrixView(...).set(M, {highlightCols:['x','y','z']})`, `playback({onPlay,onPause,onReset,onSpeed,duration,onScrub})`, `kv`, `legend`, `note`, `simTitle`, `split`, `row`. |
 | robot2d | `drawPlanarArm(cv, lengths, thetas, {frames, labels, angleArcs, alpha})` → joint points; `planarArmPoints`, `planarArmAngles`; `drawEllipse2x2(cv, center, JJt, {scale, inverse, axes})` for manipulability/force ellipses; `eig2x2Sym`; `drawTrail`. |
+| 3D theme colours | Pass colours as CSS variable names (`'--axis-x'`, `'--fg'`, `'--fg-muted'`, `'--accent'`, `'--warn'`, `'--series-3'` …) to `Scene3D.add*`, `Arrow3D`, `Link3D`, `ScrewAxis3D`, `makeTextSprite`, `themedStandardMaterial`, `Robot3D` options: they are re-resolved automatically when the learner switches theme (text sprites are redrawn). A resolved colour (`cssVar(...)` result or hex) stays fixed, so do not pass `cssVar('--fg')` to 3D objects. Defaults are already theme-bound. |
 | robot3d | `new Robot3D(scene, {M, Slist}, {showAxes, showJointFrames, frameSize, opacity})` → `setConfig(thetas)` returns `{T, points}`; a stick figure for any PoE chain (`ur5`, `rrr3`, planar models). `homeJointPoints(Slist)`. |
 | jointSliders | `jointSliders(panel, {model, values, onInput(thetas, i)})` → `get/set`; auto-generates θ₁…θₙ angle sliders from a RobotModel. |
 | stepper | `algorithmStepper(panel, {onStep: () => boolean, onReset, intervalMs})` single-step / auto / reset / speed / iteration count for Newton IK, A*, RRT, Newton–Euler passes, phase-plane integration. |
@@ -113,7 +114,7 @@ QuinticTimeScaling, TrapezoidalTimeScaling, trapezoidScaling, JointTrajectory, S
 CartesianTrajectory,
 ComputedTorque, SimulateControl`, plus `linalg` helpers (`matMul, matVec, transpose, inv, pinv, svd,
 eigSym, cross, norm, ...`), planar helpers (`planar.ts`) and robot models (`robots.ts`: `planar2R,
-planar3R, ur5, rrr3`). 2D collision helpers live in `@/mr` too (`geometry2d.ts`: `segCircleIntersects, segPolygonIntersects, pointInPolygon, polylineCircleIntersects, polylinePolygonIntersects, distPointPolygon, rectPolygon, regularPolygon`). Read `src/mr/README.md` for conventions (screw axes are `[ω; v]`, Slist/Blist
+planar3R, ur5, rrr3`). Planar Jacobians: `planarJacobian` / `planarTipJacobian` give the TIP-POINT Jacobian (use them for tip velocities, manipulability / force ellipses and τ = Jᵀ f with a force at the tip). When a lesson talks about the book's space or body Jacobian of a planar arm, use `planarSpaceJacobian` / `planarBodyJacobian` (rows `[ωz; vx; vy]`; column i = twist of joint i in {s} / {b}). 2D collision helpers live in `@/mr` too (`geometry2d.ts`: `segCircleIntersects, segPolygonIntersects, pointInPolygon, polylineCircleIntersects, polylinePolygonIntersects, distPointPolygon, rectPolygon, regularPolygon`). Read `src/mr/README.md` for conventions (screw axes are `[ω; v]`, Slist/Blist
 are 6×n with axes as columns, matrices row-major `number[][]`).
 
 ## 4b. Working alongside other authors
@@ -123,6 +124,8 @@ Several lessons are built concurrently in the same checkout. `src/app/registry.t
 in a single write, and make it valid TypeScript from the first save. If a smoke run fails with an error
 that points at another lesson's files, wait ~30 s and run it again with `--lesson` limited to your ids.
 The per-lesson design briefs live in `docs/curriculum.json` (and a readable overview in `docs/curriculum.md`).
+
+The session scratchpad is shared by all agents: put every scratch file (scripts, screenshots, test files) in your own sub-folder named after your group or lesson, never at the scratchpad root.
 
 ## 5. Checklist before you report
 

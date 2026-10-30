@@ -14,5 +14,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Physics/energy tests are CPU-heavy; keep them stable on busy CI or shared machines.
+    testTimeout: 30000,
   },
 });
