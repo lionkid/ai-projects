@@ -16,5 +16,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     // Physics/energy tests are CPU-heavy; keep them stable on busy CI or shared machines.
     testTimeout: 30000,
+    // Several agents/CI jobs may share a small machine: cap parallel test workers (memory + CPU).
+    maxWorkers: 2,
   },
 });
