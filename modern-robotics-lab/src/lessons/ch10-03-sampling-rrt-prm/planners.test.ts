@@ -130,6 +130,41 @@ describe('RRT', () => {
   });
 });
 
+describe('2R arm map', () => {
+  it('start and goal are connected on the torus, but only through the ±π seam (flood fill)', () => {
+    const m = makeMap('arm');
+    const n = 300, h = (2 * Math.PI) / n;
+    const free = new Uint8Array(n * n);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) free[j * n + i] = armFree(ARM_OBSTACLES, [-Math.PI + (i + 0.5) * h, -Math.PI + (j + 0.5) * h]) ? 1 : 0;
+    }
+    const cell = (q: Q) => Math.floor((q[1] + Math.PI) / h) * n + Math.floor((q[0] + Math.PI) / h);
+    const fill = (wrap: boolean, diagonal: boolean): Uint8Array => {
+      const seen = new Uint8Array(n * n);
+      const s = cell(m.start);
+      const queue = [s];
+      seen[s] = 1;
+      const moves = diagonal ? [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] : [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      while (queue.length) {
+        const c = queue.pop()!;
+        const i = c % n, j = (c - i) / n;
+        for (const [di, dj] of moves) {
+          let a = i + di, b = j + dj;
+          if (wrap) { a = (a + n) % n; b = (b + n) % n; } else if (a < 0 || b < 0 || a >= n || b >= n) continue;
+          const k = b * n + a;
+          if (free[k] && !seen[k]) { seen[k] = 1; queue.push(k); }
+        }
+      }
+      return seen;
+    };
+    expect(free[cell(m.start)] && free[cell(m.goal!)]).toBe(1);
+    // conservative test on the torus (4-neighbours) still connects ...
+    expect(fill(true, false)[cell(m.goal!)]).toBe(1);
+    // ... while even the generous 8-neighbour fill of the plain square does not
+    expect(fill(false, true)[cell(m.goal!)]).toBe(0);
+  });
+});
+
 describe('RRT-Connect', () => {
   it('connects the two trees on the maze and returns a valid start→goal path', () => {
     const m = makeMap('maze');
