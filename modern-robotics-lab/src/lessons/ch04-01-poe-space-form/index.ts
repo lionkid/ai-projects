@@ -39,7 +39,7 @@ $\\hat\\omega$ 是軸的方向，$q$ 是軸上任意一點；沿著軸移動 $q$
 $$\\text{R：}\\ \\vS_i = (\\hat\\omega_i,\\ -\\hat\\omega_i\\times q_i) \\qquad \\text{P：}\\ \\vS_i = (0,\\ \\hat v_i)$$
 
 空間 RRR 的底座軸是穿過原點的鉛直線，所以 $\\vS_1 = (0,0,1,0,0,0)$；肩軸與肘軸都平行 $\\hat y$、高 0.3 m，肘軸再往前 0.4 m。此時每個指數都是單位矩陣，$T(0) = M$。`,
-    simHint: '手臂停在零位姿。點表格的欄標題「S₃」，用 $q_3 = (0.4, 0, 0.3)$ 手算 $-\\hat\\omega_3 \\times q_3$，核對第 3 欄的 $v$。',
+    simHint: '手臂停在零位姿，表格已選取「S₃」（點其他欄標題可換關節）。用 $q_3 = (0.4, 0, 0.3)$ 手算 $-\\hat\\omega_3 \\times q_3$，核對第 3 欄的 $v$。',
   },
   {
     title: '為什麼是從右邊乘起',
@@ -48,7 +48,7 @@ $$\\text{R：}\\ \\vS_i = (\\hat\\omega_i,\\ -\\hat\\omega_i\\times q_i) \\qquad
 $$T(\\theta) = e^{[\\vS_1]\\theta_1}\\,e^{[\\vS_2]\\theta_2}\\cdots e^{[\\vS_n]\\theta_n}\\,M$$
 
 由右往左讀：先只轉關節 $n$，其他關節都還在 0，它的軸正好在零位置 $\\vS_n$；再轉關節 $n-1$，把轉好的末段整個帶走；最後轉關節 1。每個因子作用的當下，它上游的關節都還沒動，所以零位姿量到的軸就是當下真正的軸。若改成由左往右、仍套用零位軸，就會繞錯軸轉。`,
-    simHint: '按「▸ 下一個因子」從 $e^{[\\vS_3]\\theta_3}$ 開始一次乘一個，每步留下一個淡色座標系 ①②；轉動中的關節，實線軸恰好與虛線重合。再試「由左往右（錯誤示範）」。',
+    simHint: '已先乘上最右邊的 $e^{[\\vS_3]\\theta_3}$（只有關節 3 轉了）。按「▸ 下一個因子」再乘 $e^{[\\vS_2]\\theta_2}$、$e^{[\\vS_1]\\theta_1}$，每步留下一個淡色座標系 ①②；轉動中的關節，實線軸恰好與虛線重合。再試「由左往右（錯誤示範）」。',
   },
   {
     title: '動一個關節，看看誰跟著動',
@@ -217,10 +217,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }),
   })), { label: '模型' });
 
-  const scene = new Scene3D(host, { aspect: 1.55, grid: false, axes: false, autoStart: false, cameraPos: MODELS.rrr3.camera.pos, target: MODELS.rrr3.camera.target });
+  const scene = new Scene3D(host, { aspect: 1.7, grid: false, axes: false, autoStart: false, cameraPos: MODELS.rrr3.camera.pos, target: MODELS.rrr3.camera.target });
   const overlay = el('div', { class: 'mr-overlay', style: { right: '0.5rem', whiteSpace: 'normal' } });
   scene.el.appendChild(overlay);
-  note(host, '虛線 = 零位姿量到的軸 Sᵢ（公式裡用的數字）· 實線 = 關節此刻真正的軸 · 淡色 = 零位姿的手臂 · 拖曳可旋轉視角');
+  note(host, '虛線 = 零位軸 Sᵢ（公式裡的數字）· 實線 = 關節此刻的軸 · 淡色 = 零位姿手臂 · 可拖曳旋轉');
 
   const strip = factorStrip(host);
 
@@ -259,15 +259,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tNow = toggle(optRow, { label: '此刻的軸（實線）', value: false, onChange: (v) => { S.showNow = v; updateRows(); refresh(); } });
   const tGhost = toggle(optRow, { label: '零位姿殘影', value: true, onChange: (v) => { S.showGhost = v; refresh(); } });
 
-  const tables = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '0.2rem 0.4rem', marginTop: '0.2rem' } });
-  host.appendChild(tables);
-  const sTable = screwTable(tables, '零位姿的螺旋軸 Sᵢ（在 {s} 中）', (j) => { S.sel = S.sel === j ? -1 : j; refresh(); });
-  const nowTable = screwTable(tables, '此刻的軸（底色 = 已離開零位置）');
-  const mats = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center' } });
-  tables.appendChild(mats);
-  const mView = matrixView(mats, { label: 'M =', digits: 2 });
-  const tView = matrixView(mats, { label: 'T(θ) =', digits: 2 });
-
+  // readouts sit above the tables so the numbers the hints refer to are in the first view
   const K_P = '末端位置 p';
   const K_AX = '選定的軸';
   const K_V = 'v = −ω × q';
@@ -275,6 +267,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const K_RE = '‖T′(φ) − T(θ₀ + φ)‖';
   const K_GAP = '與正確 T(θ) 相比';
   const info = kv(host, [K_P, K_AX, K_V, K_TH, K_RE, K_GAP]);
+
+  // the matrices are flex items of their own, so M can sit beside the screw table
+  const tables = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.2rem 0.4rem', marginTop: '0.2rem' } });
+  host.appendChild(tables);
+  const sTable = screwTable(tables, '零位姿的螺旋軸 Sᵢ（在 {s} 中）', (j) => { S.sel = S.sel === j ? -1 : j; refresh(); });
+  const nowTable = screwTable(tables, '此刻的軸（底色 = 已離開零位置）');
+  const mView = matrixView(tables, { label: 'M =', digits: 2 });
+  const tView = matrixView(tables, { label: 'T(θ) =', digits: 2 });
 
   // ---- 3D layer (rebuilt when the model or the home pose changes) ---------
   function buildLayer(): Layer {
@@ -333,7 +333,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function setCamera(cam?: Config['camera']): void {
     const c = cam ?? model().camera;
-    scene.camera.position.set(c.pos[0], c.pos[1], c.pos[2]);
+    // the views were framed for a 1.55 aspect; come a little closer for the shorter 1.7 canvas
+    const k = 0.95;
+    scene.camera.position.set(
+      c.target[0] + k * (c.pos[0] - c.target[0]),
+      c.target[1] + k * (c.pos[1] - c.target[1]),
+      c.target[2] + k * (c.pos[2] - c.target[2]),
+    );
     scene.controls?.target.set(c.target[0], c.target[1], c.target[2]);
     scene.controls?.update();
     scene.requestRender();
@@ -661,7 +667,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     mView.setLabel(re ? 'M′ =' : 'M =');
     mView.set(Muse, { highlightCols: ['x', 'y', 'z', null] });
-    tView.setLabel(ltr ? 'T（錯誤順序）=' : re ? 'T(θ₀+φ) =' : 'T(θ) =');
+    // during the step-through the matrix is the partial product, not yet T(θ)
+    const partial = S.through && (S.stage < n || !!S.anim);
+    tView.setLabel(partial ? '目前乘積 =' : ltr ? 'T（錯誤順序）=' : re ? 'T(θ₀+φ) =' : 'T(θ) =');
     tView.set(T, { highlightCols: ['x', 'y', 'z', null] });
 
     info.set(K_P, `${fmt3([T[0][3], T[1][3], T[2][3]], 3)} m`);
@@ -724,7 +732,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     () => configure({ model: 'rrr3', theta: [50 * DEG, 0, 0], home: true, now: true, ghost: true, solo: 0 }),
     () => configure({
       model: 'rrr3', theta: [60 * DEG, -60 * DEG, 110 * DEG], rehome: REHOME_EXAMPLE.rrr3, home: true, now: false, ghost: true,
-      camera: { pos: [0.98, -0.95, 0.98], target: [0.16, 0.12, 0.33] },
+      camera: { pos: [0.98, -0.95, 1.02], target: [0.16, 0.12, 0.37] },
     }),
     () => configure({ model: 'rrrp', theta: MODELS.rrrp.demo, home: true, now: false, ghost: true }),
   ];

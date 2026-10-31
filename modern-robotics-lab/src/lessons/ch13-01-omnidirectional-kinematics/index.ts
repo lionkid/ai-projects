@@ -434,7 +434,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     P('要求過快', () => startMotion({ frame: 'body', w: 0, a: 0.9, b: 0.4, pose: pose(-1.7, -0.5), prerun: 1 }), '搖桿點落在多面體外'),
     P('最快方向', () => {
       const v = fastestVertex(0, model === 'mecanum4' ? 0 : Math.PI / 2) ?? [0.6, 0];
-      startMotion({ frame: 'body', w: 0, a: 0.97 * v[0], b: 0.97 * v[1], pose: pose(-1.6, -0.6), prerun: 1.5 });
+      // start half a pre-run behind (−0.9, −0.35), so the base ends up mid-map whichever way is fastest
+      const pre = 1.5, k = 0.97;
+      startMotion({ frame: 'body', w: 0, a: k * v[0], b: k * v[1], pose: pose(-0.9 - 0.5 * pre * k * v[0], -0.35 - 0.5 * pre * k * v[1]), prerun: pre });
     }, '沿 ω = 0 切片最遠的頂點'),
     P('斜 45°（較慢）', () => startMotion({ frame: 'body', w: 0, a: 0.6, b: 0.6, pose: pose(-1.6, -0.8), prerun: 1.5 })),
     P('邊轉邊直走（太快）', () => startMotion({ frame: 'world', w: 1.0, a: 0.4, b: 0, pose: pose(-1.7, 0.2), prerun: 3 }), '自轉吃掉輪速，平移被迫放慢'),
@@ -454,7 +456,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
   const worldPresets = (): Preset[] => [
     P('邊轉邊走正方形', () => startMotion({
-      frame: 'world', w: 0.6, a: 0.2, b: 0, pose: pose(0.35, -0.65), prerun: 15.5,
+      // left half of the map: the keyboard hint sits at the bottom right until the canvas is focused
+      frame: 'world', w: 0.6, a: 0.2, b: 0, pose: pose(-1.3, -0.45), prerun: 15.5,
       auto: (t) => { const k = Math.floor(t / 4) % 4; const a = (k * Math.PI) / 2; return { w: 0.6, a: 0.2 * Math.cos(a), b: 0.2 * Math.sin(a), frame: 'world' }; },
     }), '世界速度每 4 s 轉 90°，車身一直自轉'),
     P('邊轉邊直走', () => startMotion({ frame: 'world', w: 0.7, a: 0.22, b: 0, pose: pose(-1.75, 0.3), prerun: 6 })),
@@ -577,9 +580,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const sat = Math.abs(ui) > U * (1 + 1e-6);
       c.arrow(b2v(P0), b2v(add(P0, along, k * w.r * ui)), { color: sat ? '--danger' : '--accent', width: 2.5, head: 8 });
     }
-    // wheel number, placed outside the chassis
+    // wheel number, placed outside the chassis; mecanum numbers lean towards the chassis centre so
+    // they stay clear of the γ arc that the close-up draws on the outer side of the axle. The
+    // highlighted wheel of the close-up is already named by its chip, outline and the row readout,
+    // and its number would sit under the annotation, so it is left out.
+    if (hl) return;
     const rad = Math.hypot(w.x, w.y) || 1;
-    const out: Pt = model === 'mecanum4' ? [0, Math.sign(w.y)] : [w.x / rad, w.y / rad];
+    const out: Pt = model === 'mecanum4' ? [-0.62 * Math.sign(w.x), 0.78 * Math.sign(w.y)] : [w.x / rad, w.y / rad];
     c.text(b2v(add(P0, out, view === 'map' ? 0.12 : 0.075)), String(i + 1), { color: hl ? '--accent' : '--fg-muted', font: '600 12px system-ui, sans-serif' });
   }
 
@@ -595,23 +602,37 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const pd = dot2(P0, g.dir);
     const foot: Pt = [P0[0] - pd * g.dir[0], P0[1] - pd * g.dir[1]];
     c.line(b2v(add(foot, g.dir, -0.2)), b2v(add(P0, g.dir, 0.35)), { color: '--warn', width: 1, dash: [2, 4], alpha: 0.8 });
-    if (Math.hypot(foot[0], foot[1]) > 0.01) {
-      c.line(b2v([0, 0]), b2v(foot), { color: '--series-7', width: 3 });
-      const fl = Math.hypot(foot[0], foot[1]);
-      const off: Pt = [foot[1] / fl, -foot[0] / fl]; // arm rotated by −90°
-      c.text(b2v([foot[0] * 0.5, foot[1] * 0.5]), `力臂 ${fmt(g.lever, 3)} m`, { color: '--series-7', bg: '--sim-bg', dx: 30 * off[0], dy: -30 * off[1] });
-    }
     // contact-point velocity split into "rolled by the wheel" + "slid by the roller"
     const vc = contactVelocity(w, actV);
     const k = 0.9;
     const alongD = dot2(vc, g.dir);
     const tipD = add(P0, g.dir, k * alongD);
     const tipV: Pt = [P0[0] + k * vc[0], P0[1] + k * vc[1]];
-    if (Math.hypot(vc[0], vc[1]) > 0.01) {
+    const fl = Math.hypot(foot[0], foot[1]);
+    if (fl > 0.01) {
+      c.line(b2v([0, 0]), b2v(foot), { color: '--series-7', width: 3 });
+      // short label beside the arm, at the candidate spot farthest from the other annotations
+      // (wheel, velocity arrows, {b} axis labels); the value itself is in the row readout
+      const off: Pt = [foot[1] / fl, -foot[0] / fl]; // arm rotated by −90°
+      const avoid: Pt[] = [P0, tipV, tipD, [0, 0.14], [0.14, 0], [0, 0]];
+      let best: { p: Pt; s: number; d: number } = { p: [foot[0] * 0.5, foot[1] * 0.5], s: 1, d: -1 };
+      for (const t of [0.35, 0.5, 0.7]) {
+        for (const s of [1, -1]) {
+          const q2: Pt = [foot[0] * t + s * 0.09 * off[0], foot[1] * t + s * 0.09 * off[1]];
+          const d = Math.min(...avoid.map((a) => Math.hypot(q2[0] - a[0], q2[1] - a[1])));
+          if (d > best.d) best = { p: [foot[0] * t, foot[1] * t], s, d };
+        }
+      }
+      c.text(b2v(best.p), '力臂', { color: '--series-7', bg: '--sim-bg', dx: 26 * best.s * off[0], dy: -26 * best.s * off[1] });
+    }
+    const vn = Math.hypot(vc[0], vc[1]);
+    if (vn > 0.01) {
       c.arrow(b2v(P0), b2v(tipV), { color: '--fg', width: 2, head: 8 });
       c.arrow(b2v(P0), b2v(tipD), { color: '--warn', width: 3.2, head: 9 });
       c.arrow(b2v(tipD), b2v(tipV), { color: '--series-5', width: 2, dash: [4, 3], head: 7 });
-      c.text(b2v(tipV), '著地點速度', { color: '--fg', dy: -11, bg: '--sim-bg' });
+      // label just beyond the arrow head, on the side the arrow points to
+      const ux = vc[0] / vn, uy = vc[1] / vn;
+      c.text(b2v(tipV), '著地點速度', { color: '--fg', bg: '--sim-bg', align: ux >= 0 ? 'left' : 'right', dx: 8 * Math.sign(ux || 1), dy: -12 * uy - 2 });
     }
     // γ: angle between the wheel axle (β + 90°) and the free-sliding direction
     if (Math.abs(w.gamma) > 1e-3) {

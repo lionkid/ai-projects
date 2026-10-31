@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InverseDynamics, planar2R, planarFK } from '@/mr';
 import {
-  ENDPOINTS, PATHS, PATH_IDS, accelBounds, buildTable, checkCurve, coeffsAt, cubicScalingCurve, curveFromDrawing,
+  ENDPOINTS, PATHS, PATH_IDS, accelBounds, buildTable, checkCurve, coeffsAt, cubicScalingAccel, cubicScalingCurve, curveFromDrawing,
   fastestCubic, holdable, jointIntervals, pathCoefficients, refreshLimits, solveGridDP, solveSwitching,
   solveTimeOptimal, timing, torquesAt, trajectorySamples, unholdableIntervals, xRangeTorque,
   type PathTable,
@@ -242,13 +242,19 @@ describe('interval diagram, cubic reference and time histories', () => {
     expect(x[1000]).toBe(0);
     expect(Math.sqrt(x[500])).toBeCloseTo(1.5 / 2, 6);
     expect(timing(x, 1 / 1000).T).toBeCloseTo(2, 2);
-    // Largest |τ_i| / τ_i,max of a cubic of duration T, evaluated per cell exactly as fastestCubic does.
+    // Largest |τ_i| / τ_i,max of a cubic of duration T, evaluated exactly as fastestCubic does:
+    // per cell (cell-average s̈ at the midpoint) and at every node (the cubic's exact s̈).
     const ratio = (t: PathTable, T: number) => {
       const xc = cubicScalingCurve(t.N, T);
+      const ac = cubicScalingAccel(t.N, T);
       let r = 0;
       for (let k = 0; k < t.N; k++) {
         const j = 2 * k + 1, a = (xc[k + 1] - xc[k]) / (2 * t.ds), xm = 0.5 * (xc[k] + xc[k + 1]);
         for (let i = 0; i < 2; i++) r = Math.max(r, Math.abs(t.m[i][j] * a + t.c[i][j] * xm + t.g[i][j]) / t.tauMax[i]);
+      }
+      for (let k = 0; k <= t.N; k++) {
+        const j = 2 * k;
+        for (let i = 0; i < 2; i++) r = Math.max(r, Math.abs(t.m[i][j] * ac[k] + t.c[i][j] * xc[k] + t.g[i][j]) / t.tauMax[i]);
       }
       return r;
     };

@@ -103,6 +103,17 @@ export function label3D(scene: Scene3D, text: string, color = '--fg', scale = 0.
   return s;
 }
 
+/**
+ * Replace the vertices of a THREE.Line. Scene3D.addPolyline().update() writes into the existing
+ * position buffer, so a polyline created with 2 points silently keeps only the first 2 points of a
+ * longer path (three.js warns "Buffer size too small"); this swaps in a fresh geometry instead.
+ */
+export function setLinePoints(line: THREE.Line, pts: ArrayLike<number>[], dashed = false): void {
+  line.geometry.dispose();
+  line.geometry = new THREE.BufferGeometry().setFromPoints(Array.from(pts, (p) => new THREE.Vector3(p[0], p[1], p[2])));
+  if (dashed) line.computeLineDistances();
+}
+
 /** Dispose sprite textures (Scene3D.destroy disposes materials and geometries, not sprite maps). */
 export function disposeSprites(root: THREE.Object3D): void {
   root.traverse((o) => {

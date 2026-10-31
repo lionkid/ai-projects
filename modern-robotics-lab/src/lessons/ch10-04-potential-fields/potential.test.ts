@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { distPointPolygon, type P2 } from '@/mr';
 import {
-  BasinJob, BiasedRRT, D_CONTACT, DEFAULT_ROBOT, PointRobot, boxObs, contourSegments, evalField, fieldEnv, mulberry32,
+  BASIN_GOAL, BASIN_STUCK, BasinJob, BiasedRRT, D_CONTACT, DEFAULT_ROBOT, PointRobot, boxObs, contourSegments, evalField, fieldEnv, mulberry32,
   navDescentField, navEnv, navFunction, nearestClearance, obstacleClearance, potentialAt, refineMinimum, saturate,
   type FieldParams, type Obstacle, type RobotParams,
 } from './potential';
@@ -161,6 +161,20 @@ describe('basins of attraction', () => {
     expect(j.goalFraction()).toBeGreaterThan(0.5);
     expect(j.goalFraction()).toBeLessThan(0.8);
   });
+  it('is mirror-symmetric on the symmetric U map and agrees with the simulated robot', () => {
+    const j = basin('utrap');
+    const nx = j.nx, ny = j.ny;
+    let mismatched = 0;
+    for (let r = 0; r < ny; r++) for (let i = 0; i < nx; i++) if (j.cells[r * nx + i] !== j.cells[(ny - 1 - r) * nx + i]) mismatched++;
+    expect(mismatched).toBe(0);
+    // starts near the top-left / bottom-left corners pass over or under the U; (1.5, 6) falls in
+    for (const [q, fate] of [[[1, 7], BASIN_GOAL], [[1, 0.5], BASIN_GOAL], [[1.5, 6], BASIN_STUCK], [[0.5, 5], BASIN_STUCK]] as [P2, number][]) {
+      expect(j.cells[j.cellOf(q[0], q[1])], `start ${q}`).toBe(fate);
+      const r = new PointRobot(fieldEnv(params('utrap'), obsOf('utrap'), WORLD), DEFAULT_ROBOT, [q[0], q[1]]).run();
+      expect(r.status, `robot from ${q}`).toBe(fate === BASIN_GOAL ? 'reached' : 'stuck');
+    }
+  });
+
   it('convex obstacles on this map leave every start able to reach the goal', () => {
     const j = basin('convex');
     expect(j.goalFraction()).toBe(1);

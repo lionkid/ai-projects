@@ -123,7 +123,7 @@ describe('differential-drive tracking', () => {
 
   it('with v_d = 0 the lateral error is never corrected (only x_e is)', () => {
     const still = makeReference('still');
-    const tr = simulateTracking(still, cfg({ start: pose(0, -0.3, 0.25) }));
+    const tr = simulateTracking(still, cfg({ start: compose(still.start, pose(0, -0.3, 0.25)) }));
     const e = last(tr.err);
     expect(Math.abs(e[1])).toBeLessThan(1e-3);
     near(e[2], -0.25, 1e-9);

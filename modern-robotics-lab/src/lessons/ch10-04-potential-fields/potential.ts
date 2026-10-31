@@ -490,9 +490,12 @@ export interface BasinOptions {
  * Classifies a grid of start positions (cell centres) by running a descent from each one: steps
  * of fixed length along −∇U/‖∇U‖ (so fields whose gradient spans many decades, such as a
  * navigation function, work too), halved whenever two consecutive steps reverse direction and
- * regrown otherwise. A descent stops when it reaches the goal, converges (step < 10⁻³ m: a
- * minimum), or enters a cell whose fate is already known (paths merge quickly, which makes the
- * whole grid cheap). Work is split into `run(budgetMs)` calls so a UI can spread it over frames.
+ * regrown otherwise. A descent stops when it reaches the goal or converges (step < 10⁻³ m: a
+ * minimum). Every start is followed to its own end: adopting the fate of a cell the descent merely
+ * passes through is wrong near a separatrix (a cell can straddle it), which once painted a whole
+ * corner of the symmetric U map as "stuck" although those starts reach the goal. A 50 × 38 grid
+ * still takes only tens of milliseconds. Work is split into `run(budgetMs)` calls so a UI can
+ * spread it over frames.
  */
 export class BasinJob {
   readonly cells: Uint8Array;
@@ -524,7 +527,8 @@ export class BasinJob {
     return [this.bounds.xmin + (i + 0.5) * this.cw, this.bounds.ymin + (j + 0.5) * this.ch];
   }
 
-  private cellOf(x: number, y: number): number {
+  /** Index of the grid cell containing (x, y), or −1 outside the bounds. */
+  cellOf(x: number, y: number): number {
     const i = Math.floor((x - this.bounds.xmin) / this.cw), j = Math.floor((y - this.bounds.ymin) / this.ch);
     if (i < 0 || j < 0 || i >= this.nx || j >= this.ny) return -1;
     return j * this.nx + i;
@@ -552,8 +556,6 @@ export class BasinJob {
     let fate = 0;
     for (let s = 0; s < o.maxSteps; s++) {
       if (Math.hypot(x - this.goal[0], y - this.goal[1]) < o.goalTol) { fate = BASIN_GOAL; break; }
-      const c = this.cellOf(x, y);
-      if (c >= 0 && c !== k && (this.cells[c] === BASIN_GOAL || this.cells[c] === BASIN_STUCK)) { fate = this.cells[c]; break; }
       const g = this.field(x, y).g;
       const gn = Math.hypot(g[0], g[1]);
       if (!(gn > 0)) break; // exactly critical

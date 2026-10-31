@@ -28,15 +28,18 @@ const PARK_START: Pose = { phi: 0, x: -2.2, y: -0.7 };
 const PARK_TARGET: Pose = { phi: 0, x: -2.2, y: 0.3 };
 const PARK_TOL = 0.12, PARK_TOL_ANG = (8 * Math.PI) / 180;
 const NAMES: Record<ModelKey, string> = { unicycle: '單輪車', diff: '差速驅動', car: '車型' };
-// step 3 zooms onto the four-move manoeuvre (its net displacement is only a few decimetres)
+// step 3 zooms onto the four-move manoeuvre (its net displacement is only a few decimetres); the
+// zoom follows the step length a, so the small-step preset is magnified too
 const BR_START: Pose = { phi: 0, x: 0.8, y: 0.45 };
 const BR_START_CAR: Pose = { phi: 0, x: 0.55, y: -0.45 };
-const ZOOM = (c: Pt) => ({ xmin: c[0] - 1.35, xmax: c[0] + 1.35, ymin: c[1] - 0.68, ymax: c[1] + 0.68 });
-const BR_LABEL_OFF: [number, number][] = [[0, -16], [36, 0], [0, 18], [-36, 0]];
+const ZOOM = (c: Pt, hw = 1.35) => ({ xmin: c[0] - hw, xmax: c[0] + hw, ymin: c[1] - hw / 2, ymax: c[1] + hw / 2 });
+/** Below this step length the four move labels would pile up on each other, so only the path is drawn. */
+const BR_LABEL_MIN_A = 0.35;
+const BR_LABEL_OFF: [number, number][] = [[0, -16], [36, 0], [0, 18], [46, 20]];
 const R2D = 180 / Math.PI;
 
 interface PlanRun { segs: Segment[]; i: number; tSeg: number; loop: boolean; kind: 'bracket' | 'park' | 'auto' }
-interface BracketShow { start: Pose; path: Pt[]; labels: { p: Pt; text: string }[]; pred: Pt; final: Pose; model: ModelKey }
+interface BracketShow { start: Pose; path: Pt[]; labels: { p: Pt; text: string }[]; pred: Pt; final: Pose; model: ModelKey; a: number }
 
 /**
  * Figure-eight autopilot: a left circle then a right circle of radius R through the start pose.
@@ -197,7 +200,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     { color: 'var(--series-5)', label: '瞬時旋轉中心／淨位移' },
   ]);
   note(host, '位姿用 SE(2) 指數映射精確積分。打滑雜訊用固定種子的亂數產生，按「重置里程計」會重播同一組雜訊。地圖四周是牆。');
-  const preview = mdElement('**下一課預告：軌跡追蹤**。左下角的虛線是一條參考軌跡。只靠開迴路的輸入，誤差會像里程計一樣越積越多；下一課用回授（前饋＋誤差修正）讓非完整的車子收斂到參考軌跡上。', 'callout');
+  const preview = mdElement('**下一課預告：軌跡追蹤**。右側的粉紅虛線是一條參考軌跡。只靠開迴路的輸入，誤差會像里程計一樣越積越多；下一課用回授（前饋＋誤差修正）讓非完整的車子收斂到參考軌跡上。', 'callout');
   preview.style.display = 'none';
   host.appendChild(preview);
 
@@ -371,7 +374,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       t += g.T;
       return { p: [mid.x, mid.y] as Pt, text: g.label };
     });
-    bracket = { start, path: s.path, labels, pred: bracketPrediction(model, brA, brB, lim.rmin, start), final: s.final, model };
+    bracket = { start, path: s.path, labels, pred: bracketPrediction(model, brA, brB, lim.rmin, start), final: s.final, model, a: brA };
     startPlan('bracket', segs, false);
     if (instant) prerun(planDuration(segs) + 0.05);
     refresh();
@@ -483,7 +486,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     for (let w = -3; w <= 3; w++) {
       c.line([-0.75, KW * w], [0.75, KW * w], { color: w === 0 ? '--grid-strong' : '--grid', width: 1 });
-      if (w !== 0) c.text([-0.7, KW * w], String(w), { color: '--fg-muted', font: '10px monospace' });
+      if (w !== 0 && Math.abs(w) <= 2) c.text([-0.7, KW * w], String(w), { color: '--fg-muted', font: '10px monospace' });
     }
     c.text([0.66, 0.05], 'v', { color: '--fg-muted' });
     c.text([0.06, 0.66], 'ω', { color: '--fg-muted' });
@@ -558,10 +561,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function drawBracket(c: Canvas2D, b: BracketShow): void {
     c.polyline(b.path, { color: '--fg-muted', width: 2, dash: [6, 4] });
-    b.labels.forEach((l, k) => {
-      const [dx, dy] = b.model === 'car' ? [0, k % 2 ? 16 : -16] : BR_LABEL_OFF[k];
-      c.text(l.p, l.text, { color: '--fg-muted', bg: '--sim-bg', dx, dy });
-    });
+    if (b.a >= BR_LABEL_MIN_A) {
+      b.labels.forEach((l, k) => {
+        const [dx, dy] = b.model === 'car' ? [0, k % 2 ? 16 : -16] : BR_LABEL_OFF[k];
+        c.text(l.p, l.text, { color: '--fg-muted', bg: '--sim-bg', dx, dy });
+      });
+    }
     const s: Pt = [b.start.x, b.start.y];
     const pe: Pt = [s[0] + b.pred[0], s[1] + b.pred[1]];
     c.arrow(s, pe, { color: '--fg-muted', width: 1.6, dash: [4, 3], head: 8 });
@@ -569,10 +574,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const fe: Pt = [q.x, q.y];
       if (Math.hypot(fe[0] - s[0], fe[1] - s[1]) > 0.01) {
         c.arrow(s, fe, { color: '--series-5', width: 3, head: 10 });
-        c.text([(s[0] + fe[0]) / 2, (s[1] + fe[1]) / 2], '實際淨位移', { color: '--series-5', dx: 48, bg: '--sim-bg' });
+        c.text([(s[0] + fe[0]) / 2, (s[1] + fe[1]) / 2], '實際淨位移', { color: '--series-5', align: 'left', dx: 14, dy: -8, bg: '--sim-bg' });
       }
     }
-    c.text(pe, b.model === 'car' ? '預測 a²·[g_L, g_R]' : '預測 ab·[g₁, g₂]', { color: '--fg-muted', dx: b.model === 'car' ? -64 : 0, dy: b.model === 'car' ? 0 : 18, bg: '--sim-bg' });
+    c.text(pe, b.model === 'car' ? '預測 a²·[g_L, g_R]' : '預測 ab·[g₁, g₂]', { color: '--fg-muted', align: 'right', dx: -12, bg: '--sim-bg' });
     c.frame({ x: s[0], y: s[1], theta: b.start.phi }, 0.25, { width: 1.5, alpha: 0.7 });
   }
 
@@ -588,7 +593,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function drawReference(c: Canvas2D): void {
     const pts: Pt[] = [];
-    for (let k = 0; k <= 60; k++) { const x = -3.2 + (2.1 * k) / 60; pts.push([x, -1.05 + 0.32 * Math.sin(2.6 * (x + 3.2))]); }
+    for (let k = 0; k <= 60; k++) { const x = 1.0 + (1.75 * k) / 60; pts.push([x, 0.55 + 0.3 * Math.sin(3.2 * (x - 1.0))]); }
     c.polyline(pts, { color: '--series-7', width: 2.5, dash: [8, 5] });
     c.text(pts[30], '下一課：參考軌跡', { color: '--series-7', dy: -18, bg: '--sim-bg' });
   }
@@ -600,17 +605,24 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const odoStep = curStep >= 4;
     if (curStep === 5) drawReference(c);
     if (curStep === 3) drawPark(c);
-    if (curStep === 2 && bracket) drawBracket(c, bracket);
     if (model === 'car' && curStep <= 3) {
       const T = transformer(q);
       c.circle(T([0, lim.rmin]), lim.rmin, { color: '--fg-muted', width: 1.2, dash: [5, 5] });
       c.circle(T([0, -lim.rmin]), lim.rmin, { color: '--fg-muted', width: 1.2, dash: [5, 5] });
-      c.text(T([0, 2 * lim.rmin]), `r_min = ${fmt(lim.rmin, 2)} m`, { color: '--fg-muted', dy: -10, bg: '--sim-bg' });
+      const r = lim.rmin;
+      const W = cv.world;
+      const free = (p: Pt) => p[0] > W.xmin + 0.5 && p[0] < W.xmax - 0.5 && p[1] > W.ymin + 0.2 && p[1] < W.ymax - 0.15
+        && !(p[1] > W.ymax - 0.55 && p[0] < W.xmin + 0.55 * (W.xmax - W.xmin))
+        && !(p[1] < W.ymin + 0.45 && p[0] > W.xmin + 0.3 * (W.xmax - W.xmin)); // keyboard hint
+      const at = [T([0, 2 * r]), T([0, -2 * r]), T([r, r]), T([r, -r]), T([-r, r]), T([-r, -r])].find(free);
+      if (at) c.text(at, `r_min = ${fmt(r, 2)} m`, { color: '--fg-muted', bg: '--sim-bg' });
     }
     if (trueTrail.length > 1) c.polyline(trueTrail, { color: '--accent', width: 2, alpha: 0.85 });
     if (odoStep && odoTrail.length > 1) c.polyline(odoTrail, { color: '--warn', width: 2, dash: [6, 4] });
     if (odoStep) drawRobot(c, odo.est, true);
-    drawRobot(c, q, false, curStep === 2 ? 0.45 : 1);
+    drawRobot(c, q, false, curStep === 2 ? 0.35 : 1);
+    // step 3: the manoeuvre annotations go on top of the faded robot so its body never hides them
+    if (curStep === 2 && bracket) drawBracket(c, bracket);
     if (curStep <= 1) drawConstraintCues(c);
     const wall = performance.now() < wallUntil ? '   ⚠ 撞到牆了：倒車或轉向' : '';
     const clampMsg = reqClamped && !plan ? '   ⚠ 輸入超出可行集合，已夾制' : '';
@@ -623,7 +635,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const G = model === 'diff' ? Gdiff(q.phi, P) : Gunicycle(q.phi);
     const u = model === 'diff' ? vwToWheels(cmdV, cmdW, P) : [cmdV, cmdW];
     qdView.set(matVec(G, u));
-    GView.set(G);
+    GView.set(G, { digits: model === 'diff' ? 3 : 2 });
     uView.set(u);
     info.set('輸入 u', model === 'diff' ? `(u_L, u_R) = (${fmt(u[0], 2)}, ${fmt(u[1], 2)}) rad/s` : `(v, ω) = (${fmt(cmdV, 2)}, ${fmt(cmdW, 2)})`);
     info.set('(v, ω)', `(${fmt(cmdV, 2)} m/s, ${fmt(cmdW, 2)} rad/s)`);
@@ -709,8 +721,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function applyView(): void {
     if (curStep !== 2) { cv.setWorld(MAP); return; }
-    const st = model === 'car' ? BR_START_CAR : BR_START;
-    cv.setWorld(ZOOM(model === 'car' ? [st.x + 0.5, st.y + 0.25] : [st.x + 0.3, st.y - 0.15]));
+    const a = brA;
+    if (model === 'car') {
+      const hw = Math.min(1.35, Math.max(0.8, 1.6 * a + 0.55));
+      cv.setWorld(ZOOM([BR_START_CAR.x + a, BR_START_CAR.y + a / 2], hw));
+    } else {
+      // the start pose stays clear of the readout overlay (top left) at every zoom
+      const hw = Math.min(1.35, Math.max(0.8, 1.6 * a + 0.4));
+      cv.setWorld(ZOOM([BR_START.x + a / 2, BR_START.y - 0.02 - 0.236 * (hw - 0.8)], hw));
+    }
   }
 
   function onStep(i: number): void {

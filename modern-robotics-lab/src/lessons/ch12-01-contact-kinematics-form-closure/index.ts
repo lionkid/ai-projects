@@ -72,7 +72,7 @@ $$\\{\\vV : \\vF_i^{\\T}\\vV \\ge 0,\\ i = 1,\\dots,j\\} = \\{0\\} .$$
 
 $$k_i \\ge 0,\\qquad \\sum_i k_i\\vF_i = -\\vF_{\\text{ext}} .$$
 
-$k_i \\ge 0$ 是關鍵：無摩擦點接觸只能推、不能拉。沒有形封閉時，總有某些外力需要某個 $k_i < 0$，也就是要手指「拉住」物體，物體就會沿那個方向被帶走。
+$k_i \\ge 0$ 是關鍵：無摩擦點接觸只能推、不能拉。沒有形封閉時，總有某些外力需要某個 $k_i < 0$（也就是要手指「拉住」物體），或者當 rank $< 3$ 時連允許拉都湊不出來，物體就會沿那個方向被帶走。
 
 加上摩擦後，每個接觸能出的力從一條線變成一個錐，所需的接觸數跟著變少——兩根手指就可能抓牢。這就是下一課的力封閉。`,
     simHint: '拖曳橘色外力（尖端改大小方向、圓點改作用點）：形封閉時綠色接觸力總能平衡它。再按「外力：L 形三點」，把外力往上或往右拉，就會出現紅色的「需要拉」。',
@@ -330,7 +330,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // drag the body itself → translation probe
   const offPointer = cv.onPointer({
     down: (p, ev) => {
-      if (!insidePolygon(p, shape.verts)) return;
+      // the probe motion is hidden during the external-force test, so a click on the body must not change it
+      if (ext.on || !insidePolygon(p, shape.verts)) return;
       dragging = true; grab = p;
       cv.canvas.setPointerCapture(ev.pointerId);
       if (mode !== 'trans') probeChips.activate(MODE_IDX.trans);
@@ -609,7 +610,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   /** Region labels of the CoR picture, drawn after the body and fingers so nothing covers them. */
-  let corLabels: { p: P2; text: string; color: string }[] = [];
+  let corLabels: { p: P2; text: string; color: string; dy?: number }[] = [];
 
   function drawCorPicture(c: Canvas2D, vis: World, font: string): void {
     corLabels = [];
@@ -641,7 +642,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     for (const q of feasibleCorPoints(lines)) {
       const both = q.plus && q.minus;
       c.point(q.c, 4.5, { color: both ? warn : q.plus ? plusC : minusC });
-      if (both && aP <= 1e-4 && aM <= 1e-4) c.text(q.c, '± 兩向都沒被排除', { dy: -14, color: warn, bg, font: `600 12px ${font}` });
+      // drawn in the late label pass, below the CoR glyph (which often sits on this very point)
+      if (both && aP <= 1e-4 && aM <= 1e-4) corLabels.push({ p: q.c, text: '± 兩向都沒被排除', color: '--warn', dy: 36 });
     }
     // translation compass (CoR at infinity)
     const R = 0.25;
@@ -677,10 +679,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
     c.grid(0.5);
     const vis = c.visible();
+    // body fill first: the translucent CoR regions and normal lines are drawn over it, because rotation
+    // centres inside the body are labelled exactly like those outside (e.g. the concurrent-normals centre)
+    c.polygon(shape.verts, { fill: cssVar('--bg-sunken'), width: 0 });
     if (show.cor) drawCorPicture(c, vis, font);
-
-    // body
-    c.polygon(shape.verts, { fill: cssVar('--bg-sunken'), color: fg, width: 2 });
+    c.polygon(shape.verts, { color: fg, width: 2 });
     c.point([0, 0], 3, { color: muted });
 
     // ghost of the probe motion
@@ -724,7 +727,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         rotGlyph(c, cor, 0.2, mode === 'ccw' ? 1 : -1, cssVar('--series-5'));
       }
     }
-    if (show.cor) for (const L of corLabels) c.text(L.p, L.text, { color: L.color, bg, font: `600 12px ${font}` });
+    if (show.cor) for (const L of corLabels) c.text(L.p, L.text, { color: L.color, bg, dy: L.dy, font: `600 12px ${font}` });
 
     // external force test
     if (ext.on && resist) {

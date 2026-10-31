@@ -878,44 +878,65 @@ export function jointIntervals(tab: PathTable, s: number, x: number): JointInter
 // Reference: the cubic time scaling of the previous lessons
 // ---------------------------------------------------------------------------------------------
 
+/** Normalised time u = t/T at which the cubic s = 3u² − 2u³ (monotone on [0, 1]) reaches s (bisection). */
+function cubicTimeAt(s: number): number {
+  if (s <= 0) return 0;
+  if (s >= 1) return 1;
+  let lo = 0, hi = 1;
+  for (let it = 0; it < 52; it++) {
+    const u = 0.5 * (lo + hi);
+    if (u * u * (3 - 2 * u) < s) lo = u; else hi = u;
+  }
+  return 0.5 * (lo + hi);
+}
+
 /** x = ṡ² at the grid nodes for s(t) = 3(t/T)² − 2(t/T)³ (rest to rest in time T). */
 export function cubicScalingCurve(N: number, T: number): Float64Array {
   const x = new Float64Array(N + 1);
   for (let k = 1; k < N; k++) {
-    const s = k / N;
-    // Invert s = 3u² − 2u³ (monotone on [0, 1]) by bisection.
-    let lo = 0, hi = 1;
-    for (let it = 0; it < 52; it++) {
-      const u = 0.5 * (lo + hi);
-      if (u * u * (3 - 2 * u) < s) lo = u; else hi = u;
-    }
-    const u = 0.5 * (lo + hi);
+    const u = cubicTimeAt(k / N);
     const sd = (6 * u * (1 - u)) / T;
     x[k] = sd * sd;
   }
   return x;
 }
 
+/** Exact s̈ of the cubic time scaling of duration T at every grid node: s̈ = (6 − 12u)/T². */
+export function cubicScalingAccel(N: number, T: number): Float64Array {
+  const a = new Float64Array(N + 1);
+  for (let k = 0; k <= N; k++) a[k] = (6 - 12 * cubicTimeAt(k / N)) / (T * T);
+  return a;
+}
+
 /**
  * The shortest duration T for which the cubic time scaling respects the limits. Scaling time
  * by T multiplies both s̈ and ṡ² by λ = 1/T², so every torque constraint, written per cell like
  * `checkCurve`, is linear in λ: −τ_i ≤ λ h_i + g_i ≤ τ_i with h_i = m_i s̈₁ + c_i ṡ₁² (values for
- * T = 1). The feasible λ form one interval and T = 1/√λ_max. Returns null if no T works (e.g.
- * the arm cannot even hold some configuration of the path against gravity).
+ * T = 1). The feasible λ form one interval and T = 1/√λ_max. Besides the cell midpoints, every
+ * grid node is checked with the cubic's exact s̈ (the largest |s̈| = 6/T² occurs at the very start
+ * and end, which a cell average slightly underestimates). Returns null if no T works (e.g. the
+ * arm cannot even hold some configuration of the path against gravity).
  */
 export function fastestCubic(tab: PathTable): { T: number; x: Float64Array } | null {
   const { N, ds } = tab;
   const x1 = cubicScalingCurve(N, 1);
+  const a1 = cubicScalingAccel(N, 1);
   let lamLo = 0, lamHi = Infinity;
-  for (let k = 0; k < N; k++) {
-    const j = 2 * k + 1;
-    const a = (x1[k + 1] - x1[k]) / (2 * ds), xm = 0.5 * (x1[k] + x1[k + 1]);
+  /** Constrain λ by −τ_i ≤ λ (m_i a + c_i x) + g_i ≤ τ_i at half step j; false if no λ works. */
+  const bound = (j: number, a: number, x: number): boolean => {
     for (let i = 0; i < 2; i++) {
-      const h = tab.m[i][j] * a + tab.c[i][j] * xm, g = tab.g[i][j], tau = tab.tauMax[i];
-      if (Math.abs(h) < 1e-12) { if (Math.abs(g) > tau) return null; continue; }
+      const h = tab.m[i][j] * a + tab.c[i][j] * x, g = tab.g[i][j], tau = tab.tauMax[i];
+      if (Math.abs(h) < 1e-12) { if (Math.abs(g) > tau) return false; continue; }
       const r1 = (tau - g) / h, r2 = (-tau - g) / h;
       if (h > 0) { lamHi = Math.min(lamHi, r1); lamLo = Math.max(lamLo, r2); } else { lamHi = Math.min(lamHi, r2); lamLo = Math.max(lamLo, r1); }
     }
+    return true;
+  };
+  for (let k = 0; k <= N; k++) if (!bound(2 * k, a1[k], x1[k])) return null;
+  for (let k = 0; k < N; k++) {
+    const j = 2 * k + 1;
+    const a = (x1[k + 1] - x1[k]) / (2 * ds), xm = 0.5 * (x1[k] + x1[k + 1]);
+    if (!bound(j, a, xm)) return null;
     // The (optional) joint speed limit caps ṡ² directly.
     if (xm > 0 && Number.isFinite(tab.xHi[j])) lamHi = Math.min(lamHi, tab.xHi[j] / xm);
   }

@@ -72,8 +72,8 @@ $$T_{s,j_i} = T_{\\text{origin},1}\\cdots T_{\\text{origin},i},\\qquad \\hat\\om
 
 $$\\vB_i^{\\text{tool}} = [\\Ad_{T_{bt}^{-1}}]\\,\\vB_i,\\qquad \\omega \\text{ 不變},\\ v \\to v + \\omega\\times p_{bt}$$
 
-UR5 有四條軸平行於 $\\hat z_b$，它們的 $\\vB_i$ 剛好不變。換零位姿則兩組都會變（上一課）。箭頭預告下一章：只轉一個關節時工具尖端的速度，正是 Jacobian 的一欄。完成後做下方自我檢測。`,
-    simHint: '切換「加裝工具」：S 表格完全不變，B 表格只有 B₁、B₅ 的 v 改變（底色）。關節 5 以 1 rad/s 轉動時，青色的尖端速度箭頭隨工具變長；再點表格欄標題 B₆ 改選關節 6，看箭頭為何消失。',
+UR5 有四條軸平行於 $\\hat z_b$，它們的 $\\vB_i$ 剛好不變。換零位姿則兩組都會變（上一課）。箭頭預告下一章：只讓關節 $i$ 以 1 rad/s 轉動時末端的扭轉（twist），就是 Jacobian 的第 $i$ 欄；箭頭畫的是這個扭轉造成的工具尖端速度。完成後做下方自我檢測。`,
+    simHint: '切換「加裝工具」：S 表格完全不變，B 表格只有 B₁、B₅ 的 v 改變（底色）。關節 5 以 1 rad/s 轉動時，青色的尖端速度箭頭隨工具變長；再點表格欄標題 B₆ 改選關節 6：箭頭消失了，想想工具尖端和軸 6 的相對位置。',
   },
 ];
 
@@ -196,10 +196,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     { label: '隨機 θ', title: '每個關節取 −180°～180° 的隨機值', apply: () => setTheta(Array.from({ length: N }, () => Math.round((Math.random() * 2 - 1) * 180) * DEG), true) },
   ], { label: '姿勢' });
 
-  const scene = new Scene3D(host, { aspect: 1.5, grid: false, axes: false, autoStart: false, cameraPos: UR5_CAMERA.pos, target: UR5_CAMERA.target });
+  const scene = new Scene3D(host, { aspect: 1.75, grid: false, axes: false, autoStart: false, cameraPos: UR5_CAMERA.pos, target: UR5_CAMERA.target });
   const overlay = el('div', { class: 'mr-overlay', style: { right: '0.5rem', whiteSpace: 'normal' } });
   scene.el.appendChild(overlay);
-  note(host, '橘色虛線 = Sᵢ（固定在 {s}）· 紫色點線 = Bᵢ（黏在 {b}）· 青色實線 = 關節此刻的實際軸 · 拖曳可旋轉視角');
+  note(host, '橘虛線 = Sᵢ（固定在 {s}）· 紫點線 = Bᵢ（黏在 {b}）· 青實線 = 關節此刻的實際軸 · 可拖曳');
 
   const strip = factorStrip(host);
 
@@ -250,8 +250,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   host.appendChild(verifyBox);
   const tsView = matrixView(verifyBox, { label: 'T（space）=', digits: 3 });
   const tbView = matrixView(verifyBox, { label: 'T（body）=', digits: 3 });
-  const diffRow = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.2rem 1rem', alignItems: 'baseline' } });
-  verifyBox.appendChild(diffRow);
+  for (const v of [tsView, tbView]) {
+    v.el.style.fontSize = '0.74rem';
+    v.el.style.marginRight = '0.2rem';
+    (v.el.querySelector('.mr-grid') as HTMLElement | null)?.style.setProperty('column-gap', '0.42rem');
+  }
+  const diffRow = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.2rem 1rem', alignItems: 'baseline', flexBasis: '100%' } });
+  // the residual comes first so the number the step talks about is in the first view
+  verifyBox.prepend(diffRow);
   const diffRead = readout(diffRow, { label: '‖T_space − T_body‖ =', minWidth: '7ch' });
   const bookNote = el('span', { class: 'mr-note', style: { margin: '0' } });
   diffRow.appendChild(bookNote);
@@ -266,17 +272,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const b = el('button', {
       type: 'button',
       title: `選取 ${j.name}`,
-      style: { font: 'inherit', textAlign: 'left', background: 'none', border: '1px solid transparent', borderRadius: '6px', padding: '0.1rem 0.3rem', paddingLeft: `${0.3 + 0.75 * (i + 1)}rem`, cursor: 'pointer', color: 'var(--fg)' },
+      style: { font: 'inherit', textAlign: 'left', background: 'none', border: '1px solid transparent', borderRadius: '6px', padding: '0.1rem 0.3rem', paddingLeft: `${0.3 + 0.5 * (i + 1)}rem`, cursor: 'pointer', color: 'var(--fg)' },
     }, `└ ${j.name}`, el('span', { style: { color: 'var(--fg-muted)' } }, ` → ${j.child}`));
     b.addEventListener('click', () => { S.urdfSel = i; if (j.type === 'revolute') S.sel = i; refresh(); });
     tree.appendChild(b);
     return b;
   });
-  const detail = el('div', { style: { flex: '1 1 16rem', minWidth: '0' } });
+  const detail = el('div', { style: { flex: '1 1 14rem', minWidth: '0' } });
   urdfBox.appendChild(detail);
   const xmlPre = el('pre', { style: { fontFamily: 'var(--mono)', fontSize: '0.72rem', background: 'var(--bg-sunken)', borderRadius: '6px', padding: '0.4rem 0.55rem', margin: '0 0 0.3rem', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } });
-  const accum = kv(detail, ['累乘 T_s,joint 的位置 p', '轉軸 ω = R · axis', '得到的螺旋軸']);
-  detail.prepend(xmlPre);
+  detail.appendChild(xmlPre);
+  // the accumulated numbers span the full width below the tree and the XML snippet
+  const accum = kv(urdfBox, ['累乘 T_s,joint 的位置 p', '轉軸 ω = R · axis', '得到的螺旋軸']);
+  accum.el.style.flexBasis = '100%';
 
   const K_P = '末端位置 p';
   const K_Q = '從 {s} 量：q';
@@ -285,6 +293,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const K_CONV = '剛換好的欄';
   const K_VEL = '尖端速度';
   const info = kv(host, [K_P, K_Q, K_QB, K_PASS, K_CONV, K_VEL]);
+  // readouts, the two-way check (step 4) and the URDF tree (step 5) come before the 12-row screw
+  // tables, so what each step talks about is visible without scrolling the simulation pane
+  for (const e of [info.el, verifyBox, urdfBox]) host.insertBefore(e, tables);
 
   // ---- 3D -------------------------------------------------------------------
   const root = new THREE.Group();
@@ -383,7 +394,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const r = Math.max(0.25, ...pts.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]))) + 0.12;
     const cam = scene.camera;
     const half = Math.min((cam.fov * DEG) / 2, Math.atan(Math.tan((cam.fov * DEG) / 2) * (cam.aspect || 1.5)));
-    const d = (r / Math.sin(half)) * 0.92;
+    const d = (r / Math.sin(half)) * 0.9;
     const az = -58 * DEG, elv = 22 * DEG;
     cam.position.set(c[0] + d * Math.cos(elv) * Math.cos(az), c[1] + d * Math.cos(elv) * Math.sin(az), c[2] + d * Math.sin(elv));
     scene.controls?.target.set(c[0], c[1], c[2]);
@@ -610,7 +621,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       }
     }
     info.show(K_VEL, showVel);
-    if (showVel) info.set(K_VEL, `只轉關節 ${S.sel + 1}（1 rad/s）：${fmt3(vTip, 3)} m/s，|v| = ${fmt(Math.hypot(...vTip), 3)} m/s`);
+    if (showVel) {
+      const onAxis = Math.hypot(...vTip) < 1e-9 ? '（尖端就在這個關節的轉軸上，所以不動）' : '';
+      info.set(K_VEL, `只轉關節 ${S.sel + 1}（1 rad/s）：${fmt3(vTip, 3)} m/s，|v| = ${fmt(Math.hypot(...vTip), 3)} m/s${onAxis}`);
+    }
 
     const ov = S.mode === 'body'
       ? `body form 由左往右 · 已右乘 ${S.stage}/${N} 個因子`

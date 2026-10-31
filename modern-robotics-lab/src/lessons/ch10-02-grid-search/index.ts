@@ -6,7 +6,7 @@ import {
 import { wrapToPi, type P2 } from '@/mr';
 import { meta } from './meta';
 import {
-  DIRS, bestFirst, descend, downsample, edgesFrom, forNeighbors, heuristic, nearestFree, paintMaster, rrtPreview, wavefront,
+  DIRS, bestFirst, descend, downhill, downsample, edgesFrom, forNeighbors, heuristic, nearestFree, paintMaster, rrtPreview, wavefront,
   type Conn, type Grid, type HeuristicKind, type RRTPreview, type SearchTrace,
 } from './grid';
 import { ARM_2R, MAPS, MASTER, PROBE, arm2RHits, arm2RPoints, cellAngles } from './maps';
@@ -21,7 +21,7 @@ const steps: LessonStep[] = [
 - **8 連通**：再加上四個斜角，代價 $\\sqrt2$。斜向兩側只要有一格是障礙，就不准斜著「切角」擠過去。
 
 運動規劃於是變成**圖搜尋**：找一條從 S 到 G、邊代價總和最小的路徑。2R 手臂的 C-space 是環面，所以最左欄與最右欄、最上列與最下列也互為鄰居。`,
-    simHint: '拖曳紫色的「探針」到不同格子：箭頭是可以走的邊（標出代價），紅 × 是障礙，紅色虛線是被禁止的切角。切換「鄰居」4／8 連通，比較下方「圖」那一列的邊數。',
+    simHint: '拖曳紫色的「探針」到不同格子：箭頭是可以走的邊（標出代價），紅 × 是障礙，紅色虛線是被禁止的切角。切換「鄰居」4／8 連通，看地圖左上角的節點數與邊數怎麼變。',
   },
   {
     title: 'Dijkstra：按代價一圈圈擴散',
@@ -39,7 +39,7 @@ $$g(m)\\leftarrow\\min\\big(g(m),\\;g(n)+c(n,m)\\big)$$
 $$f(n)=g(n)+h(n),\\qquad 0\\le h(n)\\le h^*(n)$$
 
 直線（歐氏）距離不可能比任何格點路徑長，所以可容許。$h$ 讓背對 G 的節點 $f$ 變大、一直排在後面，很多到結束都輪不到；Dijkstra 就是 $h\\equiv0$ 的特例。`,
-    simHint: '比較下方表格的 Dijkstra 與 A*：路徑代價相同，展開的節點卻少得多；灰色虛線框出的是 Dijkstra 展開過的範圍。把 G 拖到別處，表格會立刻更新。',
+    simHint: '地圖左上角同時列出 A* 與 Dijkstra 的展開數，跑完後再標出代價：與最短相同，展開的節點卻少得多；灰色虛線框出的是 Dijkstra 展開過的範圍。把 G 拖到別處，控制項下方的比較表會立刻更新。',
   },
   {
     title: '啟發式的權重 ε',
@@ -49,7 +49,7 @@ $$f(n)=g(n)+h(n),\\qquad 0\\le h(n)\\le h^*(n)$$
 - $\\varepsilon>1$ 時 $\\varepsilon h$ 可能高估，搜尋更急著往 G 衝，展開的節點變少，但不再保證最短。若 $h$ 是一致的（滿足三角不等式），找到的代價最多是最短代價的 $\\varepsilon$ 倍。
 
 U 形陷阱的開口正對著 S，估計會先把搜尋引進 U 裡。若重新規劃的速度比路徑短一點更重要（例如環境一直在變），用一點最佳性換速度很划算。`,
-    simHint: '把 ε 從 0 拉到 3：灰色虛線是最短路徑，紫色是目前找到的路徑。下方曲線同時畫出展開節點數與路徑代價隨 ε 的變化（都以 Dijkstra 為 1）。',
+    simHint: '把 ε 從 0 拉到 3：灰色虛線是最短路徑，紫色是目前找到的路徑。地圖旁的「ε 掃描」曲線畫出展開節點數與路徑代價隨 ε 的變化（都以 Dijkstra 為 1），直線標出目前的 ε。',
   },
   {
     title: 'Wavefront：從終點倒推',
@@ -68,7 +68,7 @@ $$n_{k+1}=\\arg\\min_{m\\in N(n_k)}\\big(c(n_k,m)+d(m)\\big)$$
 
 $$N=k^{\\,n}$$
 
-個格子；6 軸手臂每軸 100 格就是 $10^{12}$ 格，連逐格查一次碰撞都做不完。下一課改用**隨機取樣**：不把格子建完，只在需要的地方查詢。`,
+個格子；6 軸手臂每軸 100 格就是 $10^{12}$ 格，就算每次碰撞查詢只要 1 μs，光是逐格查一遍就要將近 12 天，還沒開始搜尋。下一課改用**隨機取樣**：不把格子建完，只在需要的地方查詢。`,
     simHint: '16 × 16 時窄縫被格子吃掉，A* 回報失敗；把「解析度」改成 32 × 32 再看一次。勾選「預覽：RRT」看看下一課的隨機樹如何鑽過窄縫。',
   },
 ];
@@ -245,11 +245,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const chips = presetChips(host, MAPS.map((m, i) => ({ label: m.label, apply: () => loadMap(i) })), { label: '地圖' });
   const views = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'flex-start' } });
   host.appendChild(views);
-  const gridBox = el('div', { style: { flex: '1.6 1 300px', minWidth: '0' } });
-  const armBox = el('div', { style: { flex: '1 1 190px', minWidth: '0', display: 'none' } });
-  views.append(gridBox, armBox);
+  // The map is capped at 460 px so the transport and the main selectors stay in the first view of the
+  // sim pane; the side column (2R workspace view, ε sweep plot) sits next to it and wraps below on phones.
+  const gridBox = el('div', { style: { flex: '1.6 1 300px', minWidth: '0', maxWidth: '460px', margin: '0 auto' } });
+  const sideBox = el('div', { style: { flex: '1 1 190px', minWidth: '0', display: 'none', flexDirection: 'column', gap: '0.6rem' } });
+  const armBox = el('div', { style: { minWidth: '0', display: 'none' } });
+  sideBox.appendChild(armBox);
+  views.append(gridBox, sideBox);
   const cv = new Canvas2D(gridBox, { aspect: 1, world: WORLD, margin: 0.01, overlay: true });
-  Object.assign(cv.overlay.style, { top: '0.15rem', background: 'var(--bg-elev)', opacity: '0.92', padding: '0 0.35rem', borderRadius: '4px' });
+  // slightly smaller than the default so the A* line (counts + cost) fits on one line next to the side column
+  Object.assign(cv.overlay.style, { top: '0.15rem', background: 'var(--bg-elev)', opacity: '0.92', padding: '0 0.35rem', borderRadius: '4px', fontSize: '0.68rem' });
   armBox.appendChild(el('div', { class: 'mr-note', style: { margin: '0 0 0.25rem' } }, '工作空間：滑鼠移到 C-space 的格子上可預覽那個姿勢'));
   const armCv = new Canvas2D(armBox, { aspect: 1, world: ARM_WORLD, margin: 0.02, overlay: true });
   const armRow = el('div', { class: 'mr-playback' });
@@ -334,11 +339,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tSweep = toggle(togRow, { label: 'ε 掃描圖', value: showSweep, onChange: (v) => { showSweep = v; syncSweepBox(); scheduleSide(); } });
   const tRRT = toggle(togRow, { label: '預覽：RRT', value: showRRT, onChange: (v) => { showRRT = v; refresh(); } });
 
-  const info = kv(host, ['地圖', '圖', '演算法', '進度', '目前節點', '結果']);
-
-  // live comparison of all algorithms on the current map
+  // live comparison of all algorithms on the current map (placed right under the controls, above the read-outs)
   const cmpBox = el('div', { style: { margin: '0.5rem 0 0.3rem' } });
   host.appendChild(cmpBox);
+  const info = kv(host, ['地圖', '圖', '演算法', '進度', '目前節點', '結果']);
   cmpBox.appendChild(el('div', { class: 'mr-note', style: { margin: '0 0 0.2rem' } }, '同一張地圖、同一組 S、G：各演算法要展開多少節點？（地圖或 S、G 一改就重算）'));
   const cellStyle = (num: boolean): Record<string, string> => ({
     padding: '0.15rem 0.4rem', borderBottom: '1px solid var(--border)', textAlign: num ? 'right' : 'left',
@@ -355,12 +359,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     return { tr, cells };
   });
 
-  const sweepBox = el('div', { style: { display: 'none', margin: '0.3rem 0' } });
-  host.appendChild(sweepBox);
+  // ε sweep: lives in the side column next to the map so it is visible together with the search
+  const sweepBox = el('div', { style: { display: 'none', minWidth: '0' } });
+  sideBox.appendChild(sweepBox);
+  sweepBox.appendChild(el('div', { class: 'mr-note', style: { margin: '0 0 0.25rem' } }, 'A* 的 ε 掃描：目前的地圖與 S、G，兩條曲線都以 Dijkstra 為 1'));
   const plot = new Plot2D(sweepBox, {
-    title: 'A* 的 ε 掃描（目前的地圖與 S、G）', xLabel: '啟發式權重 ε', yLabel: '÷ Dijkstra',
+    xLabel: 'ε', yLabel: '÷ Dijkstra',
     series: [{ name: '展開節點數', color: '--series-6', width: 2.2 }, { name: '路徑代價', color: '--series-5', width: 2.2 }],
-    xRange: [0, 3], yRange: [0, 1.5], height: 180,
+    xRange: [0, 3], yRange: [0, 1.5], height: 210,
   });
 
   const scaleCard = el('div', { class: 'card', style: { padding: '0.5rem 0.75rem', margin: '0.5rem 0' } });
@@ -417,8 +423,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     gridVersion++;
     S = placeEndpoint('S');
     G = placeEndpoint('G');
-    armBox.style.display = is2R() ? '' : 'none';
+    syncSide();
     updateScaleCard();
+  }
+
+  /** The side column shows the 2R workspace (C-space map only) and / or the ε sweep plot. */
+  function syncSide(): void {
+    const arm = is2R();
+    armBox.style.display = arm ? '' : 'none';
+    sweepBox.style.display = showSweep ? '' : 'none';
+    sideBox.style.display = arm || showSweep ? 'flex' : 'none';
   }
 
   function recompute(): void {
@@ -584,11 +598,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       plot.setXY(0, xs, ye);
       plot.setXY(1, xs, yc);
     }
-    plot.setMarkers([{ y: 1, color: '--fg-muted' }, { x: eps, color: '--accent', label: `ε = ${fmt(eps, 1)}` }]);
+    // no label on the ε line: it collided with the legend near ε = 1 and was clipped at ε = 3 (the slider shows ε)
+    plot.setMarkers([{ y: 1, color: '--fg-muted' }, { x: eps, color: '--accent' }]);
   }
 
   function syncSweepBox(): void {
-    sweepBox.style.display = showSweep ? '' : 'none';
+    syncSide();
     if (showSweep) sweepKey = '';
   }
 
@@ -656,8 +671,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
   function armAt(a: { pts: P2[]; u: number }): P2 {
     const m = a.pts.length - 1;
-    const t = a.u * m;
-    const s = Math.min(m - 1, Math.floor(t));
+    if (m < 1) return a.pts[0] ?? cellAngles(n, S);
+    const t = clampN(a.u, 0, 1) * m;
+    const s = clampN(Math.floor(t), 0, m - 1);
     const f = t - s;
     const p = a.pts[s], q = a.pts[s + 1];
     return [wrapToPi(p[0] + f * (q[0] - p[0])), wrapToPi(p[1] + f * (q[1] - p[1]))];
@@ -852,7 +868,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     strokeSegs(c, segs, '--fg-muted', 1, 0.35);
   }
 
-  /** Back pointers: closed cell → its parent (towards S for a forward search, downhill towards G for the wavefront). */
+  /**
+   * Arrows: for a forward search, closed cell → its back pointer (towards S). For the wavefront, the
+   * downhill neighbour argmin(c + d) that descend() follows, so the drawn S → G path always runs along
+   * the arrows (the search's own parent pointer may pick a different, equally short neighbour). A cell
+   * with a strictly smaller d is closed earlier, so this is also correct while the wave is replayed.
+   */
   function drawArrows(c: Canvas2D, px: number, withNumbers: boolean): void {
     if (px < 9) return;
     const h = 1 / n;
@@ -860,10 +881,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const shafts: number[] = [];
     const heads: number[] = [];
     const hs = clampN(px * 0.2, 3, 7);
+    const wave = algo === 'wave';
     for (let cc = 0; cc < n * n; cc++) {
       const ca = t.closedAt[cc];
       if (ca < 0 || ca >= k) continue;
-      const p = t.parent[cc];
+      const p = wave ? downhill(grid, t.g, cc, conn) : t.parent[cc];
       if (p < 0) continue;
       const [di, dj] = stepDelta(cc, p);
       const L = Math.hypot(di, dj);
@@ -1013,12 +1035,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const oa = trace.openedAt[hover];
       return `${pos} ${oa >= 0 && oa <= k ? '在開放串列中' : '還沒碰到'}`;
     }
-    if (!showSearch) return `${n} × ${n} 格 · ${conn} 連通`;
+    // step 1 compares 4- and 8-connectivity: keep the graph size in view
+    if (!showSearch) return `${n} × ${n} 格 · ${conn} 連通：${fmtCount(freeCount)} 節點、${fmtCount(edgeCount)} 條邊`;
     const open = trace.openCount[clampN(k, 0, trace.expanded)];
     if (algo === 'dijkstra') return `Dijkstra · 已展開 ${k} · open ${open}`;
     if (algo === 'wave') return `Wavefront · 已標記 ${k} 格 · open ${open}`;
     // the number to compare with stays in view: how many nodes Dijkstra needs for the same query
-    return `A* ε=${fmt(eps, 1)} · 已展開 ${k}（Dijkstra ${opt.expanded}）`;
+    // ...and, once G is popped, how the cost compares with the optimum
+    let tail = '';
+    if (trace.goalStep > 0 && k >= trace.goalStep && Number.isFinite(opt.cost)) {
+      tail = trace.cost > opt.cost + 1e-9 ? ` · 代價 +${fmt(100 * (trace.cost / opt.cost - 1), 1)}%` : ' · 代價 = 最短';
+    }
+    return `A* ε=${fmt(eps, 1)} · 展開 ${k}（Dijkstra ${opt.expanded}）${tail}`;
   }
 
   cv.draw = (c) => {
@@ -1150,8 +1178,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   cv.canvas.addEventListener('pointerleave', onLeave);
 
   // ------------------------------------------------------------------ animation (search replay + arm motion)
-  const loop = createLoop((dt) => {
+  const loop = createLoop((rawDt) => {
     if (destroyed) return;
+    // The first frame after loop.start() inside an input handler can report a negative dt (its rAF
+    // timestamp precedes the performance.now() taken in start()); a negative step would run the
+    // replay / arm animation backwards (armAnim.u < 0 indexed pts[-1]).
+    const dt = Math.max(0, rawDt);
     let busy = false;
     if (playing) {
       const N = trace.expanded;

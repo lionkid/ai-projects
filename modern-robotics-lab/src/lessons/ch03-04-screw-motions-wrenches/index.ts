@@ -6,7 +6,7 @@ import {
   themedStandardMaterial, type SliderHandle,
 } from '@/ui';
 import {
-  type Mat, type Vec, Adjoint, FKinSpace, RotZ, RpToTrans, TransInv, clamp, cross, eye, matMul, matVec, norm, rotZYX, rrr3,
+  type Mat, type Vec, Adjoint, FKinSpace, RotZ, RpToTrans, TransInv, clamp, cross, eye, getCol, matMul, matVec, norm, rotZYX, rrr3,
   transformPoint, transpose, vecAdd, vecScale, vecSub,
 } from '@/mr';
 import { meta } from './meta';
@@ -15,7 +15,7 @@ import {
   screwBetween, screwFromQSH, screwMotion, screwPath, translationTerms, vParts, wrenchAtPoint, wrenchInFrame,
 } from './screws';
 import { attachDragHandles, rayLineParam, rayPlaneZ } from './drag3d';
-import { captioned, cellMatrix, disposeSprites, eqRow, label3D, tex } from './widgets';
+import { captioned, cellMatrix, disposeSprites, eqRow, label3D, setLinePoints, tex } from './widgets';
 
 // ---------------------------------------------------------------------------
 // Narrative
@@ -44,7 +44,9 @@ $$\\vS=\\begin{bmatrix}\\omega\\\\ v\\end{bmatrix}=\\begin{bmatrix}\\hat s\\\\ -
     title: 'exp([S]θ)：沿螺旋軸走 θ',
     md: `沿螺旋軸走 $\\theta$，就是對 $[\\vS]\\theta$ 取矩陣指數（$\\|\\omega\\|=1$）：
 
-$$e^{[\\vS]\\theta}=\\begin{bmatrix}e^{[\\omega]\\theta} & G(\\theta)\\,v\\\\ 0 & 1\\end{bmatrix},\\quad G(\\theta)=I\\theta+(1-\\cos\\theta)[\\omega]+(\\theta-\\sin\\theta)[\\omega]^2$$
+$$e^{[\\vS]\\theta}=\\begin{bmatrix}e^{[\\omega]\\theta} & G(\\theta)\\,v\\\\ 0 & 1\\end{bmatrix}$$
+
+$$G(\\theta)=I\\theta+(1-\\cos\\theta)[\\omega]+(\\theta-\\sin\\theta)[\\omega]^2$$
 
 旋轉部分就是上一課的 Rodrigues 公式；平移部分 $G(\\theta)v$ 是原本位在 $\\{s\\}$ 原點的那一點最後的位置。物體上每一點都繞著軸走螺旋線：$h=0$ 時是圓弧，$h$ 越大螺旋拉得越開、越接近直線。純平移（$\\omega=0$）時 $G(\\theta)=I\\theta$，物體只是沿 $v$ 移動 $\\theta$ 公尺。`,
     simHint: '按「▶ 播放 θ」讓 θ 一路轉到 360°。從 {s} 原點出發、頭尾相接的三支箭頭是 G(θ)v 的三項（紫、粉紅、橘），終點正好落在 {b} 的原點。把 h 調大，看灰色螺旋線被拉長。',
@@ -108,7 +110,7 @@ const quiz: QuizQuestion[] = [
       '$m_s=f_s\\times p$',
     ],
     answer: 1,
-    explanation: '由 $\\vF_s=[\\Ad_{T_{bs}}]^{\\T}\\vF_b$ 得 $m_s=R\\,m_b+p\\times(Rf_b)=p\\times f_s$。力矩永遠是「對某一點」而言：$\\{b\\}$ 的原點在作用線上，所以 $m_b=0$；$\\{s\\}$ 的原點有 1 m 的力臂。$f_s\\times p$ 的叉積順序相反，方向錯了。',
+    explanation: '由 $\\vF_s=[\\Ad_{T_{bs}}]^{\\T}\\vF_b$ 得 $m_s=R\\,m_b+p\\times(Rf_b)=p\\times f_s$。力矩永遠是「對某一點」而言：$\\{b\\}$ 的原點在作用線上，所以 $m_b=0$；$\\{s\\}$ 的原點一般不在作用線上，力臂是它到作用線的垂直距離（最多 1 m，只有 $f$ 平行於 $p$ 時才是 0）。$f_s\\times p$ 的叉積順序相反，方向錯了。',
   },
   {
     question: '已知起點 $T_1$ 與終點 $T_2$（都相對於 $\\{s\\}$），想用一段螺旋運動把它們連起來做動畫。哪一種做法正確？',
@@ -157,7 +159,7 @@ const CHASLES: { label: string; title: string; T2: Mat }[] = [
 const LOG_PRESETS: { label: string; title: string; P: Pose6 }[] = [
   { label: '一般', title: '轉動與平移都有', P: p6(0.7, 0.35, 0.45, 100, 0, 30) },
   { label: '純平移', title: 'R = I：ω = 0，θ 是距離', P: p6(0.7, 0.35, 0.45, 0, 0, 0) },
-  { label: '轉 180°', title: 'θ = π 的特殊情況', P: p6(0.5, 0.5, 0.3, 180, 0, 0) },
+  { label: '轉 180°', title: 'θ = π 的特殊情況', P: p6(0.5, 0.5, 0.3, -180, 0, 0) },
   { label: '小角度', title: '轉角很小：螺旋軸離得很遠', P: p6(0.6, 0.2, 0.2, 8, 0, 0) },
 ];
 
@@ -182,7 +184,7 @@ const CAMS = [
   camAt([0.75, 0.3, 0.4], 2.5),
   camAt([0.5, 0.1, 0.3], 2.4),
   camAt([0.5, -0.05, 0.25], 2.4),
-  camAt([0.35, 0.2, 0.3], 2.3),
+  camAt([0.35, 0.22, 0.22], 1.8, -75, 58), // from above: the screw arc and the straight decoupled path separate
   camAt([0.55, 0.5, 0.35], 2.4),
   camAt([0.55, 0.5, 0.35], 2.4),
   camAt([0.25, 0.0, 0.3], 1.8),
@@ -214,7 +216,7 @@ const CSS = `
 .c304 .mr-cell.c304-x { color: var(--axis-x); font-weight: 700; }
 .c304 .mr-cell.c304-y { color: var(--axis-y); font-weight: 700; }
 .c304 .mr-cell.c304-z { color: var(--axis-z); font-weight: 700; }
-.c304 .mr-cell.c304-p { color: var(--accent); font-weight: 700; }
+.c304 .mr-cell.c304-p { color: var(--series-8); font-weight: 700; }
 .c304 .mr-cell.c304-dim { color: var(--fg-muted); }
 .c304 .mr-cell.c304-w { color: var(--series-5); font-weight: 700; }
 .c304 .mr-cell.c304-v { color: var(--series-6); font-weight: 700; }
@@ -303,8 +305,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   add(axis.group);
   const trailO = scene.addTube([], { radius: 0.008, color: '--series-4' });
   const trailC = scene.addTube([], { radius: 0.005, color: '--series-4', opacity: 0.6 });
-  const cmpO = scene.addPolyline([ORIGIN, ORIGIN], '--fg-muted', { dashed: true });
-  const cmpC = scene.addPolyline([ORIGIN, ORIGIN], '--fg-muted', { dashed: true });
+  const cmpO = scene.addPolyline([ORIGIN, ORIGIN], '--fg', { dashed: true });
+  const cmpC = scene.addPolyline([ORIGIN, ORIGIN], '--fg', { dashed: true });
   const helix = scene.addTube([], { radius: 0.006, color: '--series-8', opacity: 0.85 });
 
   const sphere = (r: number, color: string): THREE.Mesh => add(new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), themedStandardMaterial(color)));
@@ -338,8 +340,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const leverS = scene.addPolyline([ORIGIN, ORIGIN], '--series-5', { dashed: true });
 
   // step 7: a spatial 3R arm whose joint axes are screw axes
-  const robot = new Robot3D(scene, rrr3, { showAxes: true, frameSize: 0.15, linkRadius: 0.022, axisLength: 0.45, eeLabel: '{b}' });
-  robot.axes.forEach((a) => a.setColor('--series-6'));
+  // Robot3D's own axis glyphs have a fixed size (rings too large for this 0.7 m arm), so draw our own.
+  const robot = new Robot3D(scene, rrr3, { showAxes: false, frameSize: 0.15, linkRadius: 0.022, eeLabel: '{b}' });
+  const jointAxes = [0, 1, 2].map(() => { const a = new ScrewAxis3D({ color: '--series-6', length: 0.45, size: 0.65 }); add(a.group); return a; });
 
   const L = {
     start: label3D(scene, '起點', '--fg-muted'),
@@ -361,7 +364,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const legChasles = legend(root, [
     { color: 'var(--series-6)', label: '螺旋軸' },
     { color: 'var(--series-4)', label: '{b} 原點與一個角落的軌跡' },
-    { color: 'var(--fg-muted)', label: '虛線：比較方法的軌跡' },
+    { color: 'var(--fg)', label: '虛線：比較方法的軌跡' },
   ]);
   const legAxis2 = legend(root, [
     { color: 'var(--series-6)', label: '螺旋軸與軸上一點 q' },
@@ -492,7 +495,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     label: lab, min: k < 3 ? -1.5 : -1, max: k < 3 ? 1.5 : 1, step: k < 3 ? 0.05 : 0.01, value: S.Vb[k], unit: k < 3 ? 'rad/s' : 'm/s',
     onInput: (v) => { S.Vb[k] = v; update(); },
   }));
-  const KP = { s: 'V_sᵀ F_s（{s} 的數字）', b: 'V_bᵀ F_b（{b} 的數字）', pt: 'f · v_P（力 · 施力點速度）', chk: '‖[Ad_{T_sb}]ᵀ F_s − F_b‖' };
+  const KP = { s: 'V_sᵀ F_s（{s} 的數字）', b: 'V_bᵀ F_b（{b} 的數字）', pt: 'f · v_P（力 · 施力點速度）', chk: '‖[Ad_Tsb]ᵀ F_s − F_b‖（應為 0）' };
   const pwKv = kv(pwBox, Object.values(KP));
 
   // ---- step 7 panel --------------------------------------------------------
@@ -664,6 +667,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     for (const l of [cmpO.line, cmpC.line, lineAction.line, leverS.line]) l.visible = false;
     axis.setVisible(false);
     robot.setVisible(false);
+    jointAxes.forEach((a) => a.setVisible(false));
   }
 
   // ---- per-mode updates --------------------------------------------------------
@@ -774,8 +778,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       trailO.update(interpolationPath(eye(4), T2, ORIGIN, 'screw'));
       trailC.update(interpolationPath(eye(4), T2, CORNER, 'screw'));
       if (S.cmp !== 'none') {
-        cmpO.update(interpolationPath(eye(4), T2, ORIGIN, S.cmp));
-        cmpC.update(interpolationPath(eye(4), T2, CORNER, S.cmp));
+        setLinePoints(cmpO.line, interpolationPath(eye(4), T2, ORIGIN, S.cmp), true);
+        setLinePoints(cmpC.line, interpolationPath(eye(4), T2, CORNER, S.cmp), true);
       }
     }
     trailO.mesh.visible = true;
@@ -861,7 +865,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function updatePoe(): void {
     robot.setVisible(true);
-    const { T } = robot.setConfig(S.q3);
+    const { T, P } = robot.setConfig(S.q3);
+    // joint i's current screw axis in {s}: [Ad_{e^[S1]θ1 ⋯ e^[S(i-1)]θ(i-1)}] S_i
+    jointAxes.forEach((a, i) => {
+      const Si = getCol(rrr3.Slist, i);
+      a.setScrew(i === 0 ? Si : matVec(Adjoint(P[i - 1]), Si));
+      a.setVisible(true);
+    });
     mSlist.set(rrr3.Slist);
     mFk.set(T);
     const T2 = FKinSpace(rrr3.M, rrr3.Slist, S.q3);

@@ -88,7 +88,7 @@ const quiz: QuizQuestion[] = [
     question: '$L_1 = L_2 = 1$ m 的 2R 手臂，末端沿著通過基座的直線從 $(-1, 0)$ 走到 $(1, 0)$，並要求關節角連續變化。下列何者正確？',
     options: [
       '全程鎖定 elbow-down 即可：整條路徑都在環帶內，$\\theta$ 自然連續',
-      '過原點時讓 $\\theta_2$ 越過 $\\pm180^\\circ$、換到 elbow-up；硬鎖分支則 $\\theta_1$ 跳 $180^\\circ$',
+      '過原點時讓 $\\theta_2$ 越過 $\\pm180^\\circ$、換到另一分支；硬鎖分支則 $\\theta_1$ 跳 $180^\\circ$',
       '做不到：原點不在工作空間內，手臂根本到不了 $(0, 0)$，路徑必須繞開基座',
       '在原點先把 $\\theta_2$ 歸零（伸直）再繼續，分支就能保持不變，關節角也不會跳',
     ],
@@ -578,7 +578,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     kvA.set(K.t2, reachable ? `${pm}${fmt(t2 / D, 1)}°${ik.degenerate ? '（θ₁ 任意）' : merged ? '（兩解合一）' : ''}` : '—（無實數解）');
     kvA.set(K.g, ik.r > 1e-9 ? `${fmt(ik.gamma / D, 1)}°（${quadrantOf(x, y)}）` : '未定義（r = 0）');
     const b = beta(L1, L2, t2);
-    kvA.set(K.b, reachable ? `${pm}${fmt(Math.abs(b) / D, 1)}°` : '—');
+    // At the base with L1 = L2 the triangle collapses (atan2(0, 0)): β is undefined, like γ.
+    kvA.set(K.b, !reachable ? '—' : ik.degenerate ? '未定義（三角形退化）' : `${pm}${fmt(Math.abs(b) / D, 1)}°`);
     const dn = byBranch(ik, 'down');
     const up = byBranch(ik, 'up');
     kvA.set(K.t1d, dn ? (ik.degenerate ? '任意' : `${fmt(dn.theta1 / D, 1)}°`) : '—');
@@ -610,6 +611,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const G: Pt = [(E[0] + P[0]) / 3, (E[1] + P[1]) / 3];
     c.polygon([O, E, P], { fill: col.tri, color: col.tri, width: 1.5, alpha: 0.16 });
     c.line(O, P, { color: col.tri, width: 1.5, dash: [5, 4] });
+    // Target on the base (L1 = L2): the triangle has collapsed onto link 1; side labels would sit on it.
+    if (ik.r < 1e-6) return;
     sideLabel(c, O, E, G, 'L₁', col.fg);
     sideLabel(c, E, P, G, 'L₂', col.fg);
     sideLabel(c, O, P, G, `r = ${fmt(ik.r, 2)}`, col.tri);
@@ -646,10 +649,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const ext = 0.3 * L2;
     c.line(E, [E[0] + ext * Math.cos(t1), E[1] + ext * Math.sin(t1)], { color: col.muted, width: 1, dash: [3, 3] });
     if (Math.abs(cur.theta2) > 1e-3) {
-      const rr = 0.22 * L2;
-      c.arc(E, rr, Math.min(t1, t1 + cur.theta2), Math.max(t1, t1 + cur.theta2), { color: col.muted, width: 2 });
+      // Arc in the foreground colour (the muted one vanished against the links), label clear of it.
+      const rr = 0.28 * L2;
+      c.arc(E, rr, Math.min(t1, t1 + cur.theta2), Math.max(t1, t1 + cur.theta2), { color: col.fg, width: 2 });
       const am = t1 + cur.theta2 / 2;
-      c.text([E[0] + (rr + 0.13) * Math.cos(am), E[1] + (rr + 0.13) * Math.sin(am)], 'θ₂', { color: col.fg, bg: col.bg });
+      const lr = rr + 20 / c.scale;
+      c.text([E[0] + lr * Math.cos(am), E[1] + lr * Math.sin(am)], 'θ₂', { color: col.fg, bg: col.bg });
     }
   }
 
@@ -688,6 +693,29 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.text([E[0] + ux * off, E[1] + uy * off], text, { color, bg: cssVar('--sim-bg', '#fff'), font });
   }
 
+  /**
+   * Text beside point p, offset perpendicular to the world direction `dir`: the lower side unless the
+   * label would leave the canvas there, then the other side.
+   */
+  function besideRay(c: Canvas2D, p: Pt, dir: number, text: string, color: string, bg: string): void {
+    const font = `12px ${cssVar('--font') || 'sans-serif'}`;
+    c.ctx.font = font;
+    const w = c.ctx.measureText(text).width + 8;
+    const h = 18;
+    const [sx, sy] = c.toScreen(p);
+    const sides: Pt[] = [[-Math.sin(dir), Math.cos(dir)], [Math.sin(dir), -Math.cos(dir)]];
+    sides.sort((a, b) => a[1] - b[1]);
+    let pick = sides[0];
+    let off = 0;
+    for (const n of sides) {
+      const o = 12 + (w / 2) * Math.abs(n[0]) + 10 * Math.abs(n[1]);
+      const cx = sx + n[0] * o, cy = sy - n[1] * o;
+      if (cx - w / 2 >= 2 && cx + w / 2 <= c.width - 2 && cy - h / 2 >= 2 && cy + h / 2 <= c.height - 2) { pick = n; off = o; break; }
+    }
+    if (!off) off = 12 + (w / 2) * Math.abs(pick[0]) + 10 * Math.abs(pick[1]);
+    c.text(p, text, { color, bg, font, dx: pick[0] * off, dy: -pick[1] * off });
+  }
+
   const branchColor = (b: Branch, col: Colors) => (b === 'down' ? col.down : col.up);
 
   function draw2R(c: Canvas2D, col: Colors): void {
@@ -712,7 +740,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (reachable && !ik.degenerate && !show.arcs) elbowLabel(c, cur, branchColor(cur.branch, col), ik.reach === 'one' ? '兩解合一' : undefined);
     if (show.arcs && reachable) drawArcs(c, col);
     if (!reachable) {
-      c.text(pts[2], ik.reach === 'outside' ? '伸直也搆不到' : '摺起來還是太遠', { color: col.danger, dy: 18, bg: col.bg });
+      // The fallback arm and the target lie on the same ray from the base: put the message beside
+      // that ray (not along it), so the target handle never covers it.
+      // Too far: anchor part-way along the stretched arm (the target and its handle label lie beyond the
+      // tip). Too close: anchor at the tip, which lies beyond the target.
+      const out = ik.reach === 'outside';
+      const anchor: Pt = out ? [0.6 * pts[2][0], 0.6 * pts[2][1]] : pts[2];
+      besideRay(c, anchor, ik.gamma, out ? '伸直也搆不到' : '摺起來還是太遠', col.danger, col.bg);
     } else if (ik.degenerate) {
       c.circle([0, 0], L1, { color: col.down, width: 1, dash: [2, 4] });
       c.text([0, -L1], '手肘可在這圈上任意位置（θ₁ 任意）', { color: col.down, dy: 14, bg: col.bg });

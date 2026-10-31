@@ -34,7 +34,7 @@ $$|f_t| \\le \\mu f_n ,\\qquad f_n \\ge 0 .$$
 理由是：沿連線互相擠壓的一對力 $f$ 與 $-f$ 彼此抵消，又都在錐內，所以手指可以任意加大這股**內力（internal force）**，換來更多切向摩擦去對付外力。實際檢查時，比較連線和各自法線的夾角 $\\beta_i$ 與摩擦角：
 
 $$\\beta_1 < \\alpha \\quad\\text{且}\\quad \\beta_2 < \\alpha .$$`,
-    simHint: '上下拖動任一根手指，看連線何時跑出錐外、徽章翻紅；或把 μ 調小。再按「兩指夾圓盤」：兩指要多接近正對面才夠？',
+    simHint: '上下拖動任一根手指，看連線何時跑出錐外（連線變成紅色虛線，徽章變成「未力封閉」）；或把 μ 調小。再按「兩指夾圓盤」：兩指要多接近正對面才夠？',
   },
   {
     title: '多指：wrench 錐是否張滿',
@@ -62,7 +62,9 @@ $$f_n \\ge \\frac{W}{2\\mu} .$$
 
 $$\\vF_i^{\\T}\\vV \\ge 0 \\quad \\text{對每條錐邊都成立。}$$
 
-這就是接觸**擋不住**的運動：每個接觸點都朝遠離手指的方向離開，且和每條錐邊的夾角都不超過 90°，錐內任何接觸力對它都只能做非負的功。把上一課的 CoR 圖改用錐的邊緣線來畫（每個接觸兩條）：標 $+$ 的點，所有接觸力對它的力矩都 $\\ge 0$，對它逆時針的擾動就平衡不了，物體會繞它逆時針轉走；$-$ 同理。力封閉 ⇔ 圖上沒有任何標記。`,
+這就是接觸**擋不住**的運動：每個接觸點要嘛不動、要嘛離開手指，速度和每條錐邊的夾角都不超過 90°，錐內任何接觸力對它只能做非負的功。把上一課的 CoR 圖改用錐的邊緣線來畫（每個接觸兩條）：標 $+$ 的點，所有接觸力對它的力矩都 $\\ge 0$，對它有逆時針力矩的擾動就平衡不了，物體可繞它逆時針轉走；$-$ 同理。力封閉 ⇔ 圖上（含平移羅盤）沒有任何標記。
+
+單一接觸也有這種互補：黏住時接觸點不能動，運動只剩繞它轉（1 個自由度），力卻可在錐內任選（2 個）；滑動時運動 2、力 1（力壓在與滑動方向相反的錐邊上）；脫離時運動 3、力 0。兩者相加恆為 3。`,
     simHint: '兩指錯開、μ = 0.25：藍區是方塊能逆時針轉走的轉心，橘色虛線是一個擋不住的擾動。把 μ 慢慢調大，看藍區縮小、在 μ ≈ 0.6 消失；按「▶ 試動」看自由運動。',
   },
   {
@@ -126,6 +128,8 @@ const polar = (r: number, deg: number): P2 => [r * Math.cos((deg * Math.PI) / 18
 const FINGER_VARS = ['--series-6', '--series-7', '--series-3', '--series-8'];
 const MAX_F = 4;
 const CANVAS_ASPECT = 1.55;
+/** Shorter 2D view while the 3D wrench-space view is shown, so both fit in the first screen. */
+const HULL_CANVAS_ASPECT = 2.8;
 const FTIP = 0.075; // fingertip radius (world units)
 const CONE_LEN = 0.62; // drawn length of the friction cones
 const K_PROBE = 0.6; // world units per unit of probe force
@@ -138,7 +142,7 @@ const T_RAMP = 1.6, T_HOLD = 1.1, T_FREE = 1.3; // s
 interface DistConfig { mag: number; ang: number; a: P2; fmax: number }
 interface Config {
   shape: ShapeKey; points: P2[]; mu: number; probe?: boolean; dual?: boolean; hull?: boolean; dist?: DistConfig;
-  /** Optional zoomed view (same aspect as the canvas); the default view otherwise. */
+  /** Optional zoomed view (fitted into the canvas, aspect kept); the default view otherwise. */
   world?: World;
 }
 
@@ -147,7 +151,7 @@ const PRESETS: { label: string; title: string; cfg: Config }[] = [
   { label: '單指摩擦錐', title: '一根手指與它的摩擦錐', cfg: { shape: 'square', points: [[0, -0.75]], mu: 0.5, probe: true, world: { xmin: -1.7, xmax: 1.7, ymin: -1.35, ymax: 0.85 } } },
   { label: '兩指夾方塊', title: '左右兩面各一指，連線略微傾斜', cfg: { shape: 'square', points: [[-0.75, -0.2], [0.75, 0.25]], mu: 0.5 } },
   { label: '兩指夾圓盤', title: '圓盤的法線都指向圓心', cfg: { shape: 'disc', points: [polar(0.85, 205), polar(0.85, 15)], mu: 0.3 } },
-  { label: '三指三角形', title: '三指在三邊中點：法線交於中心', cfg: { shape: 'tri', points: TRI_MIDS, mu: 0.3, hull: true } },
+  { label: '三指三角形', title: '三指在三邊中點：法線交於中心', cfg: { shape: 'tri', points: TRI_MIDS, mu: 0.3, hull: true, world: { xmin: -2.1, xmax: 2.1, ymin: -1.1, ymax: 1.22 } } },
   { label: '重量擾動', title: '水平夾持，承受 6 N 重量', cfg: { shape: 'square', points: [[-0.75, 0], [0.75, 0]], mu: 0.4, dist: { mag: 6, ang: -Math.PI / 2, a: [0, 0], fmax: 5 } } },
   { label: '對偶', title: '兩指錯開、摩擦小：看接觸擋不住的運動', cfg: { shape: 'square', points: [[-0.75, -0.45], [0.75, 0.45]], mu: 0.25, dual: true } },
 ];
@@ -584,8 +588,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     hullTog.set(v, { silent: true });
     hullBox.style.display = v ? '' : 'none';
     // a shorter 2D view leaves room for the 3D plot in the first screen
-    if (changed) cv.setSize({ aspect: v ? 2.3 : CANVAS_ASPECT });
-    if (v && !hullView) hullView = new WrenchHullView(hullHost, { aspect: host.clientWidth < 520 ? 1.6 : 2.5 });
+    // (on a narrow screen everything stacks anyway, so keep the 2D view taller there)
+    if (changed) cv.setSize({ aspect: v ? (host.clientWidth < 520 ? 2.3 : HULL_CANVAS_ASPECT) : CANVAS_ASPECT });
+    if (v && !hullView) hullView = new WrenchHullView(hullHost, { aspect: host.clientWidth < 520 ? 1.6 : 2.8 });
     update();
   }
 
@@ -845,9 +850,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     distFHandle.enabled = dist.on && !ramping;
     c.grid(0.5);
     const vis = c.visible();
-    if (show.dual && !dist.on) drawDual(c, vis, font, bg, muted);
     const out = outline(body);
-    c.polygon(out, { fill: cssVar('--bg-sunken'), color: fg, width: 2 });
+    // body fill first: the translucent dual regions are drawn over it, because rotation centres inside
+    // the body (e.g. the free spin about the centre in the offset pinch) are labelled like any other point
+    c.polygon(out, { fill: cssVar('--bg-sunken'), width: 0 });
+    if (show.dual && !dist.on) drawDual(c, vis, font, bg, muted);
+    c.polygon(out, { color: fg, width: 2 });
     c.point([0, 0], 3, { color: muted });
     cs.forEach((b, i) => drawCone(c, b, FINGER_VARS[i]));
     if (two && !dist.on && !probe.on) drawTwo(c, font, bg);

@@ -11,7 +11,7 @@ import {
 import { meta } from './meta';
 import {
   type ChainModel, type CostSample, type RneaTrace, type TorqueParts, baseCurves, bodyWrenchParts, boxSpatialInertia,
-  measureCost, measureModelCost, rneaTrace, scaleCurves, spinAt, wrenchInFrame, type BaseCurves,
+  measureCost, measureModelCost, rneaTrace, scaleCurves, spinAt, wrenchInFrame, growthExponent, type BaseCurves,
 } from './rne';
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ const steps: LessonStep[] = [
 
 $$\\mathcal F_b = \\mathcal G_b\\dot{\\mathcal V}_b - [\\mathrm{ad}_{\\mathcal V_b}]^{\\T}\\mathcal G_b\\mathcal V_b$$
 
-第一項是熟悉的「質量 × 加速度」。第二項來自 $\\{b\\}$ 跟著物體一起轉，它的轉動部分正是 $\\omega_b \\times \\mathcal I_b\\omega_b$。所以就算轉速固定（$\\dot{\\mathcal V}_b = 0$），只要轉軸不是主軸，軸承仍得持續提供力矩。`,
+第一項是熟悉的「質量 × 加速度」。第二項來自 $\\{b\\}$ 跟著物體一起轉，它的轉動部分正是 $\\omega_b \\times \\mathcal I_b\\omega_b$。所以就算轉速固定（$\\dot{\\mathcal V}_b = 0$），只要轉軸不是主軸，軸承仍得持續提供力矩。（前兩步的模擬不計重力，只看運動本身需要的 wrench。）`,
     simHint: '盒子以固定轉速繞傾斜的軸旋轉，橘色箭頭是軸承必須施加的力矩。關掉「−adᵀGV 項」，力矩瞬間歸零——這個省略錯在哪？把傾角調成 0° 再看一次。',
   },
   {
@@ -34,8 +34,8 @@ $$\\mathcal F_b = \\mathcal G_b\\dot{\\mathcal V}_b - [\\mathrm{ad}_{\\mathcal V
 
 $$\\mathcal G_a = [\\mathrm{Ad}_{T_{ba}}]^{\\T}\\,\\mathcal G_b\\,[\\mathrm{Ad}_{T_{ba}}]$$
 
-$\\{a\\}$ 不在質心時，$\\mathcal G_a$ 的非對角區塊出現 $\\mathfrak m[p]$ 形式的耦合，左上角則多出平行軸定理的 $-\\mathfrak m[p]^2$。方程 $\\mathcal F_a = \\mathcal G_a\\dot{\\mathcal V}_a - [\\mathrm{ad}_{\\mathcal V_a}]^{\\T}\\mathcal G_a\\mathcal V_a$ 的形式完全不變，算出的 wrench 也與 $[\\mathrm{Ad}_{T_{ba}}]^{\\T}\\mathcal F_b$ 一致。`,
-    simHint: '轉軸已移到盒子一端的 {a}：看 G_a 中標色的耦合區塊，以及紅色的力箭頭（質心在繞圈）。下方兩種算法的 F_a 差值只有 10⁻¹⁵ 等級；把 r 拉回 0 比較。',
+$\\{a\\}$ 不在質心時（令 $p$ 為 $\\{a\\}$ 原點在 $\\{b\\}$ 中的位置，模擬裡就是 $(r, 0, 0)$），$\\mathcal G_a$ 的非對角區塊出現 $\\mathfrak m[p]$ 形式的耦合，左上角則多出平行軸定理的 $-\\mathfrak m[p]^2$。方程 $\\mathcal F_a = \\mathcal G_a\\dot{\\mathcal V}_a - [\\mathrm{ad}_{\\mathcal V_a}]^{\\T}\\mathcal G_a\\mathcal V_a$ 的形式完全不變，算出的 wrench 也與 $[\\mathrm{Ad}_{T_{ba}}]^{\\T}\\mathcal F_b$ 一致。`,
+    simHint: '轉軸已移到盒子一端的 {a}：看 G_a 中標色的耦合區塊，以及青色的力箭頭（質心在繞圈）。下方兩種算法的 F_a 差值只有 10⁻¹⁵ 等級；把 r 拉回 0 比較。',
   },
   {
     title: '前向遞迴：速度與加速度往外傳',
@@ -44,7 +44,7 @@ $\\{a\\}$ 不在質心時，$\\mathcal G_a$ 的非對角區塊出現 $\\mathfrak
 $$\\mathcal V_i = [\\mathrm{Ad}_{T_{i,i-1}}]\\,\\mathcal V_{i-1} + \\mathcal A_i\\dot\\theta_i$$
 
 $\\mathcal A_i$ 是關節 $i$ 的螺旋軸在連桿座標系 $\\{i\\}$（位於質心）中的表示。加速度 $\\dot{\\mathcal V}_i$ 照同樣的方式傳遞，另多一項 $[\\mathrm{ad}_{\\mathcal V_i}]\\mathcal A_i\\dot\\theta_i$。一個小技巧：令基座加速度 $\\dot{\\mathcal V}_0 = (0, -\\mathfrak g)$，彷彿整個世界以 $\\mathfrak g$ 向上加速，重力就自動進入每根連桿的加速度。`,
-    simHint: '手臂停在軌跡上的一個瞬間。按「▸ 下一階段」依序算出 V₁、V₂、V₃：紫色箭頭是角速度、藍色是質心速度。V̇ᵢ 的線性部分總含有 9.81 m/s² 的向上分量。',
+    simHint: '手臂停在軌跡上的一個瞬間。按「▸ 下一階段」依序算出 V₁、V₂、V₃：紫色箭頭是角速度、青色是質心速度。看 V̇₁ 的線性 z 分量正好是 9.81：基座「向上 9.81 m/s²」的假想加速度傳了進來；V̇₂、V̇₃ 寫在跟著連桿傾斜的座標系裡，這份 9.81 會分散到 x、z 分量。',
   },
   {
     title: '後向遞迴：wrench 往回傳',
@@ -53,7 +53,7 @@ $\\mathcal A_i$ 是關節 $i$ 的螺旋軸在連桿座標系 $\\{i\\}$（位於�
 $$\\mathcal F_i = [\\mathrm{Ad}_{T_{i+1,i}}]^{\\T}\\mathcal F_{i+1} + \\mathcal G_i\\dot{\\mathcal V}_i - [\\mathrm{ad}_{\\mathcal V_i}]^{\\T}\\mathcal G_i\\mathcal V_i$$
 
 起點 $\\mathcal F_{n+1} = \\mathcal F_{\\text{tip}}$ 是末端施加在環境上的 wrench。關節只能沿自己的軸出力，馬達力矩是投影 $\\tau_i = \\mathcal F_i^{\\T}\\mathcal A_i$，其餘分量由軸承與結構承受。越靠近基座，$\\mathcal F_i$ 累積的負擔越大。`,
-    simHint: '前向遞迴已完成，畫面停在 F₃。繼續按「▸ 下一階段」：紅色箭頭是關節傳給連桿的力、橙色是力矩；τ₃ → τ₂ → τ₁ 依序算出，最後與 mr.InverseDynamics 比對。',
+    simHint: '前向遞迴已完成，畫面停在 F₃。繼續按「▸ 下一階段」：青色箭頭是關節傳給連桿的力、橙色是力矩；τ₃ → τ₂ → τ₁ 依序算出，最後與 mr.InverseDynamics 比對。',
   },
   {
     title: '沿軌跡的力矩曲線',
@@ -113,7 +113,7 @@ const quiz: QuizQuestion[] = [
     explanation: '遞迴把每根連桿的 twist、加速度與 wrench 各算一次，速度項與重力也都包含在內，工作量與 $n$ 成正比。$M(\\theta)$ 是 $n\\times n$ 矩陣，用逆動力學逐欄組出要呼叫 $n$ 次、共 $O(n^2)$；符號展開的閉式則隨關節數爆炸。模擬第 7 步的量測曲線就是這兩種成長率。',
   },
   {
-    question: '一塊長方形板以**固定角速度**繞一根通過質心、但**不是主軸**的軸旋轉（$\\dot{\\mathcal V}_b = 0$）。軸承必須施加的 wrench 是？',
+    question: '一塊長方形板以**固定角速度**繞一根通過質心、但**不是主軸**的軸旋轉（$\\dot{\\mathcal V}_b = 0$，不計重力）。軸承必須施加的 wrench 是？',
     options: [
       '零：轉速固定、沒有加速度，所以不需要任何力或力矩',
       '只有力，沒有力矩',
@@ -121,7 +121,7 @@ const quiz: QuizQuestion[] = [
       '一個在空間中方向固定的力矩',
     ],
     answer: 2,
-    explanation: '$\\dot{\\mathcal V}_b = 0$ 時 $\\mathcal F_b = -[\\mathrm{ad}_{\\mathcal V_b}]^{\\T}\\mathcal G_b\\mathcal V_b$，轉動部分是 $\\omega_b\\times\\mathcal I_b\\omega_b$；轉軸不是主軸時 $\\mathcal I_b\\omega_b$ 與 $\\omega_b$ 不平行，這個力矩不為零。它在 $\\{b\\}$ 中固定，而 $\\{b\\}$ 在轉，所以從空間看力矩方向一直在轉——不平衡轉子會讓軸承振動，就是這個原因。質心不動，力為零。',
+    explanation: '$\\dot{\\mathcal V}_b = 0$ 時 $\\mathcal F_b = -[\\mathrm{ad}_{\\mathcal V_b}]^{\\T}\\mathcal G_b\\mathcal V_b$，轉動部分是 $\\omega_b\\times\\mathcal I_b\\omega_b$；轉軸不是主軸時 $\\mathcal I_b\\omega_b$ 與 $\\omega_b$ 不平行，這個力矩不為零。它在 $\\{b\\}$ 中固定，而 $\\{b\\}$ 在轉，所以從空間看力矩方向一直在轉——不平衡轉子會讓軸承振動，就是這個原因。質心不動，所以力為零（若計入重力，軸承還得另外撐住重量 $\\mathfrak m\\mathfrak g$）。',
   },
 ];
 
@@ -144,6 +144,7 @@ const { L0, L1 } = RRR3_DIMENSIONS;
 /** Chain sizes for the cost measurement (each one doubles the previous). */
 const COST_NS = [3, 6, 12, 24];
 const ARM_VIEW: { pos: [number, number, number]; target: [number, number, number] } = { pos: [1.05, -1.18, 0.98], target: [0.08, 0, 0.36] };
+const REC_VIEW: { pos: [number, number, number]; target: [number, number, number] } = { pos: [0.2, -0.91, 0.72], target: [0.25, -0.05, 0.32] };
 const BODY_VIEW: { pos: [number, number, number]; target: [number, number, number] } = { pos: [0.62, -0.8, 0.74], target: [0, 0, 0.4] };
 
 /** Scale the text sprites under `root` (frame labels are sized for ~1 m robots; this scene is smaller). */
@@ -266,7 +267,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const pivot = scene.addSphere(0.014, '--fg-muted');
   const wArrow = scene.addArrow({ color: '--series-5', radius: 0.007, head: 0.035 });
   const mArrow = scene.addArrow({ color: '--series-4', radius: 0.009, head: 0.045 });
-  const fArrow = scene.addArrow({ color: '--series-2', radius: 0.009, head: 0.045 });
+  // Linear quantities (force, COM velocity) use --series-6 so they never share a hue with the frame axes
+  // (x red, z blue) or with the highlighted link (accent blue).
+  const fArrow = scene.addArrow({ color: '--series-6', radius: 0.009, head: 0.045 });
   const bodyObjs = () => [box, axisLine.line, pivot];
 
   // ---------------- 3D objects: rrr3 arm
@@ -278,7 +281,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   comFrames.forEach((f) => shrinkLabels(f.group, 0.4));
   const jointAxis = new ScrewAxis3D({ color: '--accent', length: 0.2, size: 0.35 });
   scene.scene.add(jointAxis.group);
-  const vArrow = scene.addArrow({ color: '--series-1', radius: 0.007, head: 0.035 });
+  const vArrow = scene.addArrow({ color: '--series-6', radius: 0.007, head: 0.035 });
   const loadBox = scene.addBox([0.06, 0.06, 0.06], '--warn');
   const rope = scene.addLink({ radius: 0.003, color: '--fg-muted' });
   const toolPath = scene.addTube([[0, 0, 0], [0, 0, 0.01]], { radius: 0.004, color: '--warn', opacity: 0.55 });
@@ -288,7 +291,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const panel = controlPanel(host, { compact: true });
   const tRow = row(panel);
   const pbBody = playback(tRow, {
-    onPlay: () => startLoop(), onPause: () => stopLoop(), onReset: () => { tb = 0; ta = 0; refresh(); },
+    onPlay: () => startLoop(), onPause: () => stopLoop(), onReset: () => { tb = 0; ta = 0; fPlot.clear(); refresh(); },
     onSpeed: (s) => { loop.speed = s; }, speeds: [0.25, 0.5, 1, 2],
   });
   const pbArm = playback(tRow, {
@@ -312,7 +315,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const secBody = section();
   const bodyCtl = controlPanel(secBody, { compact: true });
   const sOmega = slider(bodyCtl, { label: '平均轉速 ω₀', min: 0.5, max: 6, step: 0.1, value: omega0, unit: 'rad/s', onInput: (v) => { omega0 = v; chips.clear(); refresh(); } });
-  const sTilt = angleSlider(bodyCtl, { label: '轉軸傾角（相對主軸 z_b）', value: tiltDeg * DEG, min: 0, max: Math.PI / 2, onInput: (v) => { tiltDeg = v / DEG; chips.clear(); updateAxisLine(); refresh(); } });
+  const sTilt = angleSlider(bodyCtl, { label: '轉軸與 z_b 軸夾角', value: tiltDeg * DEG, min: 0, max: Math.PI / 2, onInput: (v) => { tiltDeg = v / DEG; chips.clear(); updateAxisLine(); refresh(); } });
+  sTilt.el.querySelector('.mr-label > span')?.replaceChildren('轉軸與 ', mathEl('z_b'), ' 軸夾角');
   const sOffset = slider(bodyCtl, { label: '{a} 與轉軸離質心 r', min: 0, max: 0.2, step: 0.01, value: 0, unit: 'm', onInput: (v) => { offsetR = v; chips.clear(); updateAxisLine(); refresh(); } });
   const bodyRow = row(bodyCtl);
   const tVary = toggle(bodyRow, { label: '轉速週期變化', value: false, onChange: (v) => { varying = v; chips.clear(); refresh(); } });
@@ -676,7 +680,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         const V = tr.V[link];
         const w = rot(P, [V[0], V[1], V[2]]), v = rot(P, [V[3], V[4], V[5]]);
         if (norm3(w) > 1e-6) { wArrow.setDir(o, w.map((x) => x / norm3(w)), Math.min(0.35, 0.12 * norm3(w))); wArrow.visible = true; }
-        if (norm3(v) > 1e-6) { vArrow.setDir(o, v.map((x) => x / norm3(v)), Math.min(0.35, 0.3 * norm3(v))); vArrow.visible = true; }
+        if (norm3(v) > 1e-6) { vArrow.setDir(o, v.map((x) => x / norm3(v)), Math.min(0.35, 0.6 * norm3(v))); vArrow.visible = true; }
       } else if (backward) {
         const F = tr.F[link - 1];
         const m = rot(P, [F[0], F[1], F[2]]), f = rot(P, [F[3], F[4], F[5]]);
@@ -717,34 +721,49 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let fitId: ReturnType<typeof fitCurve> | null = null;
   let fitM: ReturnType<typeof fitCurve> | null = null;
 
+  /** Interleaved rounds over all chain sizes; each n keeps its fastest round, so one busy moment on the machine cannot distort a single point. */
+  const COST_ROUNDS = 3;
   function startCosts(): void {
     if (costTimer) return;
     costs = [];
     costPlotId.clear(); costPlotM.clear();
     btnMeasure.disabled = true;
-    rCostStatus.textContent = '量測中…';
-    let k = 0;
+    let job = 0;
+    const total = COST_ROUNDS * COST_NS.length;
+    rCostStatus.textContent = `量測中…（0 / ${total}）`;
     const next = () => {
       costTimer = 0;
-      if (k === 0) costModelUs = measureModelCost(MODEL, [0.3, -0.4, 0.8]);
-      costs.push(measureCost(COST_NS[k]));
-      k++;
-      const ns = costs.map((c) => c.n);
-      costPlotId.setXY(0, ns, costs.map((c) => c.idUs));
-      costPlotM.setXY(0, ns, costs.map((c) => c.massUs));
-      if (costs.length >= 2) {
-        fitId = fitCurve(ns, costs.map((c) => c.idUs), (n) => n);
+      const k = job % COST_NS.length;
+      if (job === 0) costModelUs = measureModelCost(MODEL, [0.3, -0.4, 0.8]);
+      else if (k === 0) costModelUs = Math.min(costModelUs, measureModelCost(MODEL, [0.3, -0.4, 0.8]));
+      const c = measureCost(COST_NS[k]);
+      const prev = costs[k];
+      costs[k] = prev ? { n: c.n, idUs: Math.min(prev.idUs, c.idUs), massUs: Math.min(prev.massUs, c.massUs) } : c;
+      job++;
+      const done = costs.filter(Boolean);
+      const ns = done.map((d) => d.n);
+      costPlotId.setXY(0, ns, done.map((d) => d.idUs));
+      costPlotM.setXY(0, ns, done.map((d) => d.massUs));
+      if (done.length >= 2) {
+        fitId = fitCurve(ns, done.map((d) => d.idUs), (n) => n);
         costPlotId.setXY(1, fitId.xs, fitId.ys);
-        fitM = fitCurve(ns, costs.map((c) => c.massUs), (n) => n * n);
+        fitM = fitCurve(ns, done.map((d) => d.massUs), (n) => n * n);
         costPlotM.setXY(1, fitM.xs, fitM.ys);
       }
       rCostModel.set(costModelUs, 1);
-      if (k < COST_NS.length) costTimer = window.setTimeout(next, 30);
-      else {
+      if (job < total) {
+        rCostStatus.textContent = `量測中…（${job} / ${total}，每個 n 取 ${COST_ROUNDS} 輪中最快的一次）`;
+        costTimer = window.setTimeout(next, 30);
+      } else {
         btnMeasure.disabled = false;
-        const n1 = COST_NS[COST_NS.length - 2], n2 = COST_NS[COST_NS.length - 1];
-        rCostStatus.textContent = fitId && fitM
-          ? `依擬合曲線，n 從 ${n1} 加倍到 ${n2}：遞迴 ×${fmt(fitId.at(n2) / fitId.at(n1), 1)}，組出 M ×${fmt(fitM.at(n2) / fitM.at(n1), 1)}`
+        // Growth exponents read off the data (log–log slope over the three largest chains, where the
+        // fixed per-call overhead matters least), not the doubling ratio of the fitted curves, which the
+        // chosen model (a + b·n or a + b·n²) would impose by itself.
+        const big = done.slice(-3);
+        const kId = growthExponent(big.map((d) => d.n), big.map((d) => d.idUs));
+        const kM = growthExponent(big.map((d) => d.n), big.map((d) => d.massUs));
+        rCostStatus.textContent = Number.isFinite(kId) && Number.isFinite(kM)
+          ? `實測成長指數（n = ${big[0].n}–${big[big.length - 1].n} 的 log–log 斜率）：遞迴 ≈ n^${fmt(kId, 2)}，組出 M ≈ n^${fmt(kM, 2)}；n 加倍時約 ×${fmt(2 ** kId, 1)} 與 ×${fmt(2 ** kM, 1)}`
           : '';
       }
     };
@@ -791,9 +810,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     vArrow.visible = false; wArrow.visible = body; mArrow.visible = body; fArrow.visible = body;
     if (m !== 'recursion') links.forEach((l) => l.setColor('--fg-muted'));
     if (body) { loadBox.visible = false; rope.mesh.visible = false; }
-    toolPath.mesh.visible = m === 'traj';
+    toolPath.mesh.visible = !body;
     if (changed) {
-      const v = body ? BODY_VIEW : ARM_VIEW;
+      const v = body ? BODY_VIEW : m === 'recursion' ? REC_VIEW : ARM_VIEW;
       setView(v.pos, v.target);
     }
     pbBody.el.style.display = body ? '' : 'none';
@@ -872,8 +891,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       setMode('body');
       fPlot.setOptions({ title: i === 0 ? '所需 wrench 的分量（在 {b} 中，力矩以實線、力以虛線）' : '所需 wrench 的分量（在 {a} 中，力矩以實線、力以虛線）' });
       bodyNote.textContent = i === 0
-        ? '盒子 0.40 × 0.20 × 0.06 m、3 kg；轉軸穿過質心並固定在空間中。橘色＝力矩、紅色＝力、紫色＝角速度。'
-        : '{a} 位於轉軸上、與 {b} 平行；G_a 中標色的是力與角速度之間的耦合區塊。紅色力箭頭畫在質心（讓質心繞圈所需的力），橘色力矩對 {a} 的原點計算。';
+        ? '盒子 0.40 × 0.20 × 0.06 m、3 kg；轉軸穿過質心並固定在空間中，不計重力。橘色＝力矩、青色＝力、紫色＝角速度。'
+        : '{a} 位於轉軸上、與 {b} 平行；G_a 中標色的是力與角速度之間的耦合區塊。青色力箭頭畫在質心（讓質心繞圈所需的力，不計重力），橘色力矩對 {a} 的原點計算。';
       chips.setPresets(i === 0 ? BODY_PRESETS : FRAME_PRESETS);
       if (i === 0) { offsetR = 0; }
       chips.activate(0);

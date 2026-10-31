@@ -290,10 +290,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const job = basinJob;
     if (!job) return;
     const col = rgbaOf('--danger', 0.32);
-    basinLayer.paint((x, y) => {
-      const i = Math.floor((x - WORLD.xmin) / job.cw), j = Math.floor((y - WORLD.ymin) / job.ch);
-      return job.cells[j * BASIN_NX + i] === BASIN_STUCK;
-    }, { color: col });
+    basinLayer.paint((x, y) => job.cells[job.cellOf(x, y)] === BASIN_STUCK, { color: col });
     // outline of the trapped region (marching squares on the cell centres)
     const mask = new Float64Array(BASIN_NX * BASIN_NY);
     for (let k = 0; k < mask.length; k++) mask[k] = job.cells[k] === BASIN_STUCK ? 1 : 0;

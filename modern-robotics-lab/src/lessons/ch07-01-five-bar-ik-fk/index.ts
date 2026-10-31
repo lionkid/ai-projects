@@ -79,7 +79,7 @@ $$\\|p - B_1\\| = L_2, \\qquad \\|p - B_2\\| = L_4 ,$$
     md: `把兩個肘點越拉越開，兩個交點會互相靠近；當 $\\|B_1 - B_2\\| = L_2 + L_4$ 時兩圓相切，兩個 FK 解合而為一，兩根遠端桿排成一直線。這是「可裝配馬達角」的邊界，再往外就無解；它也是兩個裝配模式的接口：從這裡退回時，機構可能沿原來那一支，也可能**翻面**走進另一支。
 
 接近相切時，交點離 $B_1B_2$ 連線的距離約為 $\\sqrt{L\\,\\delta}$（$\\delta$ 是剩下的間隙，$L$ 為遠端桿長），它對 $\\delta$ 的變化率趨近無限大：馬達只轉 1°，末端就可能移動好幾公分。這種馬達幾乎管不住末端的構型，正是下一課要定義的奇異點。`,
-    simHint: '依序按「遠離相切」「接近相切」「正好相切」，比較兩支 1° 位移箭頭與下方讀數；「接近相切：另一個模式」是翻面後的另一支。把 θ₁ 往左拉，馬達會停在相切邊界。',
+    simHint: '依序按「遠離相切」「接近相切」「正好相切」，比較兩支 1° 位移箭頭與下方讀數；「接近相切：另一個模式」是翻面後的另一支。再把 θ₁ 滑桿往右調大（左肘往外轉、兩肘拉開），馬達會停在相切邊界。',
   },
   {
     title: '3×RPR、Stewart–Gough 與下一課',
@@ -292,6 +292,29 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     let t2 = symmetricMarginAngle(g, margin);
     if (t2 === null) { resetGeom(); t2 = symmetricMarginAngle(g, margin)!; }
     presetMotors(Math.PI - t2, t2, prefer);
+  }
+
+  /**
+   * Presets below must still mean what their chip says after the learner changed the lengths: they fall back
+   * to a symmetric pose that works for the current lengths, and only reset the lengths if none does.
+   */
+  function presetTwo(th1: number, th2: number, prefer: Mode): void {
+    const two = (a: number, b: number): boolean => fkAll(g, a, b).status === 'two';
+    let m: [number, number] | null = two(th1, th2) ? [th1, th2] : null;
+    for (const t2 of [50, 65, 35, 80, 20, 95].map((a) => a * D)) {
+      if (m) break;
+      if (two(Math.PI - t2, t2)) m = [Math.PI - t2, t2];
+    }
+    if (!m) { resetGeom(); m = [th1, th2]; }
+    presetMotors(m[0], m[1], prefer);
+  }
+
+  /** Motor angles that pull the elbows too far apart for the current lengths. */
+  function presetUnassemblable(): void {
+    const cands: [number, number][] = [[160, 20], [170, 10], [180, 0]].map(([a, b]) => [a * D, b * D]);
+    let m = cands.find(([a, b]) => fkAll(g, a, b).status === 'none');
+    if (!m) { resetGeom(); m = cands[0]; }
+    presetMotors(m[0], m[1]);
   }
 
   function legEdgeMessage(c: Config): string {
@@ -1007,16 +1030,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
   const chipSpecs: { label: string; apply: () => void; title?: string }[][] = [
     [
-      { label: '兩顆馬達都能轉（dof = 2）', apply: asFk(() => presetMotors(DEFAULT_MOTORS[0], DEFAULT_MOTORS[1])) },
-      { label: '鎖住 θ₁（剩 1 dof）', apply: () => { setMode('fk'); presetMotors(DEFAULT_MOTORS[0], DEFAULT_MOTORS[1]); setLock(true); update(); } },
+      // resetConfig: the default motor angles, or a pose that can be assembled with the current lengths
+      { label: '兩顆馬達都能轉（dof = 2）', apply: asFk(() => resetConfig()) },
+      { label: '鎖住 θ₁（剩 1 dof）', apply: () => { setMode('fk'); resetConfig(); setLock(true); update(); } },
     ],
     [
-      { label: '閉合：轉馬達（‖g‖ ≈ 0）', apply: asFk(() => presetMotors(DEFAULT_MOTORS[0], DEFAULT_MOTORS[1])) },
+      { label: '閉合：轉馬達（‖g‖ ≈ 0）', apply: asFk(() => resetConfig()) },
       {
         label: '拆開迴路：自己對準',
         apply: () => {
           setMode('fk');
-          presetMotors(DEFAULT_MOTORS[0], DEFAULT_MOTORS[1]);
+          resetConfig();
           setMode('open');
           enterOpen([28 * D, -35 * D]);
           update();
@@ -1028,9 +1052,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       apply: () => { setMode('ik'); if (!cfg) resetConfig(); setBranch(b); },
     })),
     [
-      { label: '一般構型（兩個交點）', apply: asFk(() => presetMotors(FK_MOTORS[0], FK_MOTORS[1], 1)) },
-      { label: '另一個裝配模式', apply: asFk(() => presetMotors(FK_MOTORS[0], FK_MOTORS[1], -1)) },
-      { label: '無法裝配的馬達角', apply: asFk(() => presetMotors(160 * D, 20 * D)) },
+      { label: '一般構型（兩個交點）', apply: asFk(() => presetTwo(FK_MOTORS[0], FK_MOTORS[1], 1)) },
+      { label: '另一個裝配模式', apply: asFk(() => presetTwo(FK_MOTORS[0], FK_MOTORS[1], -1)) },
+      { label: '無法裝配的馬達角', apply: asFk(() => presetUnassemblable()) },
     ],
     [
       { label: '遠離相切', apply: asFk(() => presetMargin(0.6, 1)) },

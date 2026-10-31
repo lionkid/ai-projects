@@ -204,7 +204,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onScrub: (t) => { anim.stop(); pb.setPlaying(false, { silent: true }); snapT = t; enterSnap(); applySnap(); syncUI(); },
   });
   const tFlip = toggle(snapRow, { label: '回程翻到另一個裝配模式', value: true, onChange: (v) => { flip = v; computeSnapSeries(); enterSnap(); applySnap(); } });
-  const sLoad = angleSlider(panel, { label: '末端負載 f 的方向（1 N）', value: loadDir, onInput: (v) => { loadDir = v; update(); } });
+  // f is the force the tip exerts on its surroundings (pushing up = holding up a 1 N weight), so τ = Jᵀ f
+  const sLoad = angleSlider(panel, { label: '施力 f 的方向（1 N）', value: loadDir, onInput: (v) => { loadDir = v; update(); } });
 
   const matWrap = el('div', { style: { overflowX: 'auto' } });
   host.appendChild(matWrap);
@@ -507,8 +508,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const f: Pt = [Math.cos(loadDir), Math.sin(loadDir)];
       const t = holdingTorques(g, cfg, f, redundant);
       const bars = redundant ? bars3 : bars2;
-      bars.set(t.exact ? t.tau : t.tau.map(() => bars === bars3 ? 0 : 1e3));
-      if (!t.exact) bars.el.querySelectorAll('.mr-bar-value').forEach((e) => { e.textContent = '∞ ⚠'; });
+      // no finite torque: saturate the bars along the blow-up direction (relative signs of the motors are meaningful)
+      const blow = t.dir ? t.dir.map((v) => (Math.abs(v) > 1e-3 ? 1e3 * Math.sign(v) : 0)) : t.tau.map(() => 0);
+      bars.set(t.exact ? t.tau : blow);
+      if (!t.exact) bars.el.querySelectorAll('.mr-bar-value').forEach((e, i) => { if (blow[i] !== 0 || !t.dir) e.textContent = '∞ ⚠'; });
       const nrm = Math.hypot(...t.tau);
       info.set(K.tau, t.exact ? `‖τ‖ = ${fmt(nrm, 2)} N·m${nrm > 3 ? '　⚠ 超過 3 N·m' : ''}` : '∞：沒有有限的馬達力矩能平衡這個負載');
     }

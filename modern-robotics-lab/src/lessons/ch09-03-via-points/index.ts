@@ -18,7 +18,7 @@ const steps: LessonStep[] = [
     title: '不只兩個點',
     md: `前兩課的軌跡都是「從 A 到 B」。真實任務卻常要求依序**經過好幾個點**：繞過障礙物的中途點、相機要停下來拍照的位置……每個**經過點（via point）** $p_k$ 都附帶一個到達時刻 $t_k$。
 
-最直接的想法是用一條多項式一口氣穿過所有點。右圖灰色虛線就是這樣做的：5 個點再加上兩端靜止共 7 個條件，需要 6 次多項式。在這組時刻下它已經在中段鼓起、高過所有經過點；點越多、時刻越不均勻，擺盪越嚴重，而且動任何一個點，整條曲線都會改變。
+最直接的想法是用一條多項式一口氣穿過所有點。模擬畫布上的灰色虛線就是這樣做的：5 個點再加上兩端靜止共 7 個條件，需要 6 次多項式。在這組時刻下它已經在中段鼓起、高過所有經過點；點越多、時刻越不均勻，擺盪越嚴重，而且動任何一個點，整條曲線都會改變。
 
 比較好的做法是**分段**：每兩個相鄰經過點之間各放一段三次多項式，要求接縫處位置與速度相等。平面上的 $x$、$y$（或關節空間的每個 $\\theta_i$）各自獨立套用同一套公式。`,
     simHint: '按「▶ 播放」看圓點依序經過 P₀…P₄；再拖曳經過點，或拖動下方時間軸上的時間標記，比較藍色分段三次曲線與灰色虛線（單一 6 次多項式）的變化。',
@@ -251,7 +251,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // Preview card for the next lesson (step 6 only; it takes the place of the coefficient panel).
   const preview = el('div', { class: 'card', style: { padding: '0.4rem 0.6rem', margin: '0.2rem 0', display: 'none' } });
   host.insertBefore(preview, coef);
-  preview.appendChild(mdElement('**下一課預告：$(s,\\dot s)$ 相平面。** 路徑固定後，力矩上限讓每個狀態 $(s,\\dot s)$ 只能有一段加速度區間 $[L,U]$；最快的走法是先全力加速、再全力減速，而且不能越過速度極限曲線（紅）。'));
+  preview.appendChild(mdElement('**下一課預告：$(s,\\dot s)$ 相平面。** 路徑固定後，力矩上限讓每個狀態 $(s,\\dot s)$ 只能有一段加速度區間 $[L,U]$；最快的走法只在全力加速與全力減速之間切換，而且不能越過速度極限曲線（紅），頂多在切點擦過它。'));
   const pv = new Canvas2D(preview, { aspect: 4.2, world: { xmin: -0.06, xmax: 1.06, ymin: -0.025, ymax: 0.245 } });
 
   // ---------------------------------------------------------------- sampling / rebuild
@@ -409,7 +409,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const onSel = k === st.selSeg || k === st.selSeg + 1;
       if (Math.hypot(v[0], v[1]) > 1e-6) c.arrow(p, tip, { color: purple, width: onSel ? 3 : 2, head: 9 });
       const below = k === 0 || k === K - 1;
-      c.text(p, `P${sub(k)}  t=${fmt(st.times[k], 1)}`, { color: cssVar('--fg'), dy: below ? 18 : -18, bg: cssVar('--bg-elev'), font: '11px ' + (cssVar('--font') || 'sans-serif') });
+      // Near the bottom edge a label below the point would be cut off: put it to the left instead.
+      const pos = !below ? { dy: -18 } : (p[1] - WORLD.ymin) * cv.scale > 26 ? { dy: 18 } : { dx: -12, align: 'right' as const };
+      c.text(p, `P${sub(k)}  t=${fmt(st.times[k], 1)}`, { color: cssVar('--fg'), ...pos, bg: cssVar('--bg-elev'), font: '11px ' + (cssVar('--font') || 'sans-serif') });
     });
     // arm or point robot
     const r = at(st.t);
@@ -513,24 +515,45 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   });
 
   // ---------------------------------------------------------------- preview sketch (static)
+  // A qualitative sketch with constant maximal acceleration / deceleration (ṡ² linear in s). The
+  // limit curve has a V-shaped dip; the fastest curve is bang-bang and only TOUCHES the limit curve
+  // at the bottom of the dip (a tangent point), it never runs along it.
+  const PV = { sT: 0.55, dip: 0.075, w: 0.09, acc: 0.03, dec: 0.04 };
+  const pvLim = (s: number) => {
+    const u = Math.max(0, 1 - Math.abs(s - PV.sT) / PV.w);
+    return 0.18 + 0.02 * Math.cos(2 * Math.PI * s) - PV.dip * u * u;
+  };
+  const pvSdT = pvLim(PV.sT); // speed at the tangent point
+  const pvOpt = (s: number) => {
+    const fwd = Math.sqrt(2 * PV.acc * s), bwd = Math.sqrt(2 * PV.dec * (1 - s));
+    const intoDip = Math.sqrt(pvSdT ** 2 + 2 * PV.dec * Math.max(0, PV.sT - s));
+    const outOfDip = Math.sqrt(pvSdT ** 2 + 2 * PV.acc * Math.max(0, s - PV.sT));
+    return s <= PV.sT ? Math.min(fwd, intoDip) : Math.min(outOfDip, bwd);
+  };
+  // Switch points: where the acceleration curve meets the deceleration curve (ṡ² equal).
+  const pvS1 = (pvSdT ** 2 + 2 * PV.dec * PV.sT) / (2 * (PV.acc + PV.dec));
+  const pvS3 = (2 * PV.dec - pvSdT ** 2 + 2 * PV.acc * PV.sT) / (2 * (PV.acc + PV.dec));
   pv.draw = (c) => {
-    const muted = cssVar('--fg-muted');
-    const lim = (s: number) => 0.18 + 0.02 * Math.cos(2 * Math.PI * s) - 0.07 * Math.exp(-(((s - 0.55) / 0.07) ** 2));
+    const muted = '--fg-muted', danger = '--danger', purple = '--series-5';
     c.line([0, 0], [1.02, 0], { color: muted, width: 1.2 });
     c.line([0, 0], [0, 0.23], { color: muted, width: 1.2 });
     c.text([1.03, -0.05], 's', { color: muted });
     c.text([-0.045, 0.22], 'ṡ', { color: muted });
     const L: Pt[] = [], O: Pt[] = [];
-    for (let i = 0; i <= 200; i++) {
-      const s = i / 200;
-      L.push([s, lim(s)]);
-      O.push([s, Math.min(Math.sqrt(0.06 * s), Math.sqrt(0.08 * (1 - s)), lim(s) - 0.004)]);
+    for (let i = 0; i <= 400; i++) {
+      const s = i / 400;
+      L.push([s, pvLim(s)]);
+      O.push([s, pvOpt(s)]);
     }
-    c.polyline(L, { color: cssVar('--danger'), width: 2 });
-    c.polyline(O, { color: cssVar('--series-5'), width: 2.4 });
+    c.polyline(L, { color: danger, width: 2 });
+    c.polyline(O, { color: purple, width: 2.4 });
+    for (const s of [pvS1, PV.sT, pvS3]) {
+      c.point([s, pvOpt(s)], 4.5, { color: purple });
+      c.point([s, pvOpt(s)], 2, { color: '--bg-elev' });
+    }
     const font = '11px ' + (cssVar('--font') || 'sans-serif');
-    c.text([0.03, 0.222], '速度極限曲線（上方不可行）', { color: cssVar('--danger'), font, align: 'left' });
-    c.text([0.5, 0.035], '最快：全力加速 → 全力減速', { color: cssVar('--series-5'), font });
+    c.text([0.03, 0.222], '速度極限曲線（上方不可行）', { color: danger, font, align: 'left' });
+    c.text([0.5, 0.03], '最快：加速／減速交替，只在谷底的切點擦過', { color: purple, font });
   };
 
   // ---------------------------------------------------------------- actions

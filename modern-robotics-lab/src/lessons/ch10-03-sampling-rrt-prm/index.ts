@@ -205,7 +205,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   });
   const togRow = row(panel);
   const tStage = toggle(togRow, { label: '逐階段（四個動作分開看）', value: stageMode, onChange: (v) => { stageMode = v; restart(); } });
-  const tVor = toggle(togRow, { label: 'Voronoi 區域', value: showVor, onChange: (v) => { showVor = v; vorDirty = true; cv.requestRender(); } });
+  const tVor = toggle(togRow, { label: 'Voronoi 區域', value: showVor, onChange: (v) => { showVor = v; vorDirty = true; updateVisibility(); cv.requestRender(); } });
   const tHide = toggle(togRow, { label: '隱藏障礙（規劃器的視角）', value: hideObs, onChange: (v) => { hideObs = v; cv.requestRender(); } });
   const tTorus = toggle(togRow, { label: '環面接縫（±180° 相接）', value: torusOn, onChange: (v) => { torusOn = v; chips.clear(); restart(); } });
   const info = kv(host, ['狀態', '迭代 / 節點', '碰撞查詢次數', '被拒絕的延伸', '涵蓋率', 'q_near 的 Voronoi 面積', '路徑長度', '建圖成本', '本次查詢成本', '入門統計']);
@@ -213,7 +213,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const previewBox = el('div', { class: 'card', style: { padding: '0.5rem 0.7rem', margin: '0.5rem 0' } });
   host.appendChild(previewBox);
-  previewBox.appendChild(mdElement('**下一課預告：位能場。** 不取樣也不長樹：目標是谷底、障礙是山丘，機器人沿著 $-\\nabla U$ 往下滑。下圖是同一張地圖的位能：藍色的谷底在目標，橘色的山丘圍著障礙。'));
+  previewBox.appendChild(mdElement('**下一課預告：位能場。** 不取樣也不長樹：目標是谷底、障礙是山丘，機器人沿著 $-\\nabla U$ 往下滑。下圖是同一張地圖的位能（對數色階）：藍色的谷底在目標，離目標越遠越高（暖色），障礙周圍再墊起一圈陡峭的山丘。'));
   const pv = new Canvas2D(previewBox, { aspect: 2.4, world: FLOOR, margin: 0.02 });
 
   // ------------------------------------------------------------------ rasters (theme-aware, repainted on demand)
@@ -226,6 +226,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let vorCounts: Int32Array | null = null;
   let vorIds: Int32Array | null = null;
   let vorNear = -1;
+  /** Number of tree nodes the Voronoi raster was computed for. */
+  let vorN = 0;
   let pvRaster: RasterLayer | null = null;
   let pvDirty = true;
 
@@ -247,21 +249,35 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const b = map.bounds;
     if (!vor || vor.nx !== nx || vor.ny !== ny) vor = new RasterLayer(b, nx, ny);
     vor.world = b;
+    // The proposal on screen and its q_near (none before the nearest stage of a staged iteration).
+    const shown = stageMode && pending ? pending : lastProp;
+    const near = !shown ? -1 : stageMode && pending && stage < 2 ? -1 : shown.near;
+    // q_near was picked from the tree as it was *before* q_new joined it: show that tree's Voronoi
+    // cells, so q_rand lies in the highlighted cell and its area is the probability of the pick.
+    const excludeLast = !!shown && shown.ok === true && T.size > 1 && T.nodes[T.size - 1] === shown.qNew;
+    const n = excludeLast ? T.size - 1 : T.size;
+    let index = T.index;
+    if (excludeLast) {
+      const pts = T.nodes.slice(0, n);
+      index = new GridIndex(space, pts, Math.max(delta(), Math.min(space.W, space.H) / 48));
+      for (let k = 0; k < n; k++) index.insert(k);
+    }
     const ids = new Int32Array(nx * ny);
-    const counts = new Int32Array(T.size);
+    const counts = new Int32Array(n);
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const [x, y] = vor.cell(i, j);
-        const id = T.index.nearest([x, y]);
+        const id = index.nearest([x, y]);
         ids[j * nx + i] = id;
         counts[id]++;
       }
     }
     vorIds = ids;
     vorCounts = counts;
-    const near = stageMode && pending && stage >= 2 ? pending.near : lastProp?.near ?? -1;
+    vorN = n;
     vorNear = near;
-    const pal = PALETTE.map((p) => rgbaOf(p, 0.2));
+    // pastel cells in every colour except the one reserved for the highlighted q_near cell
+    const pal = PALETTE.filter((p) => p !== '--series-7').map((p) => rgbaOf(p, 0.2));
     const edge = rgbaOf('--fg-muted', 0.55);
     const hi = rgbaOf('--series-7', 0.42);
     const codes = new Int32Array(nx * ny);
@@ -822,7 +838,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (showVor && rrt && vorCounts && vorIds) {
       const near = vorNear;
       const frac = near >= 0 && near < vorCounts.length ? vorCounts[near] / vorIds.length : NaN;
-      info.set('q_near 的 Voronoi 面積', Number.isFinite(frac) ? `${fmt(100 * frac, 1)} %（平均每個節點 ${fmt(100 / rrt.tree.size, 1)} %）` : '—（單步一次就會標出）');
+      info.set('q_near 的 Voronoi 面積', Number.isFinite(frac) ? `${fmt(100 * frac, 1)} %（選它當下樹有 ${vorN} 個節點，平均每個 ${fmt(100 / Math.max(1, vorN), 1)} %）` : '—（單步一次就會標出）');
     }
     const n = rrt ? rrt.tree.size : con ? con.size : prm ? prm.nodes.length : demo ? demo.samples.length : 0;
     // the torus view is narrow (side by side with the arm): its numbers live in the table below instead
@@ -986,6 +1002,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     after?: () => void;
   }
   const rerun = (pre: number | 'finish', speed?: number): void => { restart(); preRun(pre); if (speed) autoRun(speed); };
+  /** Restart the current tree planner and grow it to `n` nodes at once (for the coverage comparison). */
+  const growTo = (n: number): void => { restart(); while (rrt && !rrt.finished && rrt.tree.size < n) lastProp = rrt.step(); refresh(); };
   const STEP_CFG: StepCfg[] = [
     {
       map: 'clutter', algo: 'demo', pre: 30, eps: 0.05, hide: false,
@@ -1012,7 +1030,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       chips: () => [
         { label: 'RRT（有 Voronoi 偏置）', apply: () => { setAlgo('rrt'); rerun(60); } },
         { label: '對照：隨機節點擴張', apply: () => { setAlgo('naive'); rerun(60); } },
-        { label: '各長到 300 個節點', apply: () => { restart(); while (rrt && !rrt.finished && rrt.tree.size < 300) lastProp = rrt.step(); refresh(); } },
+        { label: 'RRT 長到 300 個節點', apply: () => { setAlgo('rrt'); growTo(300); } },
+        { label: '隨機擴張長到 300 個節點', apply: () => { setAlgo('naive'); growTo(300); } },
       ],
       focus: () => [tVor.el, info.el],
     },
@@ -1035,7 +1054,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       focus: () => [cv.el, info.el],
     },
     {
-      map: 'arm', algo: 'connect', pre: 'finish', delta: 0.25, torus: true,
+      map: 'arm', algo: 'connect', pre: 'finish', delta: 0.25, pGoal: 0.05, torus: true,
       chips: () => [
         { label: 'RRT-Connect', apply: () => { setAlgo('connect'); rerun('finish'); } },
         { label: 'RRT', apply: () => { setAlgo('rrt'); rerun('finish'); } },
@@ -1046,7 +1065,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       focus: () => [ws.el, tTorus.el, smoothBtn],
     },
     {
-      map: 'narrow', algo: 'prm', pre: 'finish', n: 120, gap: 0.6, eps: 0.05,
+      map: 'narrow', algo: 'prm', pre: 'finish', n: 120, gap: 0.6, eps: 0.05, delta: 0.6, pGoal: 0.05,
       chips: () => [
         { label: '通道 1.2 m', apply: () => { sGap.set(1.2); preRun('finish'); } },
         { label: '通道 0.6 m', apply: () => { sGap.set(0.6); preRun('finish'); } },

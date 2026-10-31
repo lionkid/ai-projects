@@ -172,6 +172,7 @@ export function makeReference(kind: RefKind, speed = 1): Reference {
       return interpolatedReference(PARK_START, PARK_GOAL, 6 / m, 2);
     case 'still':
     default:
-      return referenceFromMoves('still', pose(0, 0, 0), [], 8);
+      // Parked left of the origin so that its ghost and labels stay clear of the {s} frame.
+      return referenceFromMoves('still', pose(0, -0.5, -0.2), [], 8);
   }
 }

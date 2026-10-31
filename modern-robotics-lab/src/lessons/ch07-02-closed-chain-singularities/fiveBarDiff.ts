@@ -293,7 +293,16 @@ export function inverseRates(g: FiveBarGeom, c: Config, redundant = false): Mat 
   const rowTh1 = [k1 * a[0], k1 * a[1]];
   const rowTh2 = [k2 * b[0], k2 * b[1]];
   if (!redundant) return [rowTh1, rowTh2];
-  return [rowTh1, [-k1 * q[0], -k1 * q[1]], rowTh2];
+  // Both left joints are driven: (dth1, dphi1) = J_L^{-1} v with J_L = [perp(P - A1), perp(P - B1)].
+  // Exactly the rows k1 a and -k1 q in a regular pose, but inverted through the SVD with sigma_min clamped:
+  // at a straight or folded left leg (a ∥ q) the rows k1 a, -k1 q would both point along the leg and lose
+  // the finite motor rates needed to move the tip ACROSS the leg (the ellipse and the torques would then
+  // jump to the two-motor values exactly at the singular pose instead of reaching their limit).
+  const { U, S, V } = svd(cols(perp(q), perp(a)));
+  const s0 = S[0] || 1e-300;
+  const s1 = Math.max(S[1], (1e-9 * g.L1 * g.L2) / s0);
+  const left = [0, 1].map((i) => [0, 1].map((j) => (V[i][0] * U[j][0]) / s0 + (V[i][1] * U[j][1]) / s1));
+  return [left[0], left[1], rowTh2];
 }
 
 export interface Ellipse {
@@ -339,13 +348,20 @@ export function tipVelocity(g: FiveBarGeom, c: Config, rates: [number, number]):
  * Minimum-norm motor torques that balance a force f exerted at the tip (power balance τᵀθ̇a = fᵀv ⇒ Kᵀτ = f).
  * `exact` is false when no finite torque can balance f (actuator singularity).
  */
-export function holdingTorques(g: FiveBarGeom, c: Config, f: Pt, redundant = false): { tau: number[]; exact: boolean } {
+export function holdingTorques(g: FiveBarGeom, c: Config, f: Pt, redundant = false): { tau: number[]; exact: boolean; dir?: number[] } {
   const K = inverseRates(g, c, redundant);
   const KT = K[0].map((_, j) => K.map((row) => row[j]));
   const tau = matVec(pinv(KT, 1e-14), [f[0], f[1]]);
   const back = matVec(KT, tau);
   const err = Math.hypot(back[0] - f[0], back[1] - f[1]);
-  return { tau, exact: err < 1e-6 * Math.max(1, Math.hypot(f[0], f[1])) };
+  const exact = err < 1e-6 * Math.max(1, Math.hypot(f[0], f[1]));
+  if (exact || K.length !== 2) return { tau, exact };
+  // No finite torque: near this pose τ = K^{-T} f grows along the left singular vector of K that belongs to
+  // σ_min (the null space of Kᵀ). Its overall sign depends on the side the singularity is approached from;
+  // the relative signs of the motors do not. Orientation fixed so that τ₂ ≥ 0.
+  const { U } = svd(K);
+  const dir = [U[0][1], U[1][1]];
+  return { tau, exact, dir: dir[1] < 0 ? dir.map((v) => -v) : dir };
 }
 
 // ---------------------------------------------------------------------------

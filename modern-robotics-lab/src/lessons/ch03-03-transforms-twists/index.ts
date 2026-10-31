@@ -16,7 +16,7 @@ import {
   originPath, pointVelocity, poseFromParams, screwInfo, twistsFromDerivative,
 } from './twists';
 import { attachDragHandles, rayPlaneZ } from './drag3d';
-import { captioned, cellMatrix, disposeSprites, eqRow, label3D, tex } from './widgets';
+import { captioned, cellMatrix, disposeSprites, eqRow, label3D, setLinePoints, tex } from './widgets';
 
 // ---------------------------------------------------------------------------
 // Narrative
@@ -32,7 +32,7 @@ const steps: LessonStep[] = [
 $$T_{sb}=\\begin{bmatrix}R & p\\\\ 0 & 1\\end{bmatrix},\\qquad \\begin{bmatrix}r_s\\\\ 1\\end{bmatrix}=T_{sb}\\begin{bmatrix}r_b\\\\ 1\\end{bmatrix}$$
 
 如果補的是 0，最後一欄的 $p$ 會被乘掉、只剩旋轉；方向、速度這類「自由向量」正是這樣換座標的。`,
-    simHint: '拉動滑桿改變 $T_{sb}$。橘色點 P 黏在物體上：$r_b$ 永遠不變，$r_s = T_{sb}\\,r_b$ 跟著改變。對照矩陣的前三欄與 {b} 的紅綠藍軸，最後一欄與灰色箭頭 $p$。',
+    simHint: '拉動滑桿改變 $T_{sb}$。橘色點 P 黏在物體上：$r_b$ 永遠不變，$r_s$（由 $T_{sb}$ 乘上 $[r_b;1]$ 得到）跟著改變。對照矩陣的前三欄與 {b} 的紅綠藍軸，最後一欄與灰色箭頭 $p$。',
   },
   {
     title: '合成、求逆、換參考系',
@@ -57,9 +57,9 @@ $$T_{sc}=T_{sb}\\,T_{bc},\\qquad T^{-1}=\\begin{bmatrix}R^{\\T} & -R^{\\T}p\\\\ 
     title: '旋量：角速度加上參考點的線速度',
     md: `剛體的速度需要 6 個數字：所有點共用的角速度 $\\omega$，加上**某一個參考點**的線速度 $v$。在 $\\{b\\}$ 中描述時，參考點就是 $\\{b\\}$ 的原點，兩者都寫成 $\\{b\\}$ 的座標：
 
-$$\\vV_b=\\begin{bmatrix}\\omega_b\\\\ v_b\\end{bmatrix}\\in\\R^6,\\qquad \\dot r = v_b+\\omega_b\\times r_b$$
+$$\\vV_b=\\begin{bmatrix}\\omega_b\\\\ v_b\\end{bmatrix}\\in\\R^6,\\qquad v_P = v_b+\\omega_b\\times r_b$$
 
-物體上其他點（在 $\\{b\\}$ 中位於 $r_b$）的速度，等於原點的速度再加上轉動造成的 $\\omega_b\\times r_b$，所以離轉軸越遠的點跑得越快。這個六維向量稱為**物體旋量（body twist）**。`,
+物體上另一點 $P$（在 $\\{b\\}$ 中位於固定的 $r_b$）的速度 $v_P$（同樣用 $\\{b\\}$ 的座標寫），等於原點的速度再加上轉動造成的 $\\omega_b\\times r_b$，所以離轉軸越遠的點跑得越快。這個六維向量稱為**物體旋量（body twist）**。`,
     simHint: '按 ▶ 播放，或調整 $\\mathcal V_b$ 的六個滑桿。紫色是 ω、青色是 {b} 原點的速度、橘色是四個角落的速度；灰色細管是 {b} 原點接下來的路徑。',
   },
   {
@@ -212,7 +212,7 @@ const CSS = `
 .c303 .mr-cell.c303-x { color: var(--axis-x); font-weight: 700; }
 .c303 .mr-cell.c303-y { color: var(--axis-y); font-weight: 700; }
 .c303 .mr-cell.c303-z { color: var(--axis-z); font-weight: 700; }
-.c303 .mr-cell.c303-p { color: var(--accent); font-weight: 700; }
+.c303 .mr-cell.c303-p { color: var(--series-8); font-weight: 700; }
 .c303 .mr-cell.c303-dim { color: var(--fg-muted); }
 .c303 .mr-cell.c303-bad { color: var(--danger); font-weight: 700; }
 .c303 .mr-cell.c303-ptS { color: var(--series-4); font-weight: 700; }
@@ -320,7 +320,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   add(origFrame.group);
 
   const arrow = (color: string, r = 0.01, head = 0.07): Arrow3D => { const a = new Arrow3D(color, r, head); add(a.group); return a; };
-  const aP = arrow('--fg-muted', 0.009, 0.06);
+  const aP = arrow('--series-8', 0.009, 0.06);
   const aRs = arrow('--series-4', 0.008, 0.06);
   const aRb = arrow('--series-6', 0.008, 0.06);
   const aBC = arrow('--fg-muted', 0.008, 0.06);
@@ -347,7 +347,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     P: label3D(scene, 'P', '--series-4'),
     rs: label3D(scene, 'r_s', '--series-4'),
     rb: label3D(scene, 'r_b', '--series-6'),
-    p: label3D(scene, 'p', '--fg-muted'),
+    p: label3D(scene, 'p', '--series-8'),
     sc: label3D(scene, 's→c', '--series-5'),
     ghostInv: label3D(scene, 'T_sb·X', '--fg-muted'),
     ghostPre: label3D(scene, '前乘 T·T_sb', '--fg-muted'),
@@ -360,7 +360,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
 
   const legendA = legend(root, [
-    { color: 'var(--fg-muted)', label: 'p：{b} 原點的位置' },
+    { color: 'var(--series-8)', label: 'p：{b} 原點的位置（T 的最後一欄）' },
     { color: 'var(--series-4)', label: 'r_s：P 在 {s} 中' },
     { color: 'var(--series-6)', label: 'r_b：P 在 {b} 中' },
   ]);
@@ -693,7 +693,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (key !== pathKey) {
       pathKey = key;
       pathMain.update(originPath(T, Tsb, S.side));
-      pathAlt.update(originPath(T, Tsb, other));
+      setLinePoints(pathAlt.line, originPath(T, Tsb, other), true);
     }
     pathMain.mesh.visible = true;
     pathAlt.line.visible = true;

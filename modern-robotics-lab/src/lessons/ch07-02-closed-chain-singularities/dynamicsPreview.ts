@@ -30,8 +30,9 @@ export function dynamicsPreview(parent: HTMLElement): PreviewCard {
     style: { border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', margin: '0.5rem 0' },
   });
   card.appendChild(mdElement('**下一章預告：動力學。** 一隻 2R 手臂（兩根 1 m、1 kg 的桿）在重力下自由擺動。下方讀數是質量矩陣 $M(\\theta)$：它的元素隨 $\\theta_2$ 改變，就像這一課的 $J$ 隨構型改變一樣。'));
-  // no overlay: the readouts sit below the canvas so they never cover the arm or its pivot
-  const cv = new Canvas2D(card, { height: 150, world: { xmin: -2.25, xmax: 2.25, ymin: -2.15, ymax: 0.35 } });
+  // no overlay: the readouts sit below the canvas so they never cover the arm or its pivot.
+  // Released from START, the tip can climb to y ≈ 0.59 m (energy bound), so the view reaches above the pivot.
+  const cv = new Canvas2D(card, { height: 150, world: { xmin: -2.25, xmax: 2.25, ymin: -2.12, ymax: 0.68 } });
   const foot = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.3rem 1rem', marginTop: '0.3rem' } });
   card.appendChild(foot);
   const reset = el('button', { class: 'btn small', type: 'button' }, '⟲ 重新放開');

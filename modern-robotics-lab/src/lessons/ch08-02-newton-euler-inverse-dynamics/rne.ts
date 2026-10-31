@@ -325,3 +325,18 @@ export function measureModelCost(model: ChainModel, th: Vec, batchMs = 3): numbe
   const z6 = zerosVec(6), g = [0, 0, -9.81];
   return timeIt(() => { InverseDynamics(th, th, th, g, z6, model.Mlist, model.Glist, model.Slist); }, batchMs, 3);
 }
+
+/**
+ * Least-squares slope k of log t against log n, i.e. the growth exponent in t ≈ c·n^k.
+ * Unlike the doubling ratio of a fitted a + b·n or a + b·n² curve (which is fixed by the model
+ * choice), k is read off the measurements themselves.
+ */
+export function growthExponent(ns: number[], ts: number[]): number {
+  const pts = ns.map((n, i) => [Math.log(n), Math.log(ts[i])]).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+  const m = pts.length;
+  if (m < 2) return NaN;
+  const sx = pts.reduce((a, p) => a + p[0], 0), sy = pts.reduce((a, p) => a + p[1], 0);
+  const sxx = pts.reduce((a, p) => a + p[0] * p[0], 0), sxy = pts.reduce((a, p) => a + p[0] * p[1], 0);
+  const den = m * sxx - sx * sx;
+  return den !== 0 ? (m * sxy - sx * sy) / den : NaN;
+}

@@ -532,7 +532,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       ? `(${prev.dtheta.map((x) => fmt(x, 2)).join(', ')})，‖Δθ‖ = ${fmtNorm(prev.dthetaNorm)} rad${prev.clipped ? '（已截斷）' : ''}`
       : '—（尚未迭代）');
     // The step from θᵏ⁻¹ was computed with J_b(θᵏ⁻¹): its σ_min is what explains a huge Δθ.
-    info.setLabel(K.sig, prev ? 'σ_min(J_b) 上一步 → 現在' : 'σ_min(J_b)');
+    // Position-only tasks use the 2×3 linear rows J_v of J_b.
+    const jn = task.positionOnly ? 'J_v' : 'J_b';
+    info.setLabel(K.sig, prev ? `σ_min(${jn}) 上一步 → 現在` : `σ_min(${jn})`);
     const near = last.sigmaMin < 0.05 || (prev != null && prev.sigmaMin < 0.05);
     info.set(K.sig, `${prev ? `${fmt(prev.sigmaMin, 3)} → ` : ''}${fmt(last.sigmaMin, 3)}${near ? ' ⚠ 近奇異' : ''}`);
     const reach = poseReachable(task);
@@ -586,6 +588,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     plotTE.setRanges(xr, undefined);
     plotRate.push(trk.t, [rn]);
     plotTE.push(trk.t, [lg(trk.err)]);
+    // A dot on the newest sample: a lone sample (right after ⟲ 重設) draws no line, so the plots
+    // would otherwise look empty until ▶ is pressed.
+    plotRate.setMarkers([{ x: trk.t, y: rn, color: '--series-1' }]);
+    plotTE.setMarkers([{ x: trk.t, y: lg(trk.err), color: '--series-2' }]);
   }
 
   /** Back to t = 0 on the current path, paused. */
@@ -902,10 +908,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       { label: '近奇異初值', apply: () => { resetBoth(GUESS.sing); rerun(); } },
     ]),
     presetChips(chipRow, [
-      { label: '冗餘初值 (45°, 75°, 60°)', apply: () => { resetBoth(GUESS.redund); setWeighted(false); rerun(); } },
-      { label: '加權 J⁺', apply: () => { setWeighted(true); rerun(); } },
-      { label: '一般 J⁺', apply: () => { setWeighted(false); rerun(); } },
-      { label: '不可達目標 (2.6, 0.6)', title: '|p| ≈ 2.67 m > 2.4 m：殘差不可能歸零（虛線為 λ ≥ 0.5 的 DLS）', apply: () => { setTask({ ...FAR_TASK }); setGuess(GUESS.far); rerun(); } },
+      // Weights only apply to the pseudo-inverse method, so these presets switch back to J⁺.
+      { label: '冗餘初值 (45°, 75°, 60°)', apply: () => { resetBoth(GUESS.redund); setWeighted(false); setMethod('pinv'); rerun(); } },
+      { label: '加權 J⁺', apply: () => { setWeighted(true); setMethod('pinv'); rerun(); } },
+      { label: '一般 J⁺', apply: () => { setWeighted(false); setMethod('pinv'); rerun(); } },
+      // Plain J⁺ (solid) vs a well-damped DLS (dashed), as quiz question 1 describes.
+      { label: '不可達目標 (2.6, 0.6)', title: '|p| ≈ 2.67 m > 2.4 m：殘差不可能歸零（實線為 J⁺，虛線為 λ ≥ 0.5 的 DLS）', apply: () => { setTask({ ...FAR_TASK }); setGuess(GUESS.far); setWeighted(false); setMethod('pinv'); rerun(); } },
     ]),
     presetChips(chipRow, TRACK_LABELS.map((P, i) => ({ label: P.label, title: P.title, apply: () => { trackIdx = i; startTrack(); } })), { label: '路徑：' }),
   ];
@@ -926,6 +934,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     chipSets.forEach((cs, k) => { cs.el.style.display = k === i ? '' : 'none'; cs.clear(); });
     if (i === 6) {
       if (task.positionOnly) setPositionOnly(false);
+      // The hint compares J⁺ with a lightly damped DLS: do not inherit step 5's λ = 0.5 preset, which
+      // makes DLS lag ~0.1 behind the target even where it is reachable.
+      setLambda(0.1);
       setMode('track');
       chipSets[6].activate(trackIdx);
       setFocus([trackRow, selMethod.el]);

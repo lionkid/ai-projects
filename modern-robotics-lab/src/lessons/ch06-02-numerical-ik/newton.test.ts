@@ -106,6 +106,19 @@ describe('Newton–Raphson runs', () => {
     expect(isStalled(runNewton(th([0, 90, 0]), TASK, PINV).records)).toBe(false);
   });
 
+  it('quiz 1 / step-6 preset: J⁺ jumps around and stalls, a λ = 0.5 DLS settles stretched at the floor', () => {
+    const floor = Math.hypot(FAR_TASK.x, FAR_TASK.y) - REACH;
+    const p = runNewton(GUESS.far, FAR_TASK, PINV);
+    expect(p.status).toBe('stalled');
+    expect(Math.min(...p.records.map((r) => r.vNorm))).toBeGreaterThan(floor - 1e-9);
+    const d = runNewton(GUESS.far, FAR_TASK, dls(0.5));
+    const last = d.records[d.records.length - 1];
+    expect(last.vNorm).toBeCloseTo(floor, 4);
+    // stretched: θ₂ ≈ θ₃ ≈ 0 and the arm points at the target
+    expect(Math.abs(last.theta[1]) + Math.abs(last.theta[2])).toBeLessThan(0.05);
+    expect(last.theta[0]).toBeCloseTo(Math.atan2(FAR_TASK.y, FAR_TASK.x), 2);
+  });
+
   it('uses the IKinBody default tolerances in converged()', () => {
     const r = residual(th([20, 60, 0]), TASK);
     expect(converged(r)).toBe(false);

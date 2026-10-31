@@ -5,7 +5,7 @@ import {
 } from '@/mr';
 import {
   type ChainModel, baseCurves, bodyWrench, bodyWrenchParts, boxSpatialInertia, holdLoadWrench, quinticTrajectory, rneaTrace,
-  scaleCurves, spinAt, torqueParts, trajectoryTorques, transformInertia, wrenchInFrame,
+  scaleCurves, spinAt, torqueParts, trajectoryTorques, transformInertia, wrenchInFrame, growthExponent,
 } from './rne';
 
 const asModel = (r: typeof rrr3): ChainModel => ({ M: r.M, Mlist: r.Mlist!, Glist: r.Glist!, Slist: r.Slist });
@@ -187,5 +187,16 @@ describe('single rigid body', () => {
     const p0 = matVec(spinAt(spec, 0).Tsb, [0.18, 0, 0, 1]);
     const p1 = matVec(spinAt(spec, 1.7).Tsb, [0.18, 0, 0, 1]);
     expect(maxAbsDiff(p0, p1)).toBeLessThan(1e-12);
+  });
+});
+
+describe('growthExponent', () => {
+  it('recovers the exponent of a power law and is not forced by a model choice', () => {
+    const ns = [6, 12, 24];
+    expect(growthExponent(ns, ns.map((n) => 3 * n))).toBeCloseTo(1, 12);
+    expect(growthExponent(ns, ns.map((n) => 0.5 * n * n))).toBeCloseTo(2, 12);
+    // a large constant overhead lowers the measured exponent below 1 (a fit of a + b·n would still claim ×2)
+    expect(growthExponent(ns, ns.map((n) => 100 + n))).toBeLessThan(0.2);
+    expect(Number.isNaN(growthExponent([5], [1]))).toBe(true);
   });
 });

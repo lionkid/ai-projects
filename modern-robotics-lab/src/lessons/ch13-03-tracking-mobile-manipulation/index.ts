@@ -55,12 +55,14 @@ const REF_WORLD: Record<RefKind, World> = {
   circle: WORLD_A, scurve: WORLD_A,
   parking: { xmin: -1.75, xmax: 1.75, ymin: -1, ymax: 1 },
   sideways: { xmin: -1.75, xmax: 1.75, ymin: -1, ymax: 1 },
-  still: { xmin: -1.4, xmax: 1.4, ymin: -0.8, ymax: 0.8 },
+  still: { xmin: -1.75, xmax: 1.05, ymin: -1, ymax: 0.6 },
 };
 /** Width (m) of the close-up view when the camera follows the robot. */
 const FOLLOW_W = 2.6;
 const WORLD_B: World = { xmin: -0.75, xmax: 3.95, ymin: -0.42, ymax: 1.62 };
 const ASPECT_A = 1.75, ASPECT_B = 2.3;
+/** Taller canvases on phones: the wide aspects leave only ~150 px of height at 360 px width. */
+const ASPECT_A_NARROW = 1.3, ASPECT_B_NARROW = 1.6;
 const LINE_Y = 1.05;
 const WALL_Y = 1.17;
 const MM_KP = 2;
@@ -90,7 +92,8 @@ const STEP4: TrackPreset[] = [
   { label: 'ζ = 1（k₂ = 4, k₃ = 4）', title: '臨界阻尼的側向誤差', s: { offset: OFF_LAT, showErr: true, follow: true } },
   { label: 'k₂ 過大（振盪）', title: 'k₂ = 50、k₃ = 1.5 → ζ ≈ 0.11', s: { offset: OFF_LAT, showErr: true, follow: true, k2: 50, k3: 1.5 } },
   { label: '純回授（無前饋）', title: '拿掉 v_d cos φ_e 與 ω_d，參考速度 ×1.5', s: { offset: OFF_LAT, showErr: true, follow: true, ff: false, speed: 1.5 } },
-  { label: 'v_d = 0（停住）', title: '參考停在原地：只修得掉 x_e', s: { ref: 'still', offset: pose(0, -0.3, 0.25), showErr: true } },
+  // Robot behind and to the right of the parked reference (x_e = 0.3 m, y_e = 0.25 m), as in quiz Q2.
+  { label: 'v_d = 0（停住）', title: '參考停在原地：只修得掉 x_e', s: { ref: 'still', offset: pose(0, -0.3, -0.25), showErr: true } },
   { label: '倒車停車', title: '停車參考（含倒車），起點有偏差', s: { ref: 'parking', offset: pose(0.2, -0.15, -0.15), showErr: true } },
 ];
 const STEP5: TrackPreset[] = [
@@ -100,7 +103,7 @@ const STEP5: TrackPreset[] = [
   { label: '全向＋初始誤差', title: '三個方向的誤差同時修正', s: { base: 'omni', offset: pose(0.4, 0.2, -0.3), showErr: true, follow: true } },
 ];
 const STEP6: MMPreset[] = [
-  { label: '最小範數（差速）', title: 'J_e^† V：手臂分擔運動', s: { base: 'diff', mode: 'minnorm' } },
+  { label: '最小範數（差速）', title: 'J_e† V：手臂分擔運動', s: { base: 'diff', mode: 'minnorm' } },
   { label: '手臂居中（差速）', title: '加上零空間項把手臂拉回舒適姿態', s: { base: 'diff', mode: 'center' } },
   { label: '最小範數（全向）', title: '全向底盤：J_e 是 3×5', s: { base: 'omni', mode: 'minnorm' } },
   { label: '手臂居中（全向）', title: '全向底盤＋零空間項', s: { base: 'omni', mode: 'center' } },
@@ -110,7 +113,7 @@ const LINKS: { ch: string; topic: string; use: string; links: [string, string][]
   { ch: 'Ch 2', topic: '組態空間與約束', use: '非完整約束決定哪些參考可行', links: [['ch02-03-constraints-task-space', '2-3 約束與任務空間']] },
   { ch: 'Ch 3', topic: '剛體運動與 twist', use: 'X⁻¹X_d、log 與 [Ad] 前饋', links: [['ch03-02-exponential-coordinates', '3-2 指數座標'], ['ch03-03-transforms-twists', '3-3 齊次變換與 twist']] },
   { ch: 'Ch 5', topic: 'Jacobian 與奇異', use: 'J_arm、可操作度 w', links: [['ch05-01-jacobian-geometry', '5-1 Jacobian'], ['ch05-02-singularities-manipulability', '5-2 奇異與可操作度']] },
-  { ch: 'Ch 6', topic: '偽逆與冗餘', use: 'J_e^†、零空間投影', links: [['ch06-02-numerical-ik', '6-2 數值逆運動學']] },
+  { ch: 'Ch 6', topic: '偽逆與冗餘', use: 'J_e†、零空間投影', links: [['ch06-02-numerical-ik', '6-2 數值逆運動學']] },
   { ch: 'Ch 9', topic: '時間縮放', use: '五次多項式的直線參考', links: [['ch09-01-time-scaling', '9-1 時間縮放']] },
   { ch: 'Ch 11', topic: '前饋＋回授', use: 'PI 消除固定偏差', links: [['ch11-01-error-dynamics-pid', '11-1 誤差動態與 PID']] },
   { ch: 'Ch 13', topic: '輪式底盤', use: 'u = H(0)V_b、q̇ = G(q)u、里程計', links: [['ch13-01-omnidirectional-kinematics', '13-1 全向底盤'], ['ch13-02-nonholonomic-odometry', '13-2 非完整與里程計']] },
@@ -157,7 +160,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const chips = presetChips(host, [], { label: '情境' });
   const card = summaryCard();
   host.appendChild(card);
-  const cv = new Canvas2D(host, { aspect: ASPECT_A, world: WORLD_A, overlay: true });
+  // Phones get taller canvases; the choice follows window resizes and rotations (see onNarrowChange).
+  const narrowMq = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 640px)') : null;
+  let aspA = ASPECT_A, aspB = ASPECT_B;
+  const pickAspects = (): void => {
+    const narrow = !!narrowMq?.matches;
+    aspA = narrow ? ASPECT_A_NARROW : ASPECT_A;
+    aspB = narrow ? ASPECT_B_NARROW : ASPECT_B;
+  };
+  pickAspects();
+  const cv = new Canvas2D(host, { aspect: aspA, world: WORLD_A, overlay: true });
   cv.overlay.style.whiteSpace = 'pre';
   const legA = legend(host, [
     { color: 'var(--fg-muted)', label: '參考 q_d(t)（虛線）' },
@@ -168,6 +180,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   ]);
   const legB = legend(host, [
     { color: 'var(--accent)', label: '末端的期望直線' },
+    { color: 'var(--fg-muted)', label: '底盤走過的路徑' },
     { color: 'var(--series-4)', label: '底盤貢獻 J_base·u' },
     { color: 'var(--series-5)', label: '手臂貢獻 J_arm·dθ/dt' },
     { color: 'var(--danger)', label: '手臂接近奇異（w < 0.15）' },
@@ -252,7 +265,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const rowB1 = row(panelB);
   const selMode = select<Redundancy>(rowB1, {
     label: '冗餘解法', value: ms.mode,
-    options: [{ value: 'minnorm', label: '最小範數 J_e^† V' }, { value: 'center', label: '手臂居中（零空間項）' }],
+    options: [{ value: 'minnorm', label: '最小範數 J_e† V' }, { value: 'center', label: '手臂居中（零空間項）' }],
     onChange: (v) => { ms.mode = v; touchedB(); },
   });
   const selBaseB = select<BaseKind>(rowB1, {
@@ -267,9 +280,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // ---- handles ----------------------------------------------------------------
   const toPose2 = (q: Pose) => ({ x: q.x, y: q.y, theta: q.phi });
   const startHandle = poseHandle(cv, toPose2(startPose()), {
-    color: '--series-1', knob: 0.45, frame: false,
-    onChange: (p) => { ts.offset = between(refA.start, pose(p.theta, p.x, p.y)); setCurT(0); touchedA(); },
+    // The knob sits beyond the {b} frame's x label (0.32 m arrow) so the two never overlap.
+    color: '--series-1', knob: 0.6, frame: false,
+    onChange: (p) => { draggingStart = true; ts.offset = between(refA.start, pose(p.theta, p.x, p.y)); setCurT(0); touchedA(); },
   });
+  // While the start pose is dragged the follow camera holds still; otherwise it re-centres on every
+  // recomputation and the handle slides away from the pointer.
+  let draggingStart = false;
+  const endStartDrag = (): void => { if (draggingStart) { draggingStart = false; if (!destroyed) frame(true); } };
+  window.addEventListener('pointerup', endStartDrag);
+  window.addEventListener('pointercancel', endStartDrag);
   const bHandle: Handle = cv.addHandle({
     get: () => [ms.Bx, LINE_Y],
     set: (p) => { ms.Bx = Math.max(0.8, Math.min(3.3, Math.round(p[0] * 20) / 20)); touchedB(false); },
@@ -505,10 +525,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       drawBase(c, goal, ts.base, { ghost: true, alpha: 0.55, color: infeasible ? '--danger' : '--fg-muted' });
       c.text(toWorld(goal, [0, 0.3]), '終點', { color: infeasible ? '--danger' : '--fg-muted' });
       const mid = ref.sample(move / 2);
-      if (infeasible) labelledArrow(c, [mid.q.x + 0.42, mid.q.y - 0.25], [mid.q.x + 0.42, mid.q.y - 0.25 + mid.V[2] * 2], '--danger', '要求側移 ✗', { dx: 10, dy: 0 });
-      else c.text([mid.q.x + 0.45, mid.q.y], '全向底盤可直接側移 ✓', { color: '--ok', align: 'left', bg: '--sim-bg' });
+      // Left of the reference: the {s} frame at the origin sits to its right.
+      if (infeasible) {
+        const ax = mid.q.x - 0.45, ay = mid.q.y - 0.25;
+        c.arrow([ax, ay], [ax, ay + mid.V[2] * 2], { color: '--danger', width: 2.4, head: 9 });
+        c.text([ax, ay + mid.V[2]], '要求側移 ✗', { color: '--danger', dx: -8, align: 'right', bg: '--sim-bg' });
+      } else c.text([mid.q.x + 0.35, goal.y + 0.15], '全向底盤可直接側移 ✓', { color: '--ok', align: 'left', bg: '--sim-bg' });
     }
-    if (ref.kind === 'still') c.text([ref.start.x, ref.start.y], 'q_d 停住（v_d = 0）', { color: '--fg-muted', dy: 30, bg: '--sim-bg' });
     // robot: the whole simulated path (faint) and the part travelled so far
     c.polyline(drawPathA, { color: '--series-1', width: 1.4, alpha: 0.3 });
     const travelled = drawPathA.slice(0, Math.floor(k / 3) + 1);
@@ -521,14 +544,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     const qd = tr.qd[k], q = tr.q[k];
     drawBase(c, qd, ts.base, { ghost: true });
-    c.text(toWorld(qd, [-0.05, 0.28]), 'q_d', { color: '--fg-muted' });
     drawBase(c, q, ts.base, { frame: true, frameLabel: 'b' });
+    // Rear-left corner of the ghost: clear of the robot's {b} frame labels when q ≈ q_d. The parked
+    // reference gets its note above the ghost instead, drawn after both bases so nothing crosses it.
+    if (ref.kind === 'still') c.text(toWorld(qd, [0, 0.42]), 'q_d 停住（v_d = 0）', { color: '--fg-muted', bg: '--sim-bg' });
+    else c.text(toWorld(qd, [-0.34, 0.24]), 'q_d', { color: '--fg-muted', bg: '--sim-bg' });
     if (ts.showErr) drawErr(c, q, qd);
     // Gear-change labels go on top of the robot (it sits on the cusp while it changes direction).
     for (const cp of ref.cusps) c.text([cp.x, cp.y], '換檔：改倒車', { color: '--warn', dx: 10, dy: -16, align: 'left', bg: '--sim-bg' });
     startHandle.draw();
     const e = tr.err[k];
-    c.setOverlayText(`t = ${fmt(tA, 2)} s\nφ_e = ${deg(e[0])}  x_e = ${fmt(e[1], 3)} m  y_e = ${fmt(e[2], 3)} m`);
+    // The push needs the run to last past t = 6 s (+1 s to watch the recovery); say so instead of ignoring the toggle.
+    const noPush = ts.push && tr.pushIndex < 0 ? '\n側推未施加：這條參考在 7 s 內就結束' : '';
+    c.setOverlayText(`t = ${fmt(tA, 2)} s\nφ_e = ${deg(e[0])}  x_e = ${fmt(e[1], 3)} m  y_e = ${fmt(e[2], 3)} m${noPush}`);
   }
 
   function drawMM(c: Canvas2D): void {
@@ -553,8 +581,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       drawArm(c, altB.q[ka], altB.theta[ka], { alpha: 0.22, width: 5, gripper: false });
     }
     const kb = Math.floor(k / 2) + 1;
-    c.polyline(pathB, { color: '--series-1', width: 1.2, alpha: 0.25 });
-    c.polyline([...pathB.slice(0, kb), [tr.q[k].x, tr.q[k].y]], { color: '--series-1', width: 2 });
+    // Base path in grey: --series-1 equals --accent, which already marks the end-effector line.
+    c.polyline(pathB, { color: '--fg-muted', width: 1.2, alpha: 0.3 });
+    c.polyline([...pathB.slice(0, kb), [tr.q[k].x, tr.q[k].y]], { color: '--fg-muted', width: 2 });
     c.polyline([...eePathB.slice(0, kb), [tr.X[k].x, tr.X[k].y]], { color: '--accent', width: 2.6 });
     const q = tr.q[k], th = tr.theta[k], w = tr.w[k];
     drawBase(c, q, ms.base, { frame: true, frameLabel: 'b' });
@@ -566,8 +595,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const p1: Pt = [tip[0] + ARROW_SCALE * vb[0], tip[1] + ARROW_SCALE * vb[1]];
     const p2: Pt = [p1[0] + ARROW_SCALE * va[0], p1[1] + ARROW_SCALE * va[1]];
     const big = (x: [number, number]) => Math.hypot(x[0], x[1]) > 0.03;
-    labelledArrow(c, tip, p1, '--series-4', big(vb) ? '底盤' : '', { dx: 6, dy: 14 });
-    labelledArrow(c, p1, p2, '--series-5', big(va) ? '手臂' : '', { dx: 6, dy: -12 });
+    // Both labels below the line (stacked): above it they collide with the B handle's label and the wall.
+    labelledArrow(c, tip, p1, '--series-4', big(vb) ? '底盤' : '', { dx: 6, dy: 19 });
+    labelledArrow(c, p1, p2, '--series-5', big(va) ? '手臂' : '', { dx: 6, dy: 36 });
     c.setOverlayText(`t = ${fmt(tB, 1)} s\nw = ${fmt(w, 2)}  θ₂ = ${deg(th[1], 0)}`);
   }
 
@@ -581,12 +611,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const k = indexAt(trialA, tA);
     const q = trialA.q[k], qd = trialA.qd[k];
     const cx = (q.x + qd.x) / 2, cy = (q.y + qd.y) / 2;
-    const H = FOLLOW_W / ASPECT_A;
+    const H = FOLLOW_W / aspA;
     return { xmin: cx - FOLLOW_W / 2, xmax: cx + FOLLOW_W / 2, ymin: cy - H / 2, ymax: cy + H / 2 };
   }
 
   function frame(force = false): void {
-    if (page === 'track' && ts.follow) { const w = followWorld(); if (w) cv.setWorld(w); }
+    if (page === 'track' && ts.follow && !draggingStart) { const w = followWorld(); if (w) cv.setWorld(w); }
     cv.requestRender();
     const now = performance.now();
     const t = curT();
@@ -644,13 +674,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     noteEl.textContent = isA
       ? '拖曳藍色把手改變起點（中心＝位置，小圓＝車頭方向），整段模擬立即重算；曲線圖的直線游標是目前時間。'
       : p === 'mm'
-        ? `末端用 V = [Ad]V_d + K_p X_err（K_p = ${MM_KP}）沿直線前進，J_e^† 以極小阻尼（λ = 10⁻³）計算，J_e 掉秩也不會爆衝。拖曳 B 改變長度；虛線曲線與淡色機器人是另一種冗餘解法。`
+        ? `末端用 V = [Ad]V_d + K_p X_err（K_p = ${MM_KP}）沿直線前進，J_e† 以極小阻尼（λ = 10⁻³）計算，J_e 掉秩也不會爆衝。拖曳 B 改變長度；虛線曲線與淡色機器人是另一種冗餘解法。`
         : '移動操作模擬仍在下方播放；切回「② 移動操作」可以調整解法。';
     startHandle.setEnabled(isA);
     bHandle.enabled = p === 'mm';
     if (!isA && !trialB) recomputeB(true);
     // Resizing reallocates the canvas, so only do it when the page (and its aspect) changes.
-    if (changed && isA !== wasA) cv.setSize({ aspect: isA ? ASPECT_A : ASPECT_B });
+    if (changed && isA !== wasA) cv.setSize({ aspect: isA ? aspA : aspB });
     if (changed || isA) cv.setWorld(isA ? ((ts.follow && followWorld()) || worldA) : WORLD_B);
     pb.setDuration(curEnd());
     if (changed) frame(true);
@@ -696,6 +726,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     focused.forEach((f) => f.classList.add('mr-focus'));
   }
 
+  function onNarrowChange(): void {
+    if (destroyed) return;
+    pickAspects();
+    const isA = page === 'track';
+    cv.setSize({ aspect: isA ? aspA : aspB });
+    cv.setWorld(isA ? ((ts.follow && followWorld()) || worldA) : WORLD_B);
+    frame(true);
+  }
+  narrowMq?.addEventListener('change', onNarrowChange);
+
   // Canvas2D / Plot2D / legends follow theme switches by themselves; repaint once for good measure.
   const unsubTheme = ctx.onThemeChange(() => { cv.requestRender(); frame(true); });
   onStep(ctx.currentStep);
@@ -706,6 +746,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       destroyed = true;
       loop.stop();
       unsubTheme();
+      window.removeEventListener('pointerup', endStartDrag);
+      window.removeEventListener('pointercancel', endStartDrag);
+      narrowMq?.removeEventListener('change', onNarrowChange);
       startHandle.remove();
       cv.destroy();
       errPlot.destroy(); uPlot.destroy(); wPlot.destroy(); sPlot.destroy();

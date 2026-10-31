@@ -23,7 +23,7 @@ const steps: LessonStep[] = [
 $$m_i(s)\\,\\ddot s+c_i(s)\\,\\dot s^{2}+g_i(s)=\\tau_i .$$
 
 $m=M\\theta'$ 是沿路徑的等效慣量；$c$ 收集了 $M\\theta''$ 與科氏／離心項；$g$ 是重力。三者只和「走到哪裡」有關，所以不論手臂有幾個關節，狀態都只剩 $(s,\\dot s)$ 兩個數——這個平面就是**相平面**。`,
-    simHint: '拖曳相平面上的黑色游標：旁邊的手臂移到 θ(s)，下方 c(s) 圖的游標跟著走，注意轉角 s ≈ 0.45 的尖峰（也可切到 m、g）。按 ▶ 播放，看一條三次時間縮放在相平面上畫出的曲線。',
+    simHint: '拖曳相平面上的圓形游標：旁邊的手臂移到 θ(s)，下方 c(s) 圖的游標跟著走，注意轉角 s ≈ 0.45 的尖峰（也可切到 m、g）。按 ▶ 播放，看一條三次時間縮放在相平面上畫出的曲線。',
   },
   {
     title: '力矩限制變成加速度區間',
@@ -47,7 +47,7 @@ $$\\frac{-\\tau_{i,\\max}-c_i\\dot s^{2}-g_i}{m_i}\\;\\le\\;\\ddot s\\;\\le\\;\\
     title: '最快就是 bang-bang',
     md: `走完路徑的時間是 $T=\\int_0^1 \\frac{ds}{\\dot s(s)}$，所以每個 $s$ 的 $\\dot s$ 都越大越好。
 
-從起點 $(0,0)$ 以 $\\ddot s=U$ 往前積分，得到「出發後最快能多快」；從終點 $(1,0)$ 以 $\\ddot s=L$ 往回積分，得到「再快就停不下來」的界線。任何可行的運動都不能高於兩者中較低的那條，而這條較低的曲線本身就做得到：先全力加速，到兩線交點**切換**成全力減速。
+從起點 $(0,0)$ 以 $\\ddot s=U$ 往前積分，得到「出發後最快能多快」；從終點 $(1,0)$ 以 $\\ddot s=L$ 往回積分，得到「再快就停不下來」的界線。任何可行的運動都不能高於兩者中較低的那條；只要這條較低的曲線沒有碰到速度極限曲線，它本身就做得到：先全力加速，到兩線交點**切換**成全力減速（碰到的情況留到下一步）。
 
 這種「不是全力加速、就是全力減速」的解叫 **bang-bang**：每一刻至少有一個關節的力矩頂在上限。`,
     simHint: '已切到「關節直線」：綠線從起點全力加速、橘線從終點全力減速，藍色粗線取兩者較低者。按 ▶ 播放：區間圖上的 s̈ 標記一直貼著綠色區間的一端，τ(t) 圖中總有一個關節頂到虛線。',
@@ -67,7 +67,7 @@ $$\\frac{-\\tau_{i,\\max}-c_i\\dot s^{2}-g_i}{m_i}\\;\\le\\;\\ddot s\\;\\le\\;\\
 - 每一小段的加速度 $\\ddot s=\\dot s\\,\\dfrac{d\\dot s}{ds}$ 都在 $[L,U]$ 內，也就是切線方向落在可行扇形裡。
 
 違反的小段標成紅色。第二條常被忽略：極限曲線下方也可能 $U<0$（例如肘關節承受很大的離心負載），這時連等速前進都辦不到。可行的曲線不會比藍色最佳解快，因為最佳解在每個 $s$ 都已是「追得上、也停得下」的最高速度。`,
-    simHint: '已打開「✎ 手繪」並放了一條直覺的梯形速度曲線：起步太陡、轉角穿過極限曲線，轉角前甚至連等速都撐不住，全是紅段。在相平面上由左往右拖曳重畫，比較「手繪 T」與 T*；按 ▶ 播放你的曲線，看 τ(t) 哪裡超出虛線。',
+    simHint: '已打開「✎ 手繪」並放了一條直覺的梯形速度曲線：起步太陡、轉角穿過極限曲線、轉角前甚至連等速都撐不住，這些地方都標成紅段。在相平面上由左往右拖曳重畫，比較「手繪 T」與 T*；按 ▶ 播放你的曲線，看 τ(t) 哪裡超出虛線。',
   },
   {
     title: '假設與下一章',
@@ -627,6 +627,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     g.restore();
     c.line(P(0, 0), P(1, 0), { color: '--grid-strong', width: 1.4 });
     c.line(P(0, 0), P(0, topSd), { color: '--grid-strong', width: 1.4 });
+    if (st.show.limit && st.capOn && capSd.length) {
+      // Key for the joint-speed ceiling, under the ṡ axis label.
+      const o = P(0, topSd);
+      c.line(shift(c, o, 8, 27), shift(c, o, 28, 27), { color: '--warn', width: 2.2, dash: [5, 3] });
+      c.text(shift(c, o, 32, 27), `關節速度上限 ω = ${fmt(st.cap, 1)} rad/s`, { color: '--warn', align: 'left', font: font(), bg: '--sim-bg' });
+    }
     updateOverlay();
   };
 
@@ -656,13 +662,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const cc: Pt[] = [];
       for (let j = 0; j <= J; j += 2) cc.push(P(j / J, cap(capSd[j])));
       c.polyline(cc, { color: '--warn', width: 2.2, dash: [7, 4] });
-      // label at the lowest point of the cap curve
-      const ja = Math.round(0.15 * J), jb = Math.round(0.85 * J);
-      let jm = ja;
-      for (let j = ja; j <= jb; j += 2) if (capSd[j] < capSd[jm]) jm = j;
-      const sm = jm / J;
-      c.text(P(sm, Math.min(capSd[jm], 0.9 * topSd)), `關節速度上限 ω = ${fmt(st.cap, 1)} rad/s`,
-        { color: '--warn', dy: -11, align: sm < 0.35 ? 'left' : sm > 0.65 ? 'right' : 'center', font: font(), bg: '--sim-bg' });
+      // Its key is drawn in the top-left corner (see cv.draw): a label on the curve itself would sit
+      // on top of the optimum, which rides along this very curve.
     }
     // Label the limit curve where it is inside the view, preferring the left part.
     for (const s of [0.12, 0.25, 0.7, 0.85]) {
@@ -868,12 +869,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     bar(b.rows[0], J.lo[0], J.hi[0], cols[0]);
     bar(b.rows[1], J.lo[1], J.hi[1], cols[1]);
-    if (!bar(b.rows[2], J.L, J.U, cols[2])) {
-      c.text(IV(0.5 * (b.l + b.r), b.rows[2]), '∅　兩段不重疊（L > U）', { color: '--danger', font: f, bg: '--sim-bg' });
-    }
+    const empty = !bar(b.rows[2], J.L, J.U, cols[2]);
     // s̈ marker (the handle sits on the axis)
     const ax = ivX(clamp(a, -R, R));
     c.line(IV(ax, b.rows[0] - 8), IV(ax, b.axis), { color: '--fg', width: 1.3, dash: [3, 2] });
+    // Drawn after the marker line so the line does not run through the text.
+    if (empty) c.text(IV(0.5 * (b.l + b.r), b.rows[2]), '∅　兩段不重疊（L > U）', { color: '--danger', font: f, bg: '--sim-bg' });
     // torques at the marker
     const tau = torquesAt(tab, s, x, a);
     for (let i = 0; i < 2; i++) {
@@ -940,7 +941,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.point(pts[pts.length - 1], 4.5, { color: '--accent' });
     c.text([CS.x0 + CS.w / 2, 2.42], '組態空間 (θ₁, θ₂)', { color: '--fg-muted', font: f });
     c.text([CS.x0 + CS.w / 2, -CS.h], 'θ₁', { color: '--fg-muted', dy: 11, font: f });
-    c.text([CS.x0, 0], 'θ₂', { color: '--fg-muted', dx: -12, font: f });
+    // θ₂ label at the top of its axis (at mid-height it collided with the workspace's 碰撞 label on narrow screens).
+    c.text([CS.x0, CS.h], 'θ₂', { color: '--fg-muted', dx: -12, dy: 6, font: f });
     c.text([CS.x0, -CS.h], '−π', { color: '--fg-muted', dy: 11, font: font(10) });
     c.text([CS.x0 + CS.w, -CS.h], 'π', { color: '--fg-muted', dy: 11, font: font(10) });
   };

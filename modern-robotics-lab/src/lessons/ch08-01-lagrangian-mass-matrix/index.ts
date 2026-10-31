@@ -61,7 +61,7 @@ $$c(\\theta,\\dot\\theta) = \\begin{bmatrix} -h\\,(2\\dot\\theta_1\\dot\\theta_2
 - 含 $\\dot\\theta_1\\dot\\theta_2$ 的是**科氏項**（Coriolis）：手肘一開一合改變了繞基座的慣量，關節 1 的轉速會被推著改變。
 
 如果 $M$ 是常數，$c$ 就整個消失。`,
-    simHint: '預設「手肘鎖住」、無重力：手臂剛性旋轉、手肘不動，τ₂ 卻不為零。改選「手肘放開」或「溜冰收手」，看科氏項如何推動關節 1。',
+    simHint: '預設「手肘鎖住」、無重力：手臂剛性旋轉、手肘不動，τ₂ 卻不為零。改選「手肘放開」：手肘被甩開，關節 1 的馬達得用 τ₁ 抵銷科氏項才能維持等速；再選「溜冰收手」（τ₁ = 0），看科氏項如何讓關節 1 自己加速。',
   },
   {
     title: '重力項',
@@ -102,12 +102,12 @@ const quiz: QuizQuestion[] = [
     question: '預設手臂伸直（$\\theta_2 = 0$）時，$M$ 的特徵值約為 5.83 與 0.17，1 J 的等動能橢圓又細又長。在**同樣的動能**下，哪一種關節速度組合轉得最快（$\\lVert\\dot\\theta\\rVert$ 最大）？',
     options: [
       '兩關節同向轉，$\\dot\\theta_2 \\approx 0.4\\,\\dot\\theta_1$（整支手臂像一根棍子甩動）',
-      '兩關節反向轉，$\\dot\\theta_2 \\approx -2.4\\,\\dot\\theta_1$（手肘在動、末端幾乎不動）',
+      '兩關節反向轉，$\\dot\\theta_2 \\approx -2.4\\,\\dot\\theta_1$（手肘大幅擺動，末端只緩緩反向移動）',
       '只轉關節 1，$\\dot\\theta_2 = 0$',
       '三者一樣快：伸直時 $M$ 是單位矩陣',
     ],
     answer: 1,
-    explanation: '同樣動能下速度最大的方向是橢圓的**長軸**，也就是最小特徵值 $\\lambda_2 \\approx 0.17$ 的特徵向量 $\\propto (1, -2.41)$。沿這個方向運動時，遠端質點 $m_2$ 幾乎停在原地，只有靠近基座的 $m_1$ 在動，所以很「輕」。兩關節同向甩動對應最大特徵值，是最「重」的方向；只轉關節 1 介於兩者之間。',
+    explanation: '同樣動能下速度最大的方向是橢圓的**長軸**，也就是最小特徵值 $\\lambda_2 \\approx 0.17$ 的特徵向量 $\\propto (1, -2.41)$。沿這個方向運動時，末端質點 $m_2$ 的速度只有手肘 $m_1$ 的約 0.4 倍（而且方向相反），動能大多落在較靠近基座的 $m_1$ 上（$m_2$ 只占約 15%），所以很「輕」。兩關節同向甩動對應最大特徵值，是最「重」的方向；只轉關節 1 介於兩者之間。',
   },
   {
     question: '把同一支 2R 手臂平放在光滑的水平桌面上運動（重力垂直於運動平面）。運動方程 $\\tau = M\\ddot\\theta + c + g$ 會怎麼變？',
@@ -129,7 +129,7 @@ const quiz: QuizQuestion[] = [
       '$M_{11}$ 本身，與任何速度都無關',
     ],
     answer: 1,
-    explanation: '$\\tau_1 = 0$ 又沒有重力，關節 1 的方程只剩 $M_{11}\\ddot\\theta_1 + M_{12}\\ddot\\theta_2 + c_1 = 0$。收折時 $|\\theta_2|$ 變大，$\\theta_2$ 與 $\\dot\\theta_2$ 同號，所以 $h\\dot\\theta_2 = m_2L_1L_2\\sin\\theta_2\\,\\dot\\theta_2 > 0$，科氏項 $-2h\\dot\\theta_1\\dot\\theta_2 < 0$，移到等號右邊就成了推動 $\\ddot\\theta_1 > 0$ 的力矩。換個角度看：$\\theta_1$ 不出現在 $\\mathcal L$ 裡，所以動量 $p_1 = \\partial\\mathcal L/\\partial\\dot\\theta_1$ 守恆；$M_{11}$ 變小，$\\dot\\theta_1$ 只好變大。',
+    explanation: '$\\tau_1 = 0$ 又沒有重力，關節 1 的方程只剩 $M_{11}\\ddot\\theta_1 + M_{12}\\ddot\\theta_2 + c_1 = 0$。收折時 $|\\theta_2|$ 變大，$\\theta_2$ 與 $\\dot\\theta_2$ 同號，所以 $h\\dot\\theta_2 = m_2L_1L_2\\sin\\theta_2\\,\\dot\\theta_2 > 0$，在 $\\dot\\theta_1 > 0$ 的旋轉下科氏項 $-2h\\dot\\theta_1\\dot\\theta_2 < 0$，移到等號右邊就成了推動 $\\ddot\\theta_1 > 0$ 的力矩。換個角度看：$\\theta_1$ 不出現在 $\\mathcal L$ 裡，所以動量 $p_1 = \\partial\\mathcal L/\\partial\\dot\\theta_1$ 守恆；$M_{11}$ 變小，$\\dot\\theta_1$ 只好變大。',
   },
   {
     question: '在無摩擦、$\\tau = 0$ 的自由擺動中用 RK4、步長 1/240 s，但把 $c(\\theta,\\dot\\theta)$ 整項拿掉，總能量 $E$ 開始大幅變動。原因是？',
@@ -422,7 +422,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const ckReads = el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))', gap: '0.1rem 0.8rem' } });
   secCheck.appendChild(ckReads);
   const rDE = readout(ckReads, { label: 'ΔE（目前設定）=', unit: 'J', minWidth: '8ch' });
-  const rDEref = readout(ckReads, { label: 'ΔE（參考解）=', unit: 'J', minWidth: '8ch' });
+  const rDEref = readout(ckReads, { label: 'ΔE（參考解）=', minWidth: '8ch' });
   const dLegend = legend(secCheck, [{ color: 'var(--series-2)', label: '目前設定' }, { color: 'var(--fg-muted)', label: '參考解：RK4、完整模型（虛線）' }]);
   dLegend.style.marginTop = '0.4rem';
   const dPlot = new Plot2D(secCheck, {
@@ -621,7 +621,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       mvM.set(last.M, { digits: 3 });
       const e = energyEllipse(last.M, K_REF);
       rL1.set(e.lambda[0], 3); rL2.set(e.lambda[1], 3);
-      const M = last.M;
+      const M = dynamicsTerms(arm, th0, [0, 0]).M;
       rK0.set(0.5 * (M[0][0] * dth0[0] * dth0[0] + 2 * M[0][1] * dth0[0] * dth0[1] + M[1][1] * dth0[1] * dth0[1]), 3);
       sTh2.set(wrapPi(x[1]), { silent: true });
     }
@@ -638,7 +638,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     if (curStep === 5) {
       rDE.set(sci(energies(arm, x).E - E0, 2));
-      rDEref.set(ref ? sci(energies(arm, ref.x).E - Eref0, 2) : '（與目前設定相同）');
+      rDEref.set(ref ? `${sci(energies(arm, ref.x).E - Eref0, 2)} J` : '與目前設定相同');
     }
     if (curStep === 6 && (force || now - lastCompare > 200)) {
       lastCompare = now;
@@ -847,7 +847,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function updateVisibility(): void {
     const i = curStep;
-    sOmega.el.style.display = i === 3 ? '' : 'none';
+    sOmega.el.style.display = i === 3 && (mode === 'spinLocked' || mode === 'spinFree') ? '' : 'none';
     sPeriod.el.style.display = i === 4 && mode === 'servo' ? '' : 'none';
     cBox.style.display = i === 3 ? '' : 'none';
     gBox.style.display = i === 4 && mode === 'servo' ? '' : 'none';

@@ -3,7 +3,7 @@
  * against the planner itself, so the narrative cannot drift away from what the simulation shows.
  */
 import { describe, expect, it } from 'vitest';
-import { bestFirst, descend, downsample, wavefront, type Conn, type Grid } from './grid';
+import { bestFirst, descend, downhill, downsample, wavefront, type Conn, type Grid } from './grid';
 import { MAPS, MASTER, arm2RHits, cellAngles, cspace2R, type MapKey } from './maps';
 
 const cellOf = (n: number, u: readonly [number, number]): number => Math.min(n - 1, Math.floor(u[1] * n)) * n + Math.min(n - 1, Math.floor(u[0] * n));
@@ -59,6 +59,17 @@ describe('step 5: wavefront on the 2R C-space (16 × 16, 4-connected torus)', ()
     const p = descend(g, w.g, S, 4);
     expect(p[p.length - 1]).toBe(G);
     expect(p.length - 1).toBe(w.g[S]);
+  });
+  it('"the path follows the arrows": every descent step is the drawn (downhill) arrow of its cell', () => {
+    for (let k = 0; k < 256; k++) {
+      if (!Number.isFinite(w.g[k]) || k === G) continue;
+      const p = descend(g, w.g, k, 4);
+      expect(p[p.length - 1]).toBe(G);
+      for (let s = 0; s + 1 < p.length; s++) {
+        expect(downhill(g, w.g, p[s], 4)).toBe(p[s + 1]);
+        expect(w.g[p[s + 1]]).toBe(w.g[p[s]] - 1);
+      }
+    }
   });
   it('the wave can only reach S through the θ₁ = ±180° seam (on a flat square S stays unreached)', () => {
     let crosses = 0;

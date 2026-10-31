@@ -46,8 +46,8 @@ $$\\mathcal C_{\\rm obs}=\\{\\,q \\mid \\mathcal A(q)\\cap\\mathcal B\\neq\\empt
 
 $$d_{ij}=\\|c_i-c_j\\|-r_i-r_j$$
 
-所有圓對的最小值 $d_{\\min}\\le 0$ 就判定碰撞，正值則是**間隙**（clearance）的保守估計。覆蓋圓比連桿略胖，C-obstacle 因此多出一圈紫色的保守區：寧可誤報，絕不漏報。每桿圓數 $K$ 越多，這圈越薄。`,
-    simHint: '拖曳手肘或末端靠近障礙，比較 d_min 的精確值與圓覆蓋值（藍色虛線是最近的一對點）；再把 K 從 2 拉到 8，看紫色保守區變薄。',
+所有圓對的最小值 $d_{\\min}\\le 0$ 就判定碰撞，正值則是**間隙**（clearance）的保守估計。覆蓋圓比連桿略胖，C-obstacle 因此多出一圈紫色的保守區：寧可誤報，絕不漏報。把每根連桿切成 $K$ 段、在 $K+1$ 個分點放圓，$K$ 越大，圓越多也越小，這圈就越薄。`,
+    simHint: '拖曳手肘或末端靠近障礙，比較 d_min 的精確值與圓覆蓋值：藍色虛線連的是手臂與障礙真正最近的兩點，紫色虛線是覆蓋圓算出的那一對。再把 K 從 2 拉到 8，看紫色保守區變薄。',
   },
   {
     title: '連通性：繞得過去嗎',
@@ -75,7 +75,7 @@ const quiz: QuizQuestion[] = [
       '完全不變，因為障礙沒有移動',
     ],
     answer: 1,
-    explanation: '連桿 1 撞不撞只取決於 $\\theta_1$ 與 $L_1$，所以那幾欄紅色垂直帶與 $L_2$ 毫無關係。會變的是前臂掃過的範圍：前臂變長、伸得更遠，原本碰不到的 $(\\theta_1,\\theta_2)$ 也會撞上，橙色斑塊只會變大、不會縮小（較長的前臂掃過的範圍包含原本的範圍；本場景的佔比由 13.6% 增為 14.5%）。拉動「第二桿長 L₂」滑桿就能驗證。',
+    explanation: '連桿 1 撞不撞只取決於 $\\theta_1$ 與 $L_1$，所以那幾欄紅色垂直帶與 $L_2$ 毫無關係。會變的是前臂掃過的範圍：前臂變長、伸得更遠，原本碰不到的 $(\\theta_1,\\theta_2)$ 也會撞上，橙色斑塊只會變大、不會縮小（較長的前臂掃過的範圍包含原本的範圍；在 128 × 128 的格點上，本場景的佔比讀數由 13.6% 增為 14.5%）。拉動「第二桿長 L₂」滑桿就能驗證。',
   },
   {
     question: '用圓覆蓋做碰撞查詢，覆蓋圓與障礙之間的最小距離為 $d_{\\min}=0.05$ m。對真正的手臂，哪個結論**一定**成立？',
@@ -246,7 +246,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tComps = toggle(r2, { label: '連通分量', value: showComps, onChange: (v) => { showComps = v; repaint(); } });
   const tPrev = toggle(r2, { label: '格點預覽', value: showPreview, onChange: (v) => { showPreview = v; cs.requestRender(); } });
   const sL2 = slider(panel, { label: '第二桿長 L₂', min: 0.5, max: 1.3, step: 0.05, value: L2, unit: 'm', onInput: (v) => { L2 = v; chips.clear(); scheduleRebuild(); } });
-  const sK = slider(panel, { label: '每桿覆蓋圓數 K', min: 2, max: 8, step: 1, value: K, onInput: (v) => { K = Math.round(v); scheduleRebuild(); } });
+  // K segments per link → K + 1 cover circles per link (see circleCover)
+  const sK = slider(panel, { label: '每桿 K 段（K+1 個圓）', min: 2, max: 8, step: 1, value: K, onInput: (v) => { K = Math.round(v); scheduleRebuild(); } });
   sK.disabled = !showCover;
   select(panel, {
     label: '解析度（每軸格數）',
@@ -437,15 +438,22 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (showCover) for (const ci of circleCover(L, W, q, K)) c.circle(ci.c, ci.r, { color: cssVar('--series-5'), width: 1.2 });
     drawArm(c, q, curBits & HIT_LINK1 ? danger : muted, curBits & HIT_LINK2 ? danger : muted, sweepCol !== null ? 0.25 : 1);
     if (showNearest) {
-      const r = showCover ? curCv : curEx;
-      if (r && Number.isFinite(r.d) && r.d > 0) {
-        c.line(r.pArm, r.pObs, { color: accent, width: 2, dash: [4, 3] });
-        c.point(r.pArm, 3.5, { color: accent });
-        c.point(r.pObs, 3.5, { color: accent });
-      }
+      // exact nearest pair in blue; with the circle cover on, also the pair the cover reports (purple)
+      const pair = (r: ClearanceResult | null, color: string): void => {
+        if (!r || !Number.isFinite(r.d) || r.d <= 0) return;
+        c.line(r.pArm, r.pObs, { color, width: 2, dash: [4, 3] });
+        c.point(r.pArm, 3.5, { color });
+        c.point(r.pObs, 3.5, { color });
+      };
+      if (showCover) pair(curCv, cssVar('--series-5'));
+      pair(curEx, accent);
     }
-    const dNow = showCover ? curCv?.d : curEx?.d;
-    c.setOverlayText(`θ = ${qStr(q)}${showNearest && dNow !== undefined && Number.isFinite(dNow) ? `  d_min = ${fmt(dNow, 3)} m` : ''}`);
+    // exact clearance first; with the cover on, the (smaller) cover value after the slash
+    let dTxt = '';
+    if (showNearest && curEx && Number.isFinite(curEx.d)) {
+      dTxt = `  d_min = ${fmt(curEx.d, 3)}${showCover && curCv && Number.isFinite(curCv.d) ? `／${fmt(curCv.d, 3)}` : ''} m`;
+    }
+    c.setOverlayText(`θ = ${qStr(q)}${dTxt}`);
   };
 
   // ---------------- C-space drawing
@@ -496,6 +504,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       }
     }
     c.polygon(rect(sq.xmin, sq.ymin, sq.xmax, sq.ymax), { color: muted, width: 1.5 });
+    // ticks on a background (they sit on the faded periodic copies), drawn before the seam marks so
+    // the marks stay on top, and placed just outside them
+    const tickBg = cssVar('--bg-elev');
+    for (let k = 0; k <= 4; k++) {
+      const x = sq.xmin + (k * PI) / 2;
+      c.text([x, sq.ymin], tickLabel(x), { dy: 13, font: font10, color: muted, bg: tickBg });
+    }
+    for (let k = 1; k <= 3; k++) {
+      const y = sq.ymin + (k * PI) / 2;
+      c.text([sq.xmin, y], tickLabel(y), { dx: -7, align: 'right', font: font10, color: muted, bg: tickBg });
+    }
     // seam marks: blocked cells touching an edge of the square continue on the opposite edge
     if (showCobs && sweepCol === null) {
       const blk = rolledBlocked();
@@ -555,15 +574,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (sweepCol !== null) {
       const x = disp([cellAngle((sweepStart + Math.min(n - 1, Math.floor(sweepCol))) % n, n), 0])[0];
       c.line([x, sq.ymin], [x, sq.ymax], { color: accent, width: 2 });
-    }
-    // ticks
-    for (let k = 0; k <= 4; k++) {
-      const x = sq.xmin + (k * PI) / 2;
-      c.text([x, sq.ymin], tickLabel(x), { dy: 10, font: font10, color: muted });
-    }
-    for (let k = 1; k <= 3; k++) {
-      const y = sq.ymin + (k * PI) / 2;
-      c.text([sq.xmin, y], tickLabel(y), { dx: -4, align: 'right', font: font10, color: muted });
     }
   };
 
@@ -742,8 +752,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   // ---------------- animation: C-obstacle sweep and path playback
-  const loop = createLoop((dt) => {
+  const loop = createLoop((rawDt) => {
     if (destroyed) return;
+    // the first frame after loop.start() inside a click handler can report a negative dt: never run backwards
+    const dt = Math.max(0, rawDt);
     let busy = false;
     if (sweepCol !== null) {
       sweepCol += (dt / SWEEP_SECONDS) * res;

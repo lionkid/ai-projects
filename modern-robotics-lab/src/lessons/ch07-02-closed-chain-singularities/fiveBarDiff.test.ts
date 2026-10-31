@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { inv, matMul, svd } from '@/mr';
 import {
-  DEFAULT_GEOM, assembleConfig, basePoint, buildSnapPath, constraintJacobians, det2, doubleSingularConfig, driveTip,
+  DEFAULT_GEOM, assembleConfig, basePoint, buildSnapPath, constraintJacobians, det2, doubleSingularConfig, driveMotors, driveTip,
   eeJacobian, fkMode, fkNearest, holdingTorques, ikNearest, indicators, inverseRates, jacobianFD, lockStretch,
   loopResidual, motorSlice, passiveRateMap, perLegForm, snapConfig, softestDirection, straightLegConfig, symmetricMarginAngle,
   tipVelocity, velocityEllipse, type Config, type FiveBarGeom, type Pt,
@@ -88,6 +88,10 @@ describe('the two kinds of singularity', () => {
     expect(soft.sigma).toBeLessThan(1e-6);
     expect(Math.abs(soft.n[1])).toBeCloseTo(1, 6);
     expect(holdingTorques(g, c, [0, 1]).exact).toBe(false);
+    // blow-up direction: the symmetric pose needs opposite torques (approached from a regular pose: -tau1 = tau2 -> +inf)
+    const dir = holdingTorques(g, c, [0, 1]).dir!;
+    expect(dir[1]).toBeGreaterThan(0.5);
+    expect(dir[0]).toBeCloseTo(-dir[1], 6);
     expect(tipVelocity(g, c, [1, 0])).toBeNull();
   });
 
@@ -152,6 +156,26 @@ describe('the two kinds of singularity', () => {
     expect(Math.hypot(Hp[0][0], Hp[1][0])).toBeCloseTo(g.L4, 12);
     const s = straightLegConfig(g, 0, 60 * D)!;
     expect(velocityEllipse(inverseRates(g, s, true)).r[1]).toBeLessThan(1e-6);
+  });
+
+  it('three motors at an exactly straight left leg: ellipse and torques equal their limit from a nearby pose', () => {
+    const s = straightLegConfig(g, 0, 40 * D)!;
+    expect(Math.abs(Math.sin(s.phi1))).toBeLessThan(1e-12);
+    // nearby regular pose on the same branch (left leg bent by ~1e-5)
+    const near = driveMotors(g, s, s.th1, s.th2 - 1e-5).cfg;
+    expect(Math.abs(Math.sin(near.phi1))).toBeGreaterThan(1e-6);
+    const e0 = velocityEllipse(inverseRates(g, s, true));
+    const e1 = velocityEllipse(inverseRates(g, near, true));
+    expect(e0.r[0]).toBeCloseTo(e1.r[0], 4);
+    // hand value: 1 / sqrt(1 / (|P - A1|^2 + |P - B1|^2) + 1 / σ₁(two motors)^2)
+    const two = velocityEllipse(inverseRates(g, s)).r[0];
+    expect(e0.r[0]).toBeCloseTo(1 / Math.sqrt(1 / (2.3 ** 2 + 1.3 ** 2) + 1 / two ** 2), 6);
+    // a load across the straight leg is shared by all three motors (the left ones are not idle)
+    const f: Pt = [-Math.sin(40 * D), Math.cos(40 * D)];
+    const t0 = holdingTorques(g, s, f, true).tau;
+    const t1 = holdingTorques(g, near, f, true).tau;
+    for (let i = 0; i < 3; i++) expect(t0[i]).toBeCloseTo(t1[i], 3);
+    expect(Math.abs(t0[0])).toBeGreaterThan(0.1);
   });
 
   it('velocity ellipse semi-axes are the singular values of J in a regular pose', () => {
