@@ -7,7 +7,7 @@ import { meta } from './meta';
 import {
   type P2, type V3, type PolyShape, type ContactMode, type ContactState, type ForceLine, type BoundaryPoint, type ResistResult,
   makeShape, boundaryAt, projectToBoundary, perimeter, contactWrench, forceWrench, twistAbout, translationTwist, corOf,
-  pointVelocity, classifyContact, planarExp, applyPose, displacementScale, representativeEscape, closureCertificate,
+  pointVelocity, classifyContact, planarExp, applyPose, displacementScale, preferredEscape, closureCertificate,
   wrenchRank, corRegion, polygonAreaAbs, feasibleCorPoints, translationCone, resistWrench, autoFormClosure, insidePolygon,
   lineIntersection, add2, sub2, scale2, norm2, dot2, perp, unit2,
 } from './contact';
@@ -55,7 +55,7 @@ $$\\vF^{\\T}\\vV = \\omega\\,\\big((p-c)\\times\\hat n\\big)_z .$$
 - 可順時針轉的 CoR = 各接觸 $-$ 半平面的交集（紫）。
 
 半平面的交集一定是凸區域，每多一個接觸就多切一刀，可行區只會縮小。平移則看右上角的小羅盤：方向 $v$ 必須讓每個 $\\hat n_i^{\\T} v \\ge 0$。`,
-    simHint: 'L 形物體放在地上、靠著左牆：藍區是能讓它往左上「掀起」的轉心，紫區是往右「翻倒」的轉心。按「＋接觸」或拖動手指，看區域被切小。',
+    simHint: 'L 形物體放在地上、靠著左牆：繞藍區的點逆時針轉，L 會同時離開牆和地面；繞紫區的點順時針轉，就是往右翻倒。按「＋接觸」或拖動手指，看區域被切小。',
   },
   {
     title: '形封閉',
@@ -75,7 +75,7 @@ $$k_i \\ge 0,\\qquad \\sum_i k_i\\vF_i = -\\vF_{\\text{ext}} .$$
 $k_i \\ge 0$ 是關鍵：無摩擦點接觸只能推、不能拉。沒有形封閉時，總有某些外力需要某個 $k_i < 0$，也就是要手指「拉住」物體，物體就會沿那個方向被帶走。
 
 加上摩擦後，每個接觸能出的力從一條線變成一個錐，所需的接觸數跟著變少——兩根手指就可能抓牢。這就是下一課的力封閉。`,
-    simHint: '拖曳橘色外力（尖端改大小方向、圓點改作用點）：形封閉時綠色接觸力總能平衡它。換到「L 形三點」再按「外力測試」，往上或往右拉，就會出現紅色的「需要拉力」。',
+    simHint: '拖曳橘色外力（尖端改大小方向、圓點改作用點）：形封閉時綠色接觸力總能平衡它。再按「外力：L 形三點」，把外力往上或往右拉，就會出現紅色的「需要拉」。',
   },
 ];
 
@@ -83,34 +83,34 @@ const quiz: QuizQuestion[] = [
   {
     question: '方塊放在地上並靠著左牆：底邊兩個接觸（法線朝上），左邊一個接觸（法線朝右）。讓方塊繞**右下角**轉，哪個方向可行？',
     options: [
-      '只有順時針（向右翻倒）可行，而且三個接觸都會脫離',
       '只有逆時針可行',
       '兩個方向都可行',
+      '只有順時針（向右翻倒）可行，而且三個接觸都會脫離',
       '兩個方向都不可行',
     ],
-    answer: 0,
+    answer: 2,
     explanation: '右下角 $c$ 位在兩條底邊法線（朝上）的右側，也在左牆法線（朝右）的右側，三個接觸都把它標成 $-$：只允許順時針。代入 $\\vF_i^{\\T}\\vV = \\omega((p_i-c)\\times\\hat n_i)_z$，$\\omega<0$ 時三項都 $>0$，所以三個接觸都脫離——方塊離開牆、繞右下角往右翻。逆時針會讓左下部分壓進地面。',
   },
   {
     question: '為什麼在空間中，用無摩擦點接觸達成形封閉至少需要 7 個接觸？',
     options: [
-      'twist（或 wrench）空間是 6 維；要用非負係數張滿 $\\R^6$，至少需要 6 + 1 = 7 個向量',
       '因為長方體有 6 個面，再多一個抵抗重力',
+      'twist（或 wrench）空間是 6 維；要用非負係數張滿 $\\R^6$，至少需要 6 + 1 = 7 個向量',
       '因為每個接觸會限制 2 個自由度',
       '因為空間中的接觸必須成對出現',
     ],
-    answer: 0,
+    answer: 1,
     explanation: '每個無摩擦接觸只給一條**單邊**不等式 $\\vF_i^{\\T}\\vV \\ge 0$。$n$ 個向量最多只是一組基底，它們的非負組合是一個尖錐，負方向永遠湊不出來；至少要 $n+1$ 個向量才可能正張成 $\\R^n$。平面 $n=3$ 得 4，空間 $n=6$ 得 7。',
   },
   {
     question: '在方塊四條邊的中點各放一個無摩擦接觸。依一階分析，下列何者正確？',
     options: [
       '是形封閉，因為接觸數已經達到 4',
-      '不是（一階）形封閉：四條法線交於中心，繞中心轉動時每個接觸都是 $\\vF_i^{\\T}\\vV = 0$，兩個方向都沒被排除',
       '不是形封閉，因為方塊還能往任意方向平移',
       '是形封閉，但只能抵抗力，不能抵抗力矩',
+      '不是（一階）形封閉：四條法線交於中心，繞中心轉動時每個接觸都是 $\\vF_i^{\\T}\\vV = 0$，兩個方向都沒被排除',
     ],
-    answer: 1,
+    answer: 3,
     explanation: '四個法向力都通過中心，對中心的力矩全為 0：wrench 只張出 2 維（rank = 2），任何繞中心的力偶都平衡不了。平移倒是被四個方向卡死了。至於方塊實際上轉不轉得動，屬於二階效應（平邊轉一點就會頂到手指），一階分析無法下結論，所以它不算一階形封閉；實務上會把法線錯開。',
   },
   {
@@ -140,9 +140,10 @@ const L_FLOOR_WALL: P2[] = [[0.25, 0], [1.3, 0], [0, 0.9]];
 const SQUARE_MIDPOINTS = [0.75, 2.25, 3.75, 5.25];
 
 const K_V = 0.4; // world units per m/s (velocity arrows)
-const K_F = 0.06; // world units per N (force arrows)
+const K_F = 0.1; // world units per N (force arrows)
 const FINGER = 0.075; // fingertip centre offset from the contact point
-const F_MAX = 12; // N, external force magnitude limit
+const GRIP = 0.1; // arrow handles sit this far beyond the arrow tip
+const F_MAX = 10; // N, external force magnitude limit
 const ANIM_T = 1.2; // s
 const MAX_CONTACTS = 6;
 
@@ -180,7 +181,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let cor: P2 = [-0.9, -0.25];
   let tv: P2 = [0.22, -0.18]; // translation probe = displacement of the ghost
   const push = { on: false, vf: [0, 1] as P2 };
-  const ext = { on: false, a: [0.25, 0.3] as P2, f: [-3, 4] as P2 };
+  const ext = { on: false, a: [0.3, 0.25] as P2, f: [-3, 4] as P2 };
   const show = { cor: false, vel: true };
   let anim = -1;
   let configuring = false;
@@ -216,7 +217,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     { label: 'L 形三點', apply: () => configure({ shape: 'L', points: L_FLOOR_WALL, mode: 'ccw', cor: [-1.15, 1.05], showCor: true, vel: false }) },
     { label: '四點形封閉', apply: () => configure({ shape: 'square', auto: true, mode: 'ccw', cor: [0, 0], showCor: true, vel: false }) },
     { label: '法線共點', apply: () => configure({ shape: 'square', contacts: SQUARE_MIDPOINTS, mode: 'ccw', cor: [0, 0], showCor: true, vel: true }) },
-    { label: '外力測試', apply: () => configure({ shape: 'square', auto: true, mode: 'ccw', cor: [0, 0], showCor: false, vel: false, ext: true }) },
+    { label: '外力測試', apply: () => configure({ shape: 'square', auto: true, mode: 'ccw', cor: [0, 0], showCor: false, vel: false, ext: true, extA: [0.3, 0.25], extF: [-3, 4] }) },
+    { label: '外力：L 形三點', apply: () => configure({ shape: 'L', points: L_FLOOR_WALL, mode: 'ccw', cor: [-1.15, 1.05], showCor: false, vel: false, ext: true, extA: [0, 0], extF: [2.5, 3] }) },
   ], { label: '情境' });
 
   const r1 = row(panel);
@@ -295,11 +297,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }));
   }
 
+  // Arrow handles sit GRIP beyond the arrow tip so the arrowhead stays visible; `untip` maps the
+  // handle position back to the tip.
+  const untip = (from: P2, q: P2): P2 => { const d = sub2(q, from); return add2(from, scale2(unit2(d), Math.max(0, norm2(d) - GRIP))); };
   const corHandle = cv.addHandle({ get: () => cor, set: (q) => { cor = snapCor(q); chips.clear(); update(); }, radius: 8, label: 'CoR' });
-  const transHandle = cv.addHandle({ get: () => tv, set: (q) => { tv = snapTrans(q); chips.clear(); update(); }, radius: 8 });
+  const transHandle = cv.addHandle({
+    get: () => add2(tv, scale2(unit2(tv), GRIP)),
+    set: (q) => { tv = snapTrans(untip([0, 0], q)); chips.clear(); update(); },
+    radius: 8,
+  });
   const vfHandle = cv.addHandle({
-    get: () => (cs.length ? add2(cs[0].p, scale2(push.vf, K_V)) : [0, 0]),
-    set: (q) => { push.vf = snapVf(q); chips.clear(); update(); },
+    get: () => (cs.length ? add2(cs[0].p, add2(scale2(push.vf, K_V), scale2(unit2(push.vf), GRIP))) : [0, 0]),
+    set: (q) => { if (cs.length) push.vf = snapVf(untip(cs[0].p, q)); chips.clear(); update(); },
     radius: 7,
   });
   const extAHandle = cv.addHandle({
@@ -308,9 +317,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     radius: 6,
   });
   const extFHandle = cv.addHandle({
-    get: () => add2(ext.a, scale2(ext.f, K_F)),
+    get: () => add2(ext.a, add2(scale2(ext.f, K_F), scale2(unit2(ext.f), GRIP))),
     set: (q) => {
-      let f = scale2(sub2(q, ext.a), 1 / K_F);
+      let f = scale2(sub2(untip(ext.a, q), ext.a), 1 / K_F);
       const L = norm2(f);
       if (L > F_MAX) f = scale2(f, F_MAX / L);
       ext.f = f; chips.clear(); update();
@@ -385,7 +394,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     lines = cs.map((b) => ({ p: b.p, d: b.n }));
     V = probeTwist();
     states = cs.map((b, i) => classifyContact(b.p, b.n, V, push.on && i === 0 ? push.vf : [0, 0]));
-    escape = representativeEscape(Fs);
+    escape = preferredEscape(Fs);
     rank = wrenchRank(Fs);
     cert = escape ? null : closureCertificate(Fs);
     resist = ext.on ? resistWrench(Fs, forceWrench(ext.a, ext.f)) : null;
@@ -398,10 +407,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     addBtn.disabled = contacts.length >= MAX_CONTACTS;
     delBtn.disabled = contacts.length <= 1;
 
-    // contact table
+    // contact table: probe columns (normal rate, mode) or, in the external-force test, the contact forces
     const head = el('tr', {},
-      el('th', {}, '接觸'), el('th', {}, '𝓕ᵢ = (m, fₓ, f_y)'), el('th', {}, '法向速度'), el('th', {}, '模式'),
-      ext.on ? el('th', {}, ext.on && resist?.ok ? '推力 kᵢ (N)' : '最小平方 kᵢ (N)') : null);
+      el('th', {}, '接觸'), el('th', {}, '𝓕ᵢ = (m, fₓ, f_y)'),
+      ext.on ? null : el('th', {}, '法向速度'), ext.on ? null : el('th', {}, '模式'),
+      ext.on ? el('th', {}, resist?.ok ? '推力 kᵢ (N)' : '最小平方 kᵢ (N)') : null);
     const rowsEl = cs.map((_, i) => {
       const st = states[i];
       const rel = push.on && i === 0;
@@ -409,13 +419,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       return el('tr', {},
         el('td', {}, String(i + 1)),
         el('td', { class: 'num' }, fmtV(Fs[i])),
-        el('td', { class: 'num' }, `${fmt(st.normalRate, 3)}${rel ? '（相對）' : ''}`),
-        el('td', {}, el('span', { class: 'ch12a-pill', style: { background: `var(${MODE_VAR[st.mode]})` } }, MODE_TXT[st.mode])),
+        ext.on ? null : el('td', { class: 'num' }, `${fmt(st.normalRate, 3)}${rel ? '（相對）' : ''}`),
+        ext.on ? null : el('td', {}, el('span', { class: 'ch12a-pill', style: { background: `var(${MODE_VAR[st.mode]})` } }, MODE_TXT[st.mode])),
         ext.on ? el('td', { class: 'num', style: { color: kval < -1e-9 ? 'var(--danger)' : '' } }, fmt(kval, 2)) : null);
     });
     table.replaceChildren(head, ...rowsEl);
 
-    // summary
+    // summary (the probe rows are irrelevant while the external-force test is on)
+    info.show('試探 twist 𝒱', !ext.on);
+    info.show('判定', !ext.on);
     info.set('試探 twist 𝒱', `${fmtV(V)} — ${describeTwist(V)}`);
     const bad = states.map((s, i) => (s.mode === 'penetrating' ? i + 1 : 0)).filter((i) => i > 0);
     info.set('判定', bad.length ? `✗ 不可能：接觸 ${bad.join('、')} 會穿透` : '✓ 可行：每個接觸都 ≥ 0');
@@ -512,7 +524,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   interface Config {
     shape: ShapeKey; contacts?: number[]; points?: P2[]; auto?: boolean;
-    mode: ProbeMode; cor?: P2; tv?: P2; showCor: boolean; vel: boolean; push?: boolean; vf?: P2; ext?: boolean;
+    mode: ProbeMode; cor?: P2; tv?: P2; showCor: boolean; vel: boolean; push?: boolean; vf?: P2;
+    ext?: boolean; extA?: P2; extF?: P2;
   }
   function configure(c: Config): void {
     configuring = true;
@@ -529,6 +542,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     push.on = !!c.push; pushTog.set(push.on, { silent: true });
     if (c.vf) push.vf = [c.vf[0], c.vf[1]];
     ext.on = !!c.ext; extTog.set(ext.on, { silent: true });
+    if (c.extA) ext.a = [c.extA[0], c.extA[1]];
+    if (c.extF) ext.f = [c.extF[0], c.extF[1]];
     if (!insidePolygon(ext.a, shape.verts)) ext.a = [0, 0];
     anim = -1;
     rebuildFingerHandles();
@@ -567,13 +582,37 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.arrow(sub2(tip, scale2(tan, 0.07)), tip, { color, width: 2, head: 9 });
   }
 
-  function regionLabelPoint(poly: P2[]): P2 {
-    let x = 0, y = 0;
-    for (const q of poly) { x += q[0]; y += q[1]; }
-    return [x / poly.length, y / poly.length];
+  /**
+   * Anchor for a region label: a grid point inside the region, on screen (clear of the overlay line at the
+   * top), whose label box (≈ 1.1 × 0.24 world units) keeps the most clearance from the `avoid` points,
+   * with a mild preference for the middle of the region.
+   */
+  function regionLabelPoint(poly: P2[], vis: World, avoid: P2[]): P2 {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, cx = 0, cy = 0;
+    for (const q of poly) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); cx += q[0]; cy += q[1]; }
+    const cen: P2 = [cx / poly.length, cy / poly.length];
+    x0 = Math.max(x0, vis.xmin + 0.6); x1 = Math.min(x1, vis.xmax - 0.6);
+    y0 = Math.max(y0, vis.ymin + 0.15); y1 = Math.min(y1, vis.ymax - 0.38);
+    const clearance = (q: P2, a: P2) => Math.max(Math.abs(q[0] - a[0]) - 0.55, Math.abs(q[1] - a[1]) - 0.12);
+    let best: P2 | null = null, bestScore = -Infinity;
+    const N = 10;
+    for (let i = 0; i <= N && x1 >= x0 && y1 >= y0; i++) {
+      for (let j = 0; j <= N; j++) {
+        const q: P2 = [x0 + ((x1 - x0) * i) / N, y0 + ((y1 - y0) * j) / N];
+        if (!insidePolygon(q, poly)) continue;
+        const clear = Math.min(0.6, ...avoid.map((a) => clearance(q, a)));
+        const score = clear - 0.03 * norm2(sub2(q, cen));
+        if (score > bestScore) { bestScore = score; best = q; }
+      }
+    }
+    return best ?? cen;
   }
 
+  /** Region labels of the CoR picture, drawn after the body and fingers so nothing covers them. */
+  let corLabels: { p: P2; text: string; color: string }[] = [];
+
   function drawCorPicture(c: Canvas2D, vis: World, font: string): void {
+    corLabels = [];
     const pad = 0.3;
     const box: P2[] = [[vis.xmin - pad, vis.ymin - pad], [vis.xmax + pad, vis.ymin - pad], [vis.xmax + pad, vis.ymax + pad], [vis.xmin - pad, vis.ymax + pad]];
     const plusC = cssVar('--series-1'), minusC = cssVar('--series-5'), muted = cssVar('--fg-muted'), warn = cssVar('--warn');
@@ -584,15 +623,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (aM > 1e-4) { c.polygon(Rm, { fill: minusC, alpha: 0.15, width: 0 }); c.polygon(Rm, { color: minusC, alpha: 0.55, width: 1.2 }); }
     for (const L of lines) c.line(add2(L.p, scale2(L.d, -12)), add2(L.p, scale2(L.d, 12)), { color: muted, width: 1, dash: [5, 5], alpha: 0.75 });
     if (lines.length <= 3) {
+      // per-line labels just outside the finger: + on the left of the directed normal, ± on it, − on the right
       for (const L of lines) {
         const base = add2(L.p, scale2(L.d, -0.62));
-        c.text(add2(base, scale2(perp(L.d), 0.15)), '+', { color: plusC, font: `bold 15px ${font}` });
-        c.text(add2(base, scale2(perp(L.d), -0.15)), '−', { color: minusC, font: `bold 15px ${font}` });
-        c.text(add2(L.p, scale2(L.d, -0.98)), '±', { color: warn, font: `bold 13px ${font}`, bg });
+        c.text(add2(base, scale2(perp(L.d), 0.2)), '+', { color: plusC, font: `bold 15px ${font}` });
+        c.text(add2(base, scale2(perp(L.d), -0.2)), '−', { color: minusC, font: `bold 15px ${font}` });
+        c.text(base, '±', { color: warn, font: `bold 13px ${font}`, bg });
       }
     }
-    if (aP > 1e-4) c.text(regionLabelPoint(Rp), '+ 區：可逆時針轉', { color: plusC, bg, font: `600 12px ${font}` });
-    if (aM > 1e-4) c.text(regionLabelPoint(Rm), '− 區：可順時針轉', { color: minusC, bg, font: `600 12px ${font}` });
+    const compass: P2 = [vis.xmax - 0.42, vis.ymax - 0.4];
+    const avoid: P2[] = [
+      compass, ...cs.map((_, i) => fingerTip(i)), ...(mode === 'trans' ? [] : [cor, add2(cor, [0, 0.17])]),
+      ...(lines.length <= 3 ? lines.map((L) => add2(L.p, scale2(L.d, -0.62))) : []),
+    ];
+    if (aP > 1e-4) corLabels.push({ p: regionLabelPoint(Rp, vis, avoid), text: '+ 區：可逆時針轉', color: '--series-1' });
+    if (aM > 1e-4) corLabels.push({ p: regionLabelPoint(Rm, vis, avoid), text: '− 區：可順時針轉', color: '--series-5' });
     for (const q of feasibleCorPoints(lines)) {
       const both = q.plus && q.minus;
       c.point(q.c, 4.5, { color: both ? warn : q.plus ? plusC : minusC });
@@ -600,7 +645,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     // translation compass (CoR at infinity)
     const R = 0.25;
-    const ctr: P2 = [vis.xmax - 0.42, vis.ymax - 0.4];
+    const ctr = compass;
     const okC = cssVar('--ok');
     c.circle(ctr, R + 0.06, { fill: bg, color: cssVar('--border'), width: 1, alpha: 0.95 });
     c.circle(ctr, R, { color: cssVar('--grid-strong'), width: 1.2 });
@@ -648,11 +693,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.polygon(gpts, { color: gcol, width: 1.8, dash: [6, 4], alpha: 0.9 });
     }
 
-    // fingers and normals
+    // fingers and normals (in the force test the contact forces take the place of the normal arrows)
     cs.forEach((b, i) => {
       const tip = fingerTip(i);
-      c.line(tip, add2(tip, scale2(b.n, -0.34)), { color: muted, width: 10, cap: 'round', alpha: 0.45 });
-      c.arrow(b.p, add2(b.p, scale2(b.n, 0.3)), { color: fg, width: 1.6, head: 8 });
+      c.line(tip, add2(tip, scale2(b.n, -0.34)), { color: muted, width: 10, cap: 'round', alpha: ext.on ? 0.25 : 0.45 });
+      if (!ext.on) c.arrow(b.p, add2(b.p, scale2(b.n, 0.3)), { color: fg, width: 1.6, head: 8 });
     });
 
     // contact-point velocities and mode labels
@@ -679,29 +724,35 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         rotGlyph(c, cor, 0.2, mode === 'ccw' ? 1 : -1, cssVar('--series-5'));
       }
     }
+    if (show.cor) for (const L of corLabels) c.text(L.p, L.text, { color: L.color, bg, font: `600 12px ${font}` });
 
     // external force test
     if (ext.on && resist) {
       const tip = add2(ext.a, scale2(ext.f, K_F));
       c.arrow(ext.a, tip, { color: warn, width: 3, head: 12 });
-      c.text(tip, '𝓕_ext', { dx: 16, dy: -8, color: warn, font: `600 12px ${font}` });
+      c.text(add2(tip, scale2(unit2(ext.f), GRIP + 0.2)), '𝓕_ext', { color: warn, bg, font: `600 12px ${font}` });
+      // force of each finger on the body, drawn from the contact point: a push points into the body,
+      // a (physically impossible) pull points out of it
       cs.forEach((b, i) => {
         const k = resist!.ok ? resist!.k[i] : resist!.kLS[i];
-        if (Math.abs(k) < 1e-6) return;
-        const len = Math.min(0.9, Math.abs(k) * K_F);
+        if (Math.abs(k) < 1e-6) { c.point(b.p, 3.5, { color: muted }); return; }
+        const len = Math.max(0.12, Math.min(0.9, Math.abs(k) * K_F));
         if (k > 0) {
           const col = resist!.ok ? okC : muted;
-          c.arrow(add2(b.p, scale2(b.n, -len)), b.p, { color: col, width: 3, head: 10, dash: resist!.ok ? undefined : [4, 3] });
+          c.arrow(b.p, add2(b.p, scale2(b.n, len)), { color: col, width: 3.2, head: 11, dash: resist!.ok ? undefined : [4, 3] });
         } else {
-          c.arrow(b.p, add2(b.p, scale2(b.n, -len)), { color: danger, width: 3, head: 10 });
-          c.text(add2(b.p, scale2(b.n, -len)), '需要拉', { dy: -12, color: danger, bg, font: `600 12px ${font}` });
+          // beside the finger (which would hide it), pointing out of the body
+          const start = add2(b.p, scale2(perp(b.n), 0.15));
+          const end = add2(start, scale2(b.n, -Math.max(0.32, len)));
+          c.arrow(start, end, { color: danger, width: 3.2, head: 11 });
+          c.text(add2(end, scale2(b.n, -0.13)), '需要拉', { color: danger, bg, font: `600 12px ${font}` });
         }
       });
     }
 
-    c.overlay.textContent = ext.on
+    c.setOverlayText(ext.on
       ? `𝓕_ext 作用於 (${fmt(ext.a[0], 2)}, ${fmt(ext.a[1], 2)})`
-      : `𝒱 = ${fmtV(V)}  ${bad ? '✗ 穿透' : '✓'}`;
+      : `𝒱 = ${fmtV(V)}  ${bad ? '✗ 穿透' : '✓'}`);
   };
 
   // ---------------- steps

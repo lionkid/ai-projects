@@ -637,7 +637,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     } else if (sc === 2) {
       const R = targetR();
       const err = normFro(matSub(matMul(transpose(R), R), eye(3)));
-      if (err < 1e-9) { cls = 'ok'; text = '✓ 三項都在：R 正交、det R = 1'; } else { cls = 'bad'; text = `✗ 少了一項：det R = ${fmt(det(R), 3)}，RᵀR ≠ I（不是旋轉）`; }
+      // a switched-off term can vanish at this θ (sin θ = 0 or 1 − cos θ = 0); then R is still exactly Rot(ω̂, θ).
+      // Only with both terms on may the badge say that all three are present.
+      const allOn = S.terms.sin && S.terms.cos;
+      const exact = normFro(matSub(R, rodriguesTerms(axisVec(), S.theta).R)) < 1e-9;
+      if (err >= 1e-9) { cls = 'bad'; text = `✗ 少了一項：det R = ${fmt(det(R), 3)}，RᵀR ≠ I（不是旋轉）`; }
+      else if (allOn) { cls = 'ok'; text = '✓ 三項都在：R 正交、det R = 1'; }
+      else if (exact) { cls = 'warn'; text = '關掉的那一項在這個 θ 剛好等於 0，R 不受影響'; }
+      else { cls = 'bad'; text = '✗ 少了一項：R 碰巧仍正交，但不等於 Rot(ω̂, θ)'; }
     } else if ((sc === 3 || sc === 4) && lg) {
       if (lg.branch === 'identity') { cls = 'warn'; text = 'θ = 0：R = I，log R = 0，軸沒有定義'; }
       else if (lg.branch === 'pi') { cls = 'warn'; text = 'θ = π：R − Rᵀ = 0，改由 (R + I)/2 取軸；±ω̂ 都對'; }
@@ -650,7 +657,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         text = f?.flipped ? `一般公式：θ_in > 180°，log 改走另一邊（−ω̂ 轉 ${fmt(lg.theta / DEG, 0)}°）` : '一般公式：ω̂ 取自 (R − Rᵀ)/(2 sin θ)';
       }
     } else if (sc === 5) {
-      text = pathAnim ? (pathAnim.kind === 'exp' ? '一步：一直繞同一條軸 ω̂' : 'ZYX：依序繞 ẑ_b、ŷ_b、x̂_b') : '同一個 R，兩條不同的路徑';
+      // for θ > 180° the one-step path is exp(u·log R): it turns the short way, about −ω̂ by 360° − θ
+      const f = S.input === 'axis' ? foldedAngle(S.theta) : null;
+      const flipNote = f?.flipped ? `（θ > 180°：log R 改繞 −ω̂ 轉 ${fmt(f.theta / DEG, 0)}°）` : '';
+      const expText = f?.flipped ? `一步：一直繞同一條軸 −ω̂，轉較短的 ${fmt(f.theta / DEG, 0)}°` : '一步：一直繞同一條軸 ω̂';
+      text = pathAnim ? (pathAnim.kind === 'exp' ? expText : 'ZYX：依序繞 ẑ_b、ŷ_b、x̂_b') : `同一個 R，兩條不同的路徑${flipNote}`;
       if (S.helix) text = `預告：繞 ω̂ 轉的同時沿 ω̂ 平移 h·θ（h = ${PITCH} m/rad）＝螺旋運動`;
     }
     // update() runs every animation frame: touch the DOM only when something changed
@@ -677,7 +688,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       mvWb.set(om.WB);
       kv2.set('ω_s（{s} 座標）', fmtVec(om.wS, 3));
       kv2.set('ω_b（{b} 座標）', fmtVec(om.wB, 3));
-      kv2.set('R ω_b（應等於 ω_s）', `${fmtVec(matVec(R, om.wB), 3)}　✓　|ω_s| = |ω_b| = ${fmt(norm(om.wB), 3)}`);
+      // checked, not asserted: both vectors come from the same finite difference of R(t)
+      const RwB = matVec(R, om.wB);
+      const same = norm(vecAdd(RwB, vecScale(om.wS, -1))) < 1e-6;
+      const ns = norm(om.wS), nb = norm(om.wB);
+      const mags = Math.abs(ns - nb) < 1e-6 ? `|ω_s| = |ω_b| = ${fmt(nb, 3)}` : `|ω_s| = ${fmt(ns, 3)}，|ω_b| = ${fmt(nb, 3)}`;
+      kv2.set('R ω_b（應等於 ω_s）', `${fmtVec(RwB, 3)}　${same ? '✓' : '✗'}　${mags}`);
     }
     if (sc === 2 && pr) {
       // the matrix terms (sin term skew-symmetric, (1 − cos) term symmetric); a switched-off term shows as zeros

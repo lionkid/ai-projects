@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { InverseDynamics, planar2R, planarFK } from '@/mr';
 import {
-  ENDPOINTS, PATHS, PATH_IDS, accelBounds, buildTable, checkCurve, curveFromDrawing, holdable, pathCoefficients,
-  refreshLimits, solveGridDP, solveSwitching, solveTimeOptimal, timing, unholdableIntervals, xRangeTorque,
+  ENDPOINTS, PATHS, PATH_IDS, accelBounds, buildTable, checkCurve, coeffsAt, cubicScalingCurve, curveFromDrawing,
+  fastestCubic, holdable, jointIntervals, pathCoefficients, refreshLimits, solveGridDP, solveSwitching,
+  solveTimeOptimal, timing, torquesAt, trajectorySamples, unholdableIntervals, xRangeTorque,
   type PathTable,
 } from './phasePlane';
 
@@ -207,5 +208,83 @@ describe('curves as trajectories', () => {
     const faster = Float64Array.from(sol.x, (v) => v * 1.15);
     expect(checkCurve(t, faster).bad).toBeGreaterThan(50);
     expect(checkCurve(t, x).T).toBeGreaterThan(sol.T);
+  });
+});
+
+describe('interval diagram, cubic reference and time histories', () => {
+  it('per-joint intervals intersect to [L, U] and the binding joint sits on its torque limit at s̈ = U', () => {
+    for (const id of PATH_IDS) {
+      const t = table(id);
+      for (const j of [100, 640, 901, 1500]) {
+        const s = j / (2 * t.N);
+        for (const sd of [0, 0.8, 1.6]) {
+          const x = sd * sd;
+          const iv = jointIntervals(t, s, x);
+          const [L, U] = accelBounds(t, j, x);
+          expect(iv.L).toBeCloseTo(L, 9);
+          expect(iv.U).toBeCloseTo(U, 9);
+          if (iv.L <= iv.U) {
+            const tauU = torquesAt(t, s, x, iv.U);
+            const bind = iv.hi[0] < iv.hi[1] ? 0 : 1;
+            expect(Math.abs(tauU[bind])).toBeCloseTo(t.tauMax[bind], 6);
+            expect(Math.abs(tauU[1 - bind])).toBeLessThanOrEqual(t.tauMax[1 - bind] + 1e-9);
+          }
+        }
+      }
+      const co = coeffsAt(t, 0.3);
+      expect(co.m[0]).toBeCloseTo(pathCoefficients(PATHS[id], 0.3).m[0], 3);
+    }
+  });
+
+  it('the cubic reference starts/ends at rest, lasts T, and its fastest feasible T is exact and slower than T*', () => {
+    const x = cubicScalingCurve(1000, 2);
+    expect(x[0]).toBe(0);
+    expect(x[1000]).toBe(0);
+    expect(Math.sqrt(x[500])).toBeCloseTo(1.5 / 2, 6);
+    expect(timing(x, 1 / 1000).T).toBeCloseTo(2, 2);
+    // Largest |τ_i| / τ_i,max of a cubic of duration T, evaluated per cell exactly as fastestCubic does.
+    const ratio = (t: PathTable, T: number) => {
+      const xc = cubicScalingCurve(t.N, T);
+      let r = 0;
+      for (let k = 0; k < t.N; k++) {
+        const j = 2 * k + 1, a = (xc[k + 1] - xc[k]) / (2 * t.ds), xm = 0.5 * (xc[k] + xc[k + 1]);
+        for (let i = 0; i < 2; i++) r = Math.max(r, Math.abs(t.m[i][j] * a + t.c[i][j] * xm + t.g[i][j]) / t.tauMax[i]);
+      }
+      return r;
+    };
+    for (const id of PATH_IDS) {
+      const t = table(id);
+      const fc = fastestCubic(t)!;
+      expect(fc).not.toBeNull();
+      expect(checkCurve(t, fc.x).bad).toBe(0);
+      expect(ratio(t, fc.T)).toBeCloseTo(1, 9);
+      expect(ratio(t, fc.T * 0.97)).toBeGreaterThan(1.01);
+      expect(fc.T).toBeGreaterThan(solveTimeOptimal(t).T);
+    }
+    // The corner forces a cubic to crawl through the whole path; bang-bang does not.
+    const tc = table('corner');
+    expect(fastestCubic(tc)!.T / solveTimeOptimal(tc).T).toBeGreaterThan(1.8);
+  });
+
+  it('time histories of the optimum stay within the limits with one joint saturated, and end at s = 1', () => {
+    for (const id of PATH_IDS) {
+      const t = table(id);
+      const sol = solveTimeOptimal(t);
+      const h = trajectorySamples(t, sol.x)!;
+      expect(h.t[h.t.length - 1]).toBeCloseTo(sol.T, 9);
+      expect(h.s[h.s.length - 1]).toBeCloseTo(1, 12);
+      let sat = 0;
+      for (let k = 0; k < h.t.length; k++) {
+        const a = Math.abs(h.tau[0][k]) / t.tauMax[0], b = Math.abs(h.tau[1][k]) / t.tauMax[1];
+        expect(Math.max(a, b)).toBeLessThan(1.02);
+        if (Math.max(a, b) > 0.97) sat++;
+      }
+      expect(sat / h.t.length).toBeGreaterThan(0.93);
+    }
+    // A curve that stops half way never finishes.
+    const t = table('line');
+    const x = new Float64Array(t.N + 1);
+    for (let k = 0; k <= t.N / 2; k++) x[k] = 0.25 * Math.sin((2 * Math.PI * k) / t.N) ** 2;
+    expect(trajectorySamples(t, x)).toBeNull();
   });
 });

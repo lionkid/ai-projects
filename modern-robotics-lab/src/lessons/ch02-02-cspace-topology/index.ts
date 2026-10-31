@@ -59,7 +59,7 @@ $$c_i^2 + s_i^2 = 1, \\qquad i = 1, 2$$
 - 方格中的**直線**（兩關節等速轉動）在工作空間裡通常是一條**曲線**。
 - 穿越方格邊界的路徑在方格上被切成兩段，在環面上卻連續不斷。
 - 讓 $\\theta_1$ 轉一圈的路徑，在方格上是兩端貼邊的線段，在環面上卻是**封閉的圈**。這種繞著「洞」走的圈無法在環面上連續縮成一點——這正是環面與平面、球面在拓撲上不同的證據。`,
-    simHint: '點選一條預設路徑（或按「✎ 畫路徑」自己畫，可畫進外圍淡色區），再按「▶ 播放路徑」，看三個視圖同步移動。',
+    simHint: '點選一條預設路徑（點了就會播放），或按「✎ 畫路徑」自己畫一條（可畫進外圍淡色區）；看三個視圖同步移動，播完按「▶ 播放路徑」可重播。',
   },
   {
     title: '其他系統的 C-space',
@@ -97,22 +97,22 @@ const quiz: QuizQuestion[] = [
     question: '下列哪個系統的 C-space 與無關節極限的 2R 手臂**拓撲相同**？',
     options: [
       '平放在桌上、可以滑動與旋轉的硬幣',
-      '轉盤上可以自轉的咖啡杯（兩者都能無限轉圈）',
       '球面擺',
       '可沿軸滑動又能旋轉的旋鈕',
+      '轉盤上可以自轉的咖啡杯（兩者都能無限轉圈）',
     ],
-    answer: 1,
+    answer: 3,
     explanation: '咖啡杯有兩個獨立、可無限轉圈的角度，正是 $S^1 \\times S^1 = T^2$。硬幣是 $\\R^2 \\times S^1$（3 維）；球面擺 $S^2$ 雖然也是 2 維，但球面上每個圈都能縮成一點，環面上繞洞的圈不行；旋鈕是 $\\R \\times S^1$，滑動方向不會繞回來。',
   },
   {
     question: '用 3×3 旋轉矩陣的 9 個元素描述只有 3 個自由度的空間轉動，這是哪一種表示法？主要代價是什麼？',
     options: [
+      '隱式表示；有些轉動無法表示',
       '顯式表示；數值在 ±π 會跳變',
       '隱式表示；數字比自由度多，必須同時維持 6 條約束（正交、單位長度）',
       '顯式表示；需要 9 條約束',
-      '隱式表示；有些轉動無法表示',
     ],
-    answer: 1,
+    answer: 2,
     explanation: '9 個數 − 6 條約束（三欄各為單位長度、兩兩正交）= 3 個自由度，這是嵌入更高維空間的隱式表示。好處是平滑、沒有包裹或奇異點；代價是數字較多，而且數值計算的誤差會讓矩陣逐漸偏離約束，必須定期修正。',
   },
 ];
@@ -717,7 +717,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.text([-PI, -PI], '−π', { ...lbl, dy: 13 });
     c.text([PI, -PI], 'π', { ...lbl, dy: 13 });
     c.text([1.6, -PI], 'θ₁ →', { ...lbl, dy: 13 });
-    c.text([-PI, PI], 'π', { ...lbl, dx: -14 });
+    c.text([PI, PI], 'π', { ...lbl, dx: 14 }); // θ2 = π (the top-left corner is under the overlay)
     c.text([-PI, -1.6], 'θ₂ ↑', { ...lbl, dx: -19 });
     for (const piece of trailPieces(trail)) drawWrapped(c, wrapPolylines(unwrapSeq(piece)), cssVar('--series-6'), 2, 0.9);
     if (path) drawWrapped(c, wrapPolylines(path), cssVar('--series-7'), 2.6);
@@ -796,10 +796,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.arc([cx - 0.08, cy - 0.04], 0.12, 0, ph, { color: cssVar('--warn'), width: 1.5 });
       c.text([cx + 0.12, cy - 0.2], '(x, y, φ)', { color: muted, font: `11px ${font}` });
     } else if (i === 1) {
-      const piv: Pt = [cx, cy + 0.2];
-      c.circle(piv, 0.27, { color: muted, width: 1.2, dash: [4, 3] });
-      c.ellipse(piv, 0.27, 0.07, 0, { color: muted, width: 1, dash: [3, 3] });
-      const bob: Pt = [piv[0] + 0.15, piv[1] - 0.22];
+      // sphere kept below the card title (its top at y0 + 0.80, the title at y0 + 0.86)
+      const piv: Pt = [cx, cy + 0.08];
+      c.circle(piv, 0.24, { color: muted, width: 1.2, dash: [4, 3] });
+      c.ellipse(piv, 0.24, 0.065, 0, { color: muted, width: 1, dash: [3, 3] });
+      const bob: Pt = [piv[0] + 0.13, piv[1] - 0.2];
       c.line(piv, bob, { color: fg, width: 2 });
       c.disk(bob, 0.04, { fill: accent });
       c.point(piv, 3, { color: fg });
@@ -953,6 +954,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const dur = first ? 0 : 0.8;
     first = false;
     if (i !== 2) glueAnim = null;
+    sweep = null; // steps 2 and 4 start their own demo below; any other step stops a demo still running
     setGallery(i === 5);
     if (i === 0) {
       setGlue(2);

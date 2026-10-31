@@ -46,11 +46,14 @@ export function glueStages(g: number): { a: number; b: number } {
 const EPS = 1e-6;
 
 /**
- * Isometric bending of the flat sheet into the torus.
+ * Bending of the flat sheet into the torus.
  *
  * Flat sheet (a = b = 0): the rectangle x = R + r, y = R θ1, z = r θ2.
- * Stage a: the θ2 direction is bent into a circular arc of radius r/a (a = 1 closes the tube).
+ * Stage a: the θ2 direction is bent into a circular arc of radius r/a (a = 1 closes the tube); this stage is
+ * isometric (lengths along θ2 stay r·Δθ2).
  * Stage b: the tube's centre line is bent into an arc of radius R/b about the z axis (b = 1 closes the ring).
+ * This stage necessarily stretches the outer side and compresses the inner side (a flat torus has no smooth
+ * isometric embedding in R³), so it only preserves lengths along the centre line.
  * At a = b = 1 this is the standard torus ((R + r cos θ2) cos θ1, (R + r cos θ2) sin θ1, r sin θ2).
  * The 1 − cos terms are written as 2 sin²(·/2) so small a, b stay accurate.
  */

@@ -1,16 +1,17 @@
 import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } from '@/types';
 import {
-  el, fmt, controlPanel, row, slider, angleSlider, select, toggle, simTitle, kv, legend, mdElement, split,
+  el, fmt, cssVar, controlPanel, row, slider, angleSlider, select, toggle, simTitle, kv, legend, mdElement, split,
   Canvas2D, Plot2D, createLoop, presetChips, algorithmStepper, playback, planarArmPoints,
   type Pt, type Handle, type PresetChipsHandle, type SeriesSpec, type Marker,
 } from '@/ui';
 import { type Vec, dot, norm, wrapToPi } from '@/mr';
 import { meta } from './meta';
 import {
-  LESSON_TOL, LINKS, REACH, TRACK_PATHS, advanceTracking, circleTarget, evaluate, iterate, nullSpaceDirection,
-  poseReachable, reducedJacobian, residual, runNewton, screwArc, singularValues, statusOf, trackingStart,
-  type IterRecord, type Method, type RunStatus, type StepOptions, type Task, type TrackState,
+  DEFAULT_TASK, FAR_TASK, GUESS, LESSON_TOL, LINKS, REACH, TRACK_PATHS, W_JOINT1, advanceTracking, circleTarget, evaluate,
+  iterate, nullSpaceDirection, poseReachable, reducedJacobian, residual, runNewton, screwArc, singularValues, statusOf,
+  trackingStart, type IterRecord, type Method, type RunStatus, type StepOptions, type Task, type TrackState,
 } from './newton';
+import { LabelLayer } from './labels';
 
 const D = Math.PI / 180;
 const MAX_ITER = 60;
@@ -20,22 +21,8 @@ const STEP_INF = 3.2;
 const K_TRACK = 5;
 /** Seconds of tracking simulated instantly when a path (re)starts, so the plots are never empty. */
 const PREROLL = 2.5;
-/** Joint weights of the weighted pseudo-inverse: joint 1 is ten times as "expensive". */
-const W1 = [10, 1, 1];
 /** Canvas world: covers every preset configuration and both tracking circles. */
 const WORLD = { xmin: -1.6, xmax: 2.75, ymin: -1.45, ymax: 2.05 };
-const DEFAULT_TASK: Task = { x: 1.0, y: 1.2, phi: 60 * D, positionOnly: false };
-/** Position-only target 2.67 m from the base: 0.27 m beyond reach (quiz question 1). */
-const FAR_TASK: Task = { x: 2.6, y: 0.6, phi: 0, positionOnly: true };
-const deg = (a: number[]): Vec => a.map((x) => x * D);
-const GUESS = {
-  start: deg([0, 60, -90]),
-  good: deg([0, 90, 0]),
-  bad: deg([-150, 60, 90]),
-  sing: deg([40, 3, -20]),
-  redund: deg([10, 60, 60]),
-  far: deg([30, 30, 30]),
-};
 
 const TRACK_LABELS: { label: string; title: string }[] = [
   { label: '圓形路徑（全程可達）', title: '圓心 (1.1, 0.9)、半徑 0.5 m，朝向在 30° ± 17° 間擺動；離奇異構型很遠' },
@@ -83,7 +70,7 @@ $J_b^{\\dagger}$ 是偽逆（pseudoinverse）；平面 3R 追蹤位置加朝向�
 
 $$\\theta^{i+1} = \\theta^i + J_b^{\\T}\\big(J_bJ_b^{\\T} + \\lambda^2 I\\big)^{-1}\\mathcal V_b .$$
 
-在每個奇異值方向上，它把 $1/\\sigma$ 換成 $\\sigma/(\\sigma^2 + \\lambda^2)$：$\\sigma \\gg \\lambda$ 時幾乎與偽逆相同；$\\sigma \\to 0$ 時增益最多 $1/(2\\lambda)$，步長有界。代價是每一步都略偏離精確的 Newton 步，收斂從二次退化成線性——$\\lambda$ 越大越穩，也越慢。`,
+在每個奇異值方向上，它把 $1/\\sigma$ 換成 $\\sigma/(\\sigma^2 + \\lambda^2)$：$\\sigma \\gg \\lambda$ 時幾乎與偽逆相同；這個增益最大只有 $1/(2\\lambda)$（發生在 $\\sigma = \\lambda$），$\\sigma \\to 0$ 時反而趨近 0，所以步長永遠有界。代價是每一步都略偏離精確的 Newton 步，收斂從二次退化成線性——$\\lambda$ 越大越穩，也越慢。`,
     simHint: '同一個近奇異初值：實線是 DLS（λ = 0.1），虛線是 J⁺。比較兩張圖的步長與收斂步數；再按「λ = 0.5」，看誤差曲線變得多平緩。',
   },
   {
@@ -91,7 +78,7 @@ $$\\theta^{i+1} = \\theta^i + J_b^{\\T}\\big(J_bJ_b^{\\T} + \\lambda^2 I\\big)^{
     md: `只要求末端**位置**時，3R 多出一個自由度：$J_v$ 是 2×3，$J_v\\Delta\\theta = v$ 有無限多解，彼此只差一個**零空間**（null space）分量——末端不動、只改變手臂姿勢的自運動（方向記為 $\\hat n$）。偽逆挑的是其中 $\\|\\Delta\\theta\\|$ 最小的一個，它與零空間正交：$\\Delta\\theta \\cdot \\hat n = 0$。
 
 若某個關節比較「貴」（慢、耗能），可改用加權偽逆，最小化 $\\Delta\\theta^{\\T}W\\Delta\\theta$。這時步長帶有零空間分量，收斂到的姿勢也跟著改變。`,
-    simHint: '已切到「只要位置」：粉紅箭頭是零空間自運動（末端那支為零），讀數顯示第 1 步的 Δθ·n̂ ≈ 0。按「加權 J⁺」，比較終點姿勢與玫瑰色虛線（對照）。',
+    simHint: '已切到「只要位置」：粉紅箭頭是零空間自運動（末端不動），讀數顯示第 1 步的 Δθ·n̂ ≈ 0。玫瑰色虛線是加權 J⁺ 的終點：關節 1 只轉約 19°，一般 J⁺ 轉了 44°。按「加權 J⁺」讓兩者互換。',
   },
   {
     title: '逆速度運動學與下一章',
@@ -111,9 +98,9 @@ const quiz: QuizQuestion[] = [
     question: '只要位置的 3R 手臂（總長 2.4 m），目標在 $|p| = 2.67$ m 處，超出可達範圍。迭代會怎樣？',
     options: [
       '只要迭代次數夠多，殘差終究會降到容許誤差以下，只是比可達目標慢',
-      '殘差卡在約 0.27 m；最接近的姿勢正是伸直的奇異構型，$J^{\\dagger}$ 在附近亂跳',
-      '每一步都把關節往同一方向推，關節角最後發散到無限大',
-      '收斂到可達範圍內離目標最遠的姿勢，殘差約 $|p| + 2.4$ m',
+      '殘差卡在約 0.27 m；最近的姿勢正是伸直的奇異構型，$J^{\\dagger}$ 在附近亂跳',
+      '每一步都把關節往同一方向推，關節角越轉越多，最後發散到無限大',
+      '收斂到可達範圍內離目標最遠的姿勢（手臂指向反方向），殘差約 $|p| + 2.4$ m',
     ],
     answer: 1,
     explanation: '$f(\\theta) = 0$ 根本沒有解，多迭代幾次也不會收斂；迭代只會讓殘差變小，不會往「最遠」的姿勢跑。殘差最小的姿勢是手臂伸直、指向目標，殘差 $|p| - 2.4 \\approx 0.27$ m，偏偏這正是徑向的奇異構型：$\\sigma_{\\min} \\to 0$，偽逆步長 $\\propto 1/\\sigma_{\\min}$ 在附近暴衝、來回振盪（角度每步包裹，不會跑到無限大）。阻尼足夠（例如 $\\lambda = 0.5$）的 DLS 則會穩定停在伸直姿勢。實作上要偵測「殘差不再下降」並回報不可達。第 6 步的「不可達目標」預設可以直接驗證：實線（$J^{\\dagger}$）亂跳後停滯，虛線（DLS）停在伸直姿勢。',
@@ -134,8 +121,8 @@ const quiz: QuizQuestion[] = [
     options: [
       '巧合：一個是微分關係、一個是最佳化，兩者的推導互不相關',
       '因為對任何手臂都有 $J^{\\dagger} = J^{\\T}$，所以兩個式子其實都是轉置法',
-      '因為收斂時 $\\mathcal V_b = 0$，兩式只在迭代終點那一刻才恰好相同',
-      '兩者解同一個線性關係 $J\\,\\delta\\theta = \\mathcal V$；Newton 步把 $\\mathcal V_b$ 當成持續 1 秒的速度',
+      '因為收斂時 $\\mathcal V_b = 0$，兩式只在迭代終點那一刻才恰好相同，平常並不相等',
+      '兩者都在解 $J\\,\\delta\\theta = \\mathcal V$；Newton 步把 $\\mathcal V_b$ 當成持續 1 秒的速度',
     ],
     answer: 3,
     explanation: '$\\mathcal V = J(\\theta)\\dot\\theta$ 是速度層級的精確關係；Newton 法把它用在有限的步長上：$J\\,\\Delta\\theta \\approx \\mathcal V_b \\cdot (1\\ \\text{s})$。把 Newton 步除以時間步長 $\\Delta t$ 就是 $\\dot\\theta$，所以追蹤控制可以看成「每個控制週期做一次 Newton 修正」，奇異附近的問題與補救（步長限制、DLS）也完全相同。這與 $J^{\\dagger} = J^{\\T}$ 無關（一般並不成立），也不是只在收斂時才一致：每一步的形式都相同。',
@@ -245,7 +232,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   });
   pb.el.style.display = 'none';
 
-  const K = { V: 'V_b（誤差）', dth: 'Δθ（最近一步）', sig: 'σ_min(J_b)', reach: '目標', ns: '第 1 步 Δθ·n̂' } as const;
+  const K = { V: 'V_b（誤差）', dth: 'Δθ（最近一步）', sig: 'σ_min(J_b)', reach: '目標', ns: '第 1 步 Δθ·n̂', j1: '關節 1 共轉了' } as const;
   const info = kv(host, Object.values(K));
   const KT = { rate: 'dθ/dt (rad/s)', sig: 'σ_min(J_b)', reach: '目標' } as const;
   const infoT = kv(host, Object.values(KT));
@@ -281,7 +268,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     value: show.compare, onChange: (v) => { show.compare = v; computeCompare(); refreshRun(); },
   });
   const tNull = toggle(togRow, { label: '零空間', title: '畫出零空間自運動時各關節的速度', value: show.nullspace, onChange: (v) => { show.nullspace = v; cv.requestRender(); } });
-  const tW = toggle(togRow, { label: '加權 J⁺', title: 'W = diag(10, 1, 1)：關節 1 的「成本」是其他關節的 10 倍', value: false, onChange: (v) => { opts.weights = v ? W1 : null; inputsChanged(); } });
+  const tW = toggle(togRow, { label: '加權 J⁺', title: 'W = diag(10, 1, 1)：關節 1 的「成本」是其他關節的 10 倍', value: false, onChange: (v) => { opts.weights = v ? W_JOINT1 : null; inputsChanged(); } });
 
   // The iteration readout keeps one pair per row (its vectors would wrap in a narrow column); the
   // short tracking readout uses two pairs per row when there is room. The style change is deferred to
@@ -422,7 +409,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       q0 = useGood ? GUESS.good : GUESS.bad;
       label = useGood ? '好的初值' : '壞的初值';
     } else if (kind === 'weights') {
-      o = { ...opts, weights: opts.weights ? null : W1 };
+      o = { ...opts, weights: opts.weights ? null : W_JOINT1 };
       label = opts.weights ? '一般 J⁺' : '加權 J⁺';
     } else {
       const m: Method = opts.method === 'pinv' ? 'dls' : 'pinv';
@@ -443,6 +430,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     tW.el.style.display = it && task.positionOnly && opts.method === 'pinv' ? '' : 'none';
     sLam.el.style.opacity = opts.method === 'dls' ? '' : '0.45';
     info.show(K.ns, task.positionOnly);
+    info.show(K.j1, task.positionOnly);
   }
 
   function setMethod(m: Method, restart = false): void {
@@ -482,7 +470,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
   function setWeighted(v: boolean): void {
     tW.set(v, { silent: true });
-    opts.weights = v ? W1 : null;
+    opts.weights = v ? W_JOINT1 : null;
   }
 
   // ------------------------------------------------------------------ plots & readouts
@@ -562,6 +550,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         const frac = first.dthetaNorm > 1e-15 ? Math.abs(along) / first.dthetaNorm : 0;
         info.set(K.ns, `${fmt(along, 3)}（占 ‖Δθ‖ 的 ${fmt(100 * frac, 0)}%，${opts.method !== 'pinv' ? '非偽逆' : opts.weights ? '加權 W' : '最小範數'}）`);
       } else info.set(K.ns, first ? 'J 降秩，零空間不只一維' : '—（尚未迭代）');
+      // Net rotation of joint 1 from θ⁰ (the joint the weighted pseudo-inverse makes "expensive").
+      const turn = (rs: IterRecord[]) => `${fmt(Math.abs(wrapToPi(rs[rs.length - 1].theta[0] - rs[0].theta[0])) / D, 0)}°`;
+      info.set(K.j1, `${turn(records)}${cmp ? `（對照・${cmp.label}：${turn(cmp.records)}）` : ''}`);
     }
   }
 
@@ -664,13 +655,22 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   // ------------------------------------------------------------------ drawing
-  function drawBase(c: Canvas2D): void {
+  // Text labels are queued in a LabelLayer while the scene is drawn and placed last (labels.ts): they
+  // stay on top of the links and avoid each other wherever the learner drags the target or the guess.
+  const tag = (color: string) => ({ color, font: MONO, bg: '--sim-bg' });
+
+  function drawBase(c: Canvas2D, L: LabelLayer): void {
     c.polygon([[-0.1, -0.11], [0.1, -0.11], [0, 0]], { fill: '--grid-strong', color: '--grid-strong', width: 1 });
     c.line([-0.16, -0.11], [0.16, -0.11], { color: '--fg-muted', width: 2 });
     c.frame({ x: 0, y: 0, theta: 0 }, 0.28, { width: 1.5, alpha: 0.8, labels: 's' });
+    L.frame(0, 0, 0, 0.28, 800);
+    // the frame's own x_s / y_s labels sit just beyond the arrow tips
+    L.disc([0.28, 0], 16, 600);
+    L.disc([0, 0.28], 16, 600);
   }
 
-  function drawArm(c: Canvas2D, q: Vec, color: string, style: 'solid' | 'ghost' | 'dashed', alpha = 1): Pt[] {
+  /** Draws a 3R configuration; with a LabelLayer and weight > 0 its links become label obstacles. */
+  function drawArm(c: Canvas2D, q: Vec, color: string, style: 'solid' | 'ghost' | 'dashed', alpha = 1, L?: LabelLayer, weight = 0): Pt[] {
     const pts = planarArmPoints(LINKS, q);
     if (style === 'solid') {
       for (let i = 0; i < 3; i++) c.line(pts[i], pts[i + 1], { color, width: 7, alpha: 0.85 * alpha });
@@ -683,43 +683,51 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     } else {
       for (let i = 0; i < 3; i++) c.line(pts[i], pts[i + 1], { color, width: 4, alpha: 0.28 * alpha });
     }
+    if (L && weight > 0) {
+      L.polyline(pts, weight);
+      if (style === 'solid') for (let i = 0; i < 3; i++) L.disc(pts[i], 7, weight);
+    }
     return pts;
   }
 
-  /**
-   * Frame label placed on the frame's −y side (perpendicular to its x-axis), so it sits neither on the
-   * last link (behind the frame) nor on the x arrow. Screen offsets: world (sin φ, −cos φ) → (sin φ, cos φ).
-   */
-  function frameLabel(c: Canvas2D, p: Pt, phi: number, label: string, color: string): void {
-    c.text(p, label, { color, font: MONO, dx: 20 * Math.sin(phi), dy: 20 * Math.cos(phi), bg: '--sim-bg' });
-  }
-
-  function tipFrame(c: Canvas2D, q: Vec, label: string | null, alpha = 1): void {
+  /** End-effector frame {b}; its label prefers the frame's −y side (away from the last link and the x arrow). */
+  function tipFrame(c: Canvas2D, q: Vec, label: string | null, L: LabelLayer, alpha = 1): void {
     const phi = q[0] + q[1] + q[2];
     const tip = planarArmPoints(LINKS, q)[3];
     c.frame({ x: tip[0], y: tip[1], theta: phi }, 0.3, { width: 2, alpha });
-    if (label) frameLabel(c, tip, phi, label, '--fg');
+    L.frame(tip[0], tip[1], phi, 0.3);
+    if (label) L.label(tip, label, { ...tag('--fg'), prefer: phi - Math.PI / 2, priority: 1 });
   }
 
-  function drawTwist(c: Canvas2D, q: Vec): void {
+  function drawTwist(c: Canvas2D, q: Vec, L: LabelLayer): void {
     const r = residual(q, task);
     const tip: Pt = [r.Tsb[0][3], r.Tsb[1][3]];
     if (task.positionOnly) {
-      if (r.vNorm > 1e-3) c.arrow(tip, [task.x, task.y], { color: '--series-6', width: 2, dash: [5, 4], head: 9 });
+      if (r.vNorm > 1e-3) {
+        c.arrow(tip, [task.x, task.y], { color: '--series-6', width: 2, dash: [5, 4], head: 9 });
+        L.seg(tip, [task.x, task.y], 600);
+      }
       return;
     }
     if (r.omegaNorm + r.vNorm < 2e-3) return;
     const arc = screwArc(r.Tsb, r.V6, 32);
     const pts = arc.map((T) => [T[0][3], T[1][3]] as Pt);
     c.polyline(pts, { color: '--series-6', width: 2.2, dash: [6, 4] });
+    L.polyline(pts, 600);
     for (const k of [11, 21]) {
       const T = arc[k];
-      c.frame({ x: T[0][3], y: T[1][3], theta: Math.atan2(T[1][0], T[0][0]) }, 0.14, { width: 1.3, alpha: 0.55 });
+      const th = Math.atan2(T[1][0], T[0][0]);
+      c.frame({ x: T[0][3], y: T[1][3], theta: th }, 0.14, { width: 1.3, alpha: 0.55 });
+      L.frame(T[0][3], T[1][3], th, 0.14, 300);
     }
-    c.text(pts[16], 'V_b', { color: '--series-6', dx: 16, dy: 12, bg: '--sim-bg', font: MONO });
+    // V_b beside the middle of the path, preferably on the side that faces away from the base
+    const m = pts[16];
+    let side = Math.atan2(pts[32][1] - pts[0][1], pts[32][0] - pts[0][0]) - Math.PI / 2;
+    if (Math.cos(side) * m[0] + Math.sin(side) * m[1] < 0) side += Math.PI;
+    L.label(m, 'V_b', { ...tag('--series-6'), prefer: side, radii: [8, 16, 28], priority: 2 });
   }
 
-  function drawNull(c: Canvas2D, q: Vec): void {
+  function drawNull(c: Canvas2D, q: Vec, L: LabelLayer): void {
     const J = reducedJacobian(q, true);
     const n = nullSpaceDirection(J, prevNull);
     if (!n) return;
@@ -733,88 +741,114 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const scale = 0.45 / Math.max(1e-9, ...speeds);
     vel.forEach((v, k) => {
       const p = p0[k + 1];
-      if (speeds[k] * scale > 0.03) c.arrow(p, [p[0] + v[0] * scale, p[1] + v[1] * scale], { color: '--series-7', width: 2.6, head: 10 });
-      else c.circle(p, 8 / c.scale, { color: '--series-7', width: 2 });
+      if (speeds[k] * scale > 0.03) {
+        const e: Pt = [p[0] + v[0] * scale, p[1] + v[1] * scale];
+        c.arrow(p, e, { color: '--series-7', width: 2.6, head: 10 });
+        L.seg(p, e, 1200);
+      } else {
+        c.circle(p, 8 / c.scale, { color: '--series-7', width: 2 });
+        L.disc(p, 9, 1200);
+      }
     });
-    // Key in the (empty) bottom-right corner: labels next to the arrows ended up on the links.
+    // Key in the (empty) bottom-right corner rather than next to the arrows.
     const v = c.visible();
-    c.text([v.xmax, v.ymin], '→ 自運動 n̂：末端不動時各關節點的速度', { color: '--series-7', align: 'right', dx: -8, dy: -13, bg: '--sim-bg', font: '12px sans-serif' });
+    L.fixedLabel([v.xmax, v.ymin], '→ 自運動 n̂：末端不動時各關節點的速度', { color: '--series-7', align: 'right', dx: -8, dy: -13, bg: '--sim-bg', font: '12px sans-serif' }, -1);
   }
 
-  /** Target {d}; returns whether {b} currently sits on it (then one shared label is drawn). */
-  function drawTarget(c: Canvas2D, q: Vec): void {
+  /** Target {d} (or the position target p_d) with its label; one shared label when {b} sits on it. */
+  function drawTarget(c: Canvas2D, q: Vec, L: LabelLayer): void {
     const tip = planarArmPoints(LINKS, q)[3];
     const onTarget = Math.hypot(tip[0] - task.x, tip[1] - task.y) < 0.12;
+    const P: Pt = [task.x, task.y];
+    L.disc(P, 13, 2000); // the target handle, drawn by the canvas after this callback
     if (task.positionOnly) {
       const k = 0.08;
       c.line([task.x - k, task.y], [task.x + k, task.y], { color: '--series-5', width: 2 });
       c.line([task.x, task.y - k], [task.x, task.y + k], { color: '--series-5', width: 2 });
-      if (!onTarget) c.text([task.x, task.y], 'p_d', { color: '--series-5', font: MONO, dx: 16, dy: 14, bg: '--sim-bg' });
+      if (!onTarget) L.label(P, 'p_d', { ...tag('--series-5'), prefer: -Math.PI / 4, priority: 0 });
       return;
     }
     c.frame({ x: task.x, y: task.y, theta: task.phi }, 0.35, { width: 2.5 });
-    c.line([task.x, task.y], knobPos(), { color: '--series-5', width: 1.5, dash: [4, 3] });
-    if (onTarget) frameLabel(c, [task.x, task.y], task.phi, '{b} = {d}', '--series-5');
-    // {d} has no link behind it, so its label goes on the −x side; {b} keeps its −y side (no collision
-    // when the two frames are close and equally oriented, e.g. right after one Newton step).
-    else c.text([task.x, task.y], '{d}', { color: '--series-5', font: MONO, dx: -24 * Math.cos(task.phi), dy: 24 * Math.sin(task.phi), bg: '--sim-bg' });
+    c.line(P, knobPos(), { color: '--series-5', width: 1.5, dash: [4, 3] });
+    L.frame(task.x, task.y, task.phi, 0.35);
+    L.seg(P, knobPos(), 800);
+    L.disc(knobPos(), 10, 2000);
+    if (onTarget) L.label(P, '{b} = {d}', { ...tag('--series-5'), prefer: task.phi - Math.PI / 2, priority: 0 });
+    else L.label(P, '{d}', { ...tag('--series-5'), prefer: task.phi + Math.PI, priority: 0 });
   }
 
-  function drawTrack(c: Canvas2D): void {
+  function drawTrack(c: Canvas2D, L: LabelLayer): void {
     const P = TRACK_PATHS[trackIdx];
     const circ: Pt[] = [];
     for (let k = 0; k <= 72; k++) { const a = (k / 72) * 2 * Math.PI; circ.push([P.cx + P.rho * Math.cos(a), P.cy + P.rho * Math.sin(a)]); }
     c.polyline(circ, { color: '--series-5', width: 1.2, dash: [4, 4] });
+    L.polyline(circ, 300);
     c.polyline(tipTrail, { color: '--series-7', width: 2, alpha: 0.8 });
     const tg = pathFn(trk.t);
     c.frame({ x: tg.x, y: tg.y, theta: tg.phi }, 0.35, { width: 2.5 });
     c.point([tg.x, tg.y], 6, { color: trk.reachable ? '--series-5' : '--danger' });
-    if (!trk.reachable) c.text([tg.x, tg.y], '到不了！', { color: '--danger', dy: -18, bg: '--sim-bg' });
-    drawArm(c, trk.theta, '--series-1', 'solid');
-    tipFrame(c, trk.theta, '{b}');
+    L.frame(tg.x, tg.y, tg.phi, 0.35);
+    L.disc([tg.x, tg.y], 8, 1500);
+    if (!trk.reachable) L.label([tg.x, tg.y], '到不了！', { color: '--danger', bg: '--sim-bg', prefer: Math.PI / 2, priority: 0 });
+    drawArm(c, trk.theta, '--series-1', 'solid', 1, L, 3000);
+    tipFrame(c, trk.theta, '{b}', L);
     c.setOverlayText(`t = ${fmt(trk.t, 1)} s   ‖dθ/dt‖ = ${fmt(norm(trk.rates), 2)} rad/s   誤差 = ${fe(trk.err)}${trk.reachable ? '' : '   ⚠ 目標在工作空間外'}`);
   }
 
   cv.draw = (c) => {
+    const L = new LabelLayer(c, `12px ${cssVar('--font') || 'sans-serif'}`);
     c.grid(0.5);
     c.circle([0, 0], REACH, { color: '--series-3', width: 1.2, dash: [6, 4] });
-    drawBase(c);
-    if (mode === 'track') { drawTrack(c); return; }
+    drawBase(c, L);
+    if (mode === 'track') { drawTrack(c, L); L.flush(); return; }
 
     const n = records.length;
     const a = animTheta();
     const q = a ?? records[n - 1].theta;
-    drawTarget(c, q);
+    drawTarget(c, q, L);
     // initial guess (dashed) with its drag handles; labelled once the arm has left it
-    const g = drawArm(c, theta0, '--fg-muted', 'dashed', 0.9);
-    if (n > 1 || a) c.text(g[1], 'θ⁰', { color: '--fg-muted', dx: -14, dy: -12, bg: '--sim-bg' });
+    const g = drawArm(c, theta0, '--fg-muted', 'dashed', 0.9, L, 800);
+    for (let i = 1; i <= 3; i++) L.disc(g[i], 10, 1500);
+    if (n > 1 || a) L.label(g[1], 'θ⁰', { color: '--fg-muted', bg: '--sim-bg', prefer: (3 * Math.PI) / 4, priority: 3 });
     // where the comparison run ended
     if (cmp) {
-      drawArm(c, cmp.records[cmp.records.length - 1].theta, '--series-2', 'dashed');
-      // Key in the (empty) top-right corner instead of on the arm, where it collided with other labels.
+      drawArm(c, cmp.records[cmp.records.length - 1].theta, '--series-2', 'dashed', 1, L, 800);
+      // Key in the bottom-left corner: the top row belongs to the overlay readout.
       const v = c.visible();
-      c.text([v.xmax, v.ymax], `- - 對照終點（${cmp.label}）`, { color: '--series-2', align: 'right', dx: -8, dy: 13, bg: '--sim-bg', font: '12px sans-serif' });
+      L.fixedLabel([v.xmin, v.ymin], `- - 對照終點（${cmp.label}）`, { color: '--series-2', align: 'left', dx: 8, dy: -13, bg: '--sim-bg', font: '12px sans-serif' }, -1);
     }
     if (show.iterates) {
       const from = Math.max(1, n - 7);
-      for (let k = from; k < n - (a ? 0 : 1); k++) drawArm(c, records[k].theta, '--series-1', 'ghost', 0.35 + 0.65 * ((k - from + 1) / (n - from)));
+      for (let k = from; k < n - (a ? 0 : 1); k++) drawArm(c, records[k].theta, '--series-1', 'ghost', 0.35 + 0.65 * ((k - from + 1) / (n - from)), L, 150);
     }
-    // tip path through the iterates
+    // tip path through the iterates; numbers on the first few (points that pile up near the target share one)
     const tips = records.map((r) => planarArmPoints(LINKS, r.theta)[3]);
-    if (tips.length > 1) c.polyline(a ? tips.slice(0, -1) : tips, { color: '--series-4', width: 1.5, alpha: 0.9 });
+    const path = a ? tips.slice(0, -1) : tips;
+    if (path.length > 1) {
+      c.polyline(path, { color: '--series-4', width: 1.5, alpha: 0.9 });
+      L.polyline(path, 300);
+    }
+    const numbered: Pt[] = [];
     tips.forEach((p, k) => {
       if (a && k === n - 1) return;
       c.point(p, 3.5, { color: '--series-4' });
-      if (k > 0 && k < 6) c.text(p, String(k), { color: '--series-4', dx: 9, dy: -9, font: '11px sans-serif' });
+      if (k < 1 || k > 5) return;
+      const s = c.toScreen(p);
+      if (numbered.some((o) => Math.hypot(o[0] - s[0], o[1] - s[1]) < 14)) return;
+      numbered.push(s);
+      L.label(p, String(k), { color: '--series-4', font: '11px sans-serif', prefer: Math.PI / 4, radii: [3, 8, 14], priority: 6 });
     });
-    drawArm(c, q, '--series-1', 'solid');
+    drawArm(c, q, '--series-1', 'solid', 1, L, 3000);
     const tip = planarArmPoints(LINKS, q)[3];
     const onTarget = !task.positionOnly && Math.hypot(tip[0] - task.x, tip[1] - task.y) < 0.12;
-    tipFrame(c, q, a || onTarget ? null : '{b}');
-    if (!a && show.twist) drawTwist(c, q);
-    if (!a && task.positionOnly && show.nullspace) drawNull(c, q);
+    tipFrame(c, q, a || onTarget ? null : '{b}', L);
+    if (!a && show.twist) drawTwist(c, q, L);
+    if (!a && task.positionOnly && show.nullspace) drawNull(c, q, L);
+    L.flush();
     const last = records[n - 1];
-    c.setOverlayText(`k = ${n - 1}   ${task.positionOnly ? '' : `‖ω_b‖ = ${fe(last.omegaNorm)}   `}‖v_b‖ = ${fe(last.vNorm)}   ${statusText()}`);
+    // Short status here; the stepper next to the buttons shows the full message.
+    const st = status === 'converged' ? `✓ 收斂：${n - 1} 步` : status === 'stalled' ? '■ 停滯' : status === 'maxIter' ? '■ 未收斂' : '';
+    c.setOverlayText(`k = ${n - 1}   ${task.positionOnly ? '' : `‖ω_b‖ = ${fe(last.omegaNorm)}   `}‖v_b‖ = ${fe(last.vNorm)}   ${st}`);
   };
 
   fb.draw = (c) => {
@@ -868,7 +902,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       { label: '近奇異初值', apply: () => { resetBoth(GUESS.sing); rerun(); } },
     ]),
     presetChips(chipRow, [
-      { label: '冗餘初值 (10°, 60°, 60°)', apply: () => { resetBoth(GUESS.redund); setWeighted(false); rerun(); } },
+      { label: '冗餘初值 (45°, 75°, 60°)', apply: () => { resetBoth(GUESS.redund); setWeighted(false); rerun(); } },
       { label: '加權 J⁺', apply: () => { setWeighted(true); rerun(); } },
       { label: '一般 J⁺', apply: () => { setWeighted(false); rerun(); } },
       { label: '不可達目標 (2.6, 0.6)', title: '|p| ≈ 2.67 m > 2.4 m：殘差不可能歸零（虛線為 λ ≥ 0.5 的 DLS）', apply: () => { setTask({ ...FAR_TASK }); setGuess(GUESS.far); rerun(); } },

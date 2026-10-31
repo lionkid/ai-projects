@@ -1,7 +1,7 @@
 import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } from '@/types';
 import {
   el, cssVar, fmt, fmtVec, controlPanel, row, slider, angleSlider, toggle, button, select, matrixView, simTitle, note, kv,
-  legend, presetChips, mathEl, Canvas2D, Scene3D, Arrow3D, createLoop, type Pt, type MatrixHandle,
+  legend, presetChips, mathEl, Canvas2D, Scene3D, Arrow3D, createLoop, type Pt, type MatrixHandle, type World,
 } from '@/ui';
 import { type Mat, type Vec, ProjectToSO3, RotX, RotZ, approxEqual, clamp, dot, eye, matMul, matVec, transpose, vecScale } from '@/mr';
 import { meta } from './meta';
@@ -108,7 +108,7 @@ const quiz: QuizQuestion[] = [
     question: '飛機先繞**自己的** $\\hat z$ 轉 90°（偏航），再繞**自己的** $\\hat y$ 轉 90°（俯仰）。若改用 $\\{s\\}$ 的固定軸做出同一個最終姿態，應該怎麼轉？',
     options: ['先繞 $\\hat z_s$ 轉 90°，再繞 $\\hat y_s$ 轉 90°', '先繞 $\\hat y_s$ 轉 90°，再繞 $\\hat z_s$ 轉 90°', '兩種順序都可以，結果一樣', '做不到：固定軸只能描述平面上的轉動'],
     answer: 1,
-    explanation: '物體軸一路後乘：$R = \\mathrm{Rot}(\\hat z, 90^\\circ)\\,\\mathrm{Rot}(\\hat y, 90^\\circ)$。固定軸一路前乘，後做的乘在左邊；要得到同一個乘積，必須先做 $\\mathrm{Rot}(\\hat y, 90^\\circ)$、再做 $\\mathrm{Rot}(\\hat z, 90^\\circ)$，順序剛好相反。在模擬裡設好 A、B 後切換前乘／後乘並按「⇄ 交換」即可驗證。',
+    explanation: '物體軸一路後乘：$R = \\mathrm{Rot}(\\hat z, 90^\\circ)\\,\\mathrm{Rot}(\\hat y, 90^\\circ)$。固定軸一路前乘，後做的乘在左邊；要得到同一個乘積，必須先做 $\\mathrm{Rot}(\\hat y, 90^\\circ)$、再做 $\\mathrm{Rot}(\\hat z, 90^\\circ)$，順序剛好相反。可以在第 6 步的模擬裡驗證：選 R₀ = I（這個規則是從 $R = I$ 出發才成立），設 A = 繞 $\\hat z$ 90°、B = 繞 $\\hat y$ 90° 並用後乘，再切換成前乘、按「⇄ 交換」，最終姿態完全一樣。',
   },
 ];
 
@@ -128,10 +128,14 @@ const V_DEMO: Vec = [-0.05, 0.85, 0.9];
 const PLANAR_POSE: PlanarPose = { x: 1.4, y: 0.5, theta: 35 * DEG };
 const PLANAR_P: Vec = [2.3, 2.1];
 const S_WORLD = { xmin: -0.55, xmax: 2.95, ymin: -0.55, ymax: 2.95 };
-const B_WORLD = { xmin: -2.6, xmax: 2.6, ymin: -2.6, ymax: 2.6 };
+/** Half-width of the "seen from {b}" view; it grows when P or {s} would leave it (see fitPlanarViews). */
+const B_HALF = 2.6;
+const B_WORLD = { xmin: -B_HALF, xmax: B_HALF, ymin: -B_HALF, ymax: B_HALF };
 const KNOB = 0.95;
-/** Where {c} is mounted on {b} (in {b} coordinates); for display only. */
-const P_BC: Vec = [1.25, 0, 0];
+/** Length of the frame arrows drawn in the planar views. */
+const FRAME_2D = 0.6;
+/** Where {c} is mounted on {b} (in {b} coordinates); for display only. Past the x_b tip label (at ~1.14). */
+const P_BC: Vec = [1.5, 0, 0];
 /** Degrees per second for the sequence playback. */
 const PLAY_SPEED = 75 * DEG;
 /** Largest magnitude accepted for a typed matrix entry (step 4). */
@@ -249,11 +253,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const knobPos = (): Pt => [S.pose.x + KNOB * Math.cos(S.pose.theta), S.pose.y + KNOB * Math.sin(S.pose.theta)];
   // P stays below y = 2.4 so that its label never slides under the readout overlay at the top of the canvas
   const clampP = (p: ArrayLike<number>): Vec => [clamp(p[0], -0.45, 2.85), clamp(p[1], -0.45, 2.4)];
+  // A view refits (fitPlanarViews) after every change, except while one of its own handles is being dragged:
+  // rescaling under the pointer would make the grabbed point slide away. It catches up when the drag ends.
+  let draggingIn: Canvas2D | null = null;
+  const dragHooks = (cv: Canvas2D) => ({
+    onStart: () => { draggingIn = cv; },
+    onEnd: () => { draggingIn = null; fitPlanarViews(); },
+  });
   // handles: P (accent) and the pose of {b} (cyan centre + heading knob); colours are read at draw time
   cvS.addHandle({
     get: () => [S.P[0], S.P[1]],
     set: (p) => { if (!S.pinned) { S.P = clampP(p); planarChanged(); } },
     label: 'P', radius: 8,
+    ...dragHooks(cvS),
     get enabled() { return !S.pinned; },
     get color() { return cssVar('--accent', '#2563eb'); },
   });
@@ -265,6 +277,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       planarChanged();
     },
     radius: 9,
+    ...dragHooks(cvS),
     get color() { return cssVar('--series-6', '#0891b2'); },
   });
   cvS.addHandle({
@@ -275,12 +288,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       planarChanged();
     },
     radius: 6,
+    ...dragHooks(cvS),
     get color() { return cssVar('--series-6', '#0891b2'); },
   });
   cvB.addHandle({
     get: () => { const pb = planarToBody(S.pose, S.P); return [pb[0], pb[1]]; },
     set: (p) => { if (!S.pinned) { S.P = clampP(planarToSpace(S.pose, p)); planarChanged(); } },
     label: 'P', radius: 8,
+    ...dragHooks(cvB),
     get enabled() { return !S.pinned; },
     get color() { return cssVar('--accent', '#2563eb'); },
   });
@@ -313,7 +328,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.text([(o[0] + P[0]) / 2, (o[1] + P[1]) / 2], 'p_b', { color: purple, dx: 14, dy: 4, bg });
     // {b}
     c.line(o, knobPos(), { color: cyan, width: 1, dash: [3, 3] });
-    c.frame(S.pose, 0.6, { labels: ['x_b', 'y_b'], width: 3 });
+    c.frame(S.pose, FRAME_2D, { labels: ['x_b', 'y_b'], width: 3 });
     c.text(o, '{b}', { color: cyan, dx: -18, dy: 14 });
     if (S.pinned) drawPinned(c, P);
     c.setOverlayText(`p_s = (${fmt(P[0], 2)}, ${fmt(P[1], 2)})${S.pinned ? '  ← 固定不變' : ''}`);
@@ -329,14 +344,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.grid(0.5);
     // where the ground frame {s} is, seen from {b}
     c.arrow([0, 0], [inv.x, inv.y], { color: muted, width: 1.2, dash: [5, 4] });
-    c.frame(inv, 0.6, { labels: ['x_s', 'y_s'], width: 2, alpha: 0.75 });
+    c.frame(inv, FRAME_2D, { labels: ['x_s', 'y_s'], width: 2, alpha: 0.75 });
     c.text([inv.x, inv.y], '{s}', { color: muted, dx: -16, dy: -12 });
     // p_b, now along the screen axes
     c.line([0, 0], [P[0], 0], { color: purple, width: 1.3, dash: [4, 3] });
     c.line([P[0], 0], P, { color: purple, width: 1.3, dash: [4, 3] });
     c.arrow([0, 0], P, { color: purple, width: 2.2 });
     c.text([P[0] / 2, P[1] / 2], 'p_b', { color: purple, dx: -12, dy: -8, bg });
-    c.frame({ x: 0, y: 0, theta: 0 }, 0.6, { labels: ['x_b', 'y_b'], width: 3 });
+    c.frame({ x: 0, y: 0, theta: 0 }, FRAME_2D, { labels: ['x_b', 'y_b'], width: 3 });
     c.text([0, 0], '{b}', { color: cssVar('--series-6', '#0891b2'), dx: -14, dy: 12 });
     if (S.pinned) drawPinned(c, P);
     c.setOverlayText(`p_b = (${fmt(pb[0], 2)}, ${fmt(pb[1], 2)})${S.pinned ? '  ← 隨 {b} 改變' : ''}`);
@@ -357,8 +372,37 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     mvPsb.set([S.pose.x, S.pose.y]);
     mvPs.set(planarToSpace(S.pose, pb));
     pinTog.set(S.pinned, { silent: true });
+    fitPlanarViews();
     cvS.requestRender();
     cvB.requestRender();
+  }
+
+  /**
+   * Keep everything the two planar views talk about inside them. The controls let {b} sit anywhere in
+   * [-0.5, 2.5]² and P anywhere in its clamp box, so with fixed windows P (|p_b| up to ~4.4 m) and {s}
+   * (|p_bs| up to ~3.5 m) could leave the "seen from {b}" view, and the {b} frame could be cut off at the
+   * corners of the {s} view. Each view grows (and shrinks back) as needed; the {b} view stays centred on {b}.
+   */
+  function fitPlanarViews(): void {
+    const ct = Math.cos(S.pose.theta), st = Math.sin(S.pose.theta);
+    const o: Pt = [S.pose.x, S.pose.y];
+    const pb = planarToBody(S.pose, S.P);
+    if (draggingIn !== cvS) {
+      // P needs no entry: its clamp box was chosen for S_WORLD. Labelled points get room for their labels.
+      const labelled: Pt[] = [o, knobPos(), [o[0] + FRAME_2D * ct, o[1] + FRAME_2D * st], [o[0] - FRAME_2D * st, o[1] + FRAME_2D * ct]];
+      const corner: Pt = [o[0] + pb[0] * ct, o[1] + pb[0] * st]; // corner of the dashed p_b decomposition
+      setWorldIfChanged(cvS, fitBox(fitBox(S_WORLD, labelled, 0.3), [corner], 0.1));
+    }
+    if (draggingIn !== cvB) {
+      const inv = invertPlanarPose(S.pose);
+      const ci = Math.cos(inv.theta), si = Math.sin(inv.theta);
+      const pts: Pt[] = [
+        [pb[0], pb[1]], [inv.x, inv.y],
+        [inv.x + FRAME_2D * ci, inv.y + FRAME_2D * si], [inv.x - FRAME_2D * si, inv.y + FRAME_2D * ci],
+      ];
+      const h = Math.max(B_HALF, ...pts.map(([x, y]) => snapUp(Math.max(Math.abs(x), Math.abs(y)) + 0.4)));
+      setWorldIfChanged(cvB, { xmin: -h, xmax: h, ymin: -h, ymax: h });
+    }
   }
 
   function resetPlanar(): void {
@@ -866,6 +910,27 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       root.remove();
     },
   };
+}
+
+const SNAP = 0.25;
+const snapUp = (v: number): number => Math.ceil(v / SNAP - 1e-9) * SNAP;
+const snapDown = (v: number): number => Math.floor(v / SNAP + 1e-9) * SNAP;
+
+/** `base` grown to contain every point padded by `pad`; grown edges snap outwards to 0.25 m so the view does not jitter. */
+function fitBox(base: World, pts: Pt[], pad: number): World {
+  let { xmin, xmax, ymin, ymax } = base;
+  for (const [x, y] of pts) {
+    xmin = Math.min(xmin, snapDown(x - pad));
+    xmax = Math.max(xmax, snapUp(x + pad));
+    ymin = Math.min(ymin, snapDown(y - pad));
+    ymax = Math.max(ymax, snapUp(y + pad));
+  }
+  return { xmin, xmax, ymin, ymax };
+}
+
+function setWorldIfChanged(cv: Canvas2D, w: World): void {
+  const c = cv.world;
+  if (c.xmin !== w.xmin || c.xmax !== w.xmax || c.ymin !== w.ymin || c.ymax !== w.ymax) cv.setWorld(w);
 }
 
 /** Write a status pill only when its class or text actually changes (update3D runs every animation frame). */

@@ -832,3 +832,134 @@ export function curveFromDrawing(N: number, drawn: [number, number][]): Float64A
   x[0] = 0; x[N] = 0;
   return x;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Per-joint view of the acceleration interval (the lesson's interval diagram)
+// ---------------------------------------------------------------------------------------------
+
+/** m, c, g at arbitrary s (linear interpolation between half steps). */
+export function coeffsAt(tab: PathTable, s: number): { m: Vec2; c: Vec2; g: Vec2 } {
+  const pick = (a: [Float64Array, Float64Array]): Vec2 => [interpTable(tab, a[0], s), interpTable(tab, a[1], s)];
+  return { m: pick(tab.m), c: pick(tab.c), g: pick(tab.g) };
+}
+
+export interface JointIntervals {
+  /** s̈ range allowed by joint i alone: lo[i] ≤ s̈ ≤ hi[i] (±Infinity when a zero-inertia joint does not bound s̈). */
+  lo: Vec2;
+  hi: Vec2;
+  /** Intersection [L, U]; L > U means that no acceleration satisfies every joint. */
+  L: number;
+  U: number;
+}
+
+/**
+ * Each joint's own s̈ interval from |m_i s̈ + c_i ṡ² + g_i| ≤ τ_i,max at (s, x = ṡ²), and their
+ * intersection. A joint with m_i ≈ 0 does not bound s̈: it allows everything when its torque
+ * c_i x + g_i is within the limit and nothing otherwise.
+ */
+export function jointIntervals(tab: PathTable, s: number, x: number): JointIntervals {
+  const co = coeffsAt(tab, s);
+  const lo: Vec2 = [-Infinity, -Infinity];
+  const hi: Vec2 = [Infinity, Infinity];
+  for (let i = 0; i < 2; i++) {
+    const m = co.m[i], rest = co.c[i] * x + co.g[i], tau = tab.tauMax[i];
+    if (Math.abs(m) < EPS_M) {
+      if (Math.abs(rest) > tau) { lo[i] = Infinity; hi[i] = -Infinity; }
+      continue;
+    }
+    const a = (-tau - rest) / m, b = (tau - rest) / m;
+    lo[i] = Math.min(a, b);
+    hi[i] = Math.max(a, b);
+  }
+  return { lo, hi, L: Math.max(lo[0], lo[1]), U: Math.min(hi[0], hi[1]) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reference: the cubic time scaling of the previous lessons
+// ---------------------------------------------------------------------------------------------
+
+/** x = ṡ² at the grid nodes for s(t) = 3(t/T)² − 2(t/T)³ (rest to rest in time T). */
+export function cubicScalingCurve(N: number, T: number): Float64Array {
+  const x = new Float64Array(N + 1);
+  for (let k = 1; k < N; k++) {
+    const s = k / N;
+    // Invert s = 3u² − 2u³ (monotone on [0, 1]) by bisection.
+    let lo = 0, hi = 1;
+    for (let it = 0; it < 52; it++) {
+      const u = 0.5 * (lo + hi);
+      if (u * u * (3 - 2 * u) < s) lo = u; else hi = u;
+    }
+    const u = 0.5 * (lo + hi);
+    const sd = (6 * u * (1 - u)) / T;
+    x[k] = sd * sd;
+  }
+  return x;
+}
+
+/**
+ * The shortest duration T for which the cubic time scaling respects the limits. Scaling time
+ * by T multiplies both s̈ and ṡ² by λ = 1/T², so every torque constraint, written per cell like
+ * `checkCurve`, is linear in λ: −τ_i ≤ λ h_i + g_i ≤ τ_i with h_i = m_i s̈₁ + c_i ṡ₁² (values for
+ * T = 1). The feasible λ form one interval and T = 1/√λ_max. Returns null if no T works (e.g.
+ * the arm cannot even hold some configuration of the path against gravity).
+ */
+export function fastestCubic(tab: PathTable): { T: number; x: Float64Array } | null {
+  const { N, ds } = tab;
+  const x1 = cubicScalingCurve(N, 1);
+  let lamLo = 0, lamHi = Infinity;
+  for (let k = 0; k < N; k++) {
+    const j = 2 * k + 1;
+    const a = (x1[k + 1] - x1[k]) / (2 * ds), xm = 0.5 * (x1[k] + x1[k + 1]);
+    for (let i = 0; i < 2; i++) {
+      const h = tab.m[i][j] * a + tab.c[i][j] * xm, g = tab.g[i][j], tau = tab.tauMax[i];
+      if (Math.abs(h) < 1e-12) { if (Math.abs(g) > tau) return null; continue; }
+      const r1 = (tau - g) / h, r2 = (-tau - g) / h;
+      if (h > 0) { lamHi = Math.min(lamHi, r1); lamLo = Math.max(lamLo, r2); } else { lamHi = Math.min(lamHi, r2); lamLo = Math.max(lamLo, r1); }
+    }
+    // The (optional) joint speed limit caps ṡ² directly.
+    if (xm > 0 && Number.isFinite(tab.xHi[j])) lamHi = Math.min(lamHi, tab.xHi[j] / xm);
+  }
+  if (!(lamHi > 0) || !Number.isFinite(lamHi) || lamLo > lamHi) return null;
+  const T = 1 / Math.sqrt(lamHi);
+  return { T, x: Float64Array.from(x1, (v) => v / (T * T)) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Curves as time histories (for the τ(t) plot and the playback)
+// ---------------------------------------------------------------------------------------------
+
+export interface TrajectorySamples {
+  t: number[];
+  s: number[];
+  sd: number[];
+  sdd: number[];
+  tau: [number[], number[]];
+}
+
+/**
+ * Time history of a node-sampled curve x(s): the start, the midpoint of every cell (where the
+ * cell's constant s̈ is a second-order accurate value, as in `checkCurve`) and the end. Null when
+ * the curve stops before the end of the path (infinite duration).
+ */
+export function trajectorySamples(tab: PathTable, x: ArrayLike<number>): TrajectorySamples | null {
+  const { N, ds } = tab;
+  const tm = timing(x, ds);
+  if (!Number.isFinite(tm.T)) return null;
+  const out: TrajectorySamples = { t: [], s: [], sd: [], sdd: [], tau: [[], []] };
+  const push = (t: number, s: number, xv: number, sdd: number) => {
+    const xc = Math.max(0, xv);
+    out.t.push(t); out.s.push(s); out.sd.push(Math.sqrt(xc)); out.sdd.push(sdd);
+    const tau = torquesAt(tab, s, xc, sdd);
+    out.tau[0].push(tau[0]); out.tau[1].push(tau[1]);
+  };
+  const acc = (k: number) => (x[k + 1] - x[k]) / (2 * ds);
+  push(0, 0, x[0], acc(0));
+  for (let k = 0; k < N; k++) {
+    // Time to reach the cell midpoint with constant acceleration from (s_k, ṡ_k).
+    const v0 = Math.sqrt(Math.max(0, x[k])), xm = 0.5 * (x[k] + x[k + 1]);
+    const tMid = tm.t[k] + (2 * (0.5 * ds)) / (v0 + Math.sqrt(Math.max(0, xm)));
+    push(tMid, (k + 0.5) * ds, xm, acc(k));
+  }
+  push(tm.T, 1, x[N], acc(N - 1));
+  return out;
+}

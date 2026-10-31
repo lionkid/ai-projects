@@ -12,6 +12,7 @@ import {
   type Config, type FiveBarGeom, type Pt, type Side,
 } from './fiveBarDiff';
 import { dynamicsPreview } from './dynamicsPreview';
+import { LabelPlacer, type Rect } from './labelPlacer';
 
 const D = Math.PI / 180;
 const WORLD = { xmin: -2.6, xmax: 2.6, ymin: -1.0, ymax: 2.45 };
@@ -182,7 +183,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tLock = toggle(optRow, { label: '鎖住馬達（試拖末端）', onChange: (v) => { clearChips(); setLocked(v); update(); } });
   const tRed = toggle(optRow, { label: '第三顆馬達（左肘）', onChange: (v) => { clearChips(); setRedundant(v); update(); } });
   const tEll = toggle(optRow, { label: '速度橢圓', value: true, onChange: (v) => { show.ellipse = v; update(); } });
-  const tFD = toggle(optRow, { label: '有限差分 J 對照', onChange: (v) => { show.fd = v; update(); } });
+  // syncUI owns the visibility of the J_FD matrix, so it must run before update fills it
+  const tFD = toggle(optRow, { label: '有限差分 J 對照', onChange: (v) => { show.fd = v; syncUI(); update(); } });
   const s1 = angleSlider(panel, { label: 'θ₁（左馬達）', value: cfg.th1, onInput: (v) => { clearChips(); requestMotor(0, v); } });
   const s2 = angleSlider(panel, { label: 'θ₂（右馬達）', value: cfg.th2, onInput: (v) => { clearChips(); requestMotor(1, v); } });
   const snapRow = row(panel);
@@ -218,7 +220,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const info = kv(host, Object.values(K));
 
   const bars2 = torqueBars(host, { labels: ['τ₁', 'τ₂'], max: 6, limit: 3, unit: 'N·m', title: '撐住末端 1 N 負載所需的馬達力矩（紅線：±3 N·m）' });
-  const bars3 = torqueBars(host, { labels: ['τ₁', 'τ_φ₁', 'τ₂'], max: 6, limit: 3, unit: 'N·m', title: '三顆馬達：最小範數的平衡力矩（紅線：±3 N·m）' });
+  const bars3 = torqueBars(host, { labels: ['τ₁', 'τ₃（肘）', 'τ₂'], max: 6, limit: 3, unit: 'N·m', title: '三顆馬達（τ₃ 在左肘）：最小範數的平衡力矩（紅線：±3 N·m）' });
 
   // y range leaves headroom above +1 so the legend never covers the curves
   const plotSlice = new Plot2D(host, {
@@ -528,14 +530,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   });
   overlayRO.observe(cv.overlay);
 
-  const labelInside = (c: Canvas2D, p: Pt, str: string, style: TextStyle): void => {
-    c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
-    const half = c.ctx.measureText(str).width / 2 + 8;
-    const [sx, sy] = c.toScreen(p);
-    const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
-    const y = Math.min(c.height - 12, Math.max(labelTop, sy + (style.dy ?? 0)));
-    c.text(c.toWorld(x, y), str, { ...style, dx: 0, dy: 0 });
-  };
+  /**
+   * Labels are queued while the geometry is drawn and placed at the end of cv.draw by a LabelPlacer, so they
+   * never hide under links and never cover each other or a handle (several glyphs meet at the tip near a
+   * singularity). Each label lists candidate anchors, preferred first; a lower `prio` is placed first.
+   */
+  interface LabelReq { prio: number; cands: Pt[]; text: string; style: TextStyle }
+  let labelQueue: LabelReq[] = [];
+  /** Extra spots to keep free this frame: [world point, radius px]. */
+  let keepFree: [Pt, number][] = [];
+  let insetRect: Rect | null = null;
+  const say = (prio: number, cands: Pt[], text: string, style: TextStyle): void => { labelQueue.push({ prio, cands, text, style }); };
+  /** A world point shifted by (dx, dy) screen pixels (dy > 0 is down). */
+  const nudge = (c: Canvas2D, p: Pt, dx: number, dy: number): Pt => [p[0] + dx / c.scale, p[1] - dy / c.scale];
 
   /** Is a world point comfortably inside the drawable area (below the overlay line)? */
   const roomy = (c: Canvas2D, p: Pt, marginPx = 40): boolean => {
@@ -596,28 +603,31 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.ellipse(cfg.P, a, Math.max(b, 0.004), ang, { fill: accent, alpha: 0.13, width: 0 });
     c.ellipse(cfg.P, a, Math.max(b, 0.004), ang, { color: accent, width: 2, dash: capped ? [7, 5] : undefined });
     if (capped) {
-      // Beside the major axis, about 1 m from the tip, on whichever end has room (never on the overlay line).
+      // Beside the major axis, about 1 m from the tip (then nearer / farther); spots with room come first.
       const d = e.dirs[0];
       const off = b + 34 / c.scale;
       const spots: Pt[] = [];
-      for (const s of [1, -1]) {
-        const on: Pt = [cfg.P[0] + s * d[0] * 1.05, cfg.P[1] + s * d[1] * 1.05];
-        for (const t of [1, -1]) spots.push([on[0] - t * d[1] * off, on[1] + t * d[0] * off]);
+      for (const dist of [1.05, 0.7, 1.45]) {
+        for (const s of [1, -1]) {
+          const on: Pt = [cfg.P[0] + s * d[0] * dist, cfg.P[1] + s * d[1] * dist];
+          for (const t of [1, -1]) spots.push([on[0] - t * d[1] * off, on[1] + t * d[0] * off]);
+        }
       }
-      const at = spots.find((p) => roomy(c, p, 50)) ?? spots[0];
-      labelInside(c, at, '橢圓 → ∞', { color: accent, bg, font: 'bold 12px sans-serif' });
+      // "→ ∞" only when the ellipse is really unbounded; a long but finite one shows its semi-axis
+      const txt = e.r[0] > 1e3 ? '橢圓 → ∞' : `橢圓超出畫面：σ₁ ≈ ${fmt(e.r[0], 1)}`;
+      say(4, [...spots.filter((p) => roomy(c, p, 50)), ...spots.filter((p) => !roomy(c, p, 50))], txt, { color: accent, bg, font: 'bold 12px sans-serif' });
     }
   }
 
-  /** Draw a label beside point p, pushed perpendicular to the world direction u (side s) until it clears the line. */
-  function labelBeside(c: Canvas2D, p: Pt, u: Pt, s: number, str: string, style: TextStyle): void {
-    c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
+  /** Anchor beside point p, pushed perpendicular to the world direction u (side s) until the label clears the line. */
+  function besidePos(c: Canvas2D, p: Pt, u: Pt, s: number, str: string, font: string): Pt {
+    c.ctx.font = font;
     const w = c.ctx.measureText(str).width + 12;
     const nx = -u[1] * s;
     const ny = u[0] * s;
     const ext = (w / 2) * Math.abs(nx) + 9 * Math.abs(ny) + 6;
     const [sx, sy] = c.toScreen(p);
-    labelInside(c, c.toWorld(sx + nx * ext, sy - ny * ext), str, style);
+    return c.toWorld(sx + nx * ext, sy - ny * ext);
   }
 
   /** Which side of a line through p (direction u) faces away from the mechanism's centre: +1 or -1. */
@@ -655,7 +665,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.line(cfg.P, [cfg.P[0] + u[0] * gap, cfg.P[1] + u[1] * gap], { color: danger, width: 1.5, dash: [3, 3] });
     for (const s of [1, -1]) c.arrow(Q, [Q[0] + s * u[0] * L, Q[1] + s * u[1] * L], { color: danger, width: 2.5, head: 11 });
     c.text(Q, '✗', { color: danger, font: 'bold 14px sans-serif', bg });
-    labelBeside(c, Q, u, outerSide(Q, u), '沿腿的方向動不了', { color: danger, bg, font: 'bold 12px sans-serif' });
+    keepFree.push([Q, 10]);
+    const font = 'bold 12px sans-serif';
+    const txt = '沿腿的方向動不了';
+    const side = outerSide(Q, u);
+    const far: Pt = [Q[0] + u[0] * 0.3, Q[1] + u[1] * 0.3];
+    const farther: Pt = [Q[0] + u[0] * 0.6, Q[1] + u[1] * 0.6];
+    say(1, [
+      besidePos(c, Q, u, side, txt, font), besidePos(c, Q, u, -side, txt, font), besidePos(c, far, u, side, txt, font),
+      besidePos(c, far, u, -side, txt, font), nudge(c, Q, 0, 24), nudge(c, Q, 0, -24), besidePos(c, farther, u, side, txt, font),
+      besidePos(c, farther, u, -side, txt, font),
+    ], txt, { color: danger, bg, font });
   }
 
   function drawFreeDirection(c: Canvas2D): void {
@@ -668,7 +688,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const n = sd.n;
     c.arrow(cfg.P, [cfg.P[0] + n[0] * L, cfg.P[1] + n[1] * L], { color: col, width: strong ? 3 : 1.5, head: 11, alpha: strong ? 1 : 0.6 });
     c.arrow(cfg.P, [cfg.P[0] - n[0] * L, cfg.P[1] - n[1] * L], { color: col, width: strong ? 3 : 1.5, head: 11, alpha: strong ? 1 : 0.6 });
-    if (strong) labelInside(c, [cfg.P[0] + n[0] * (L + 0.1), cfg.P[1] + n[1] * (L + 0.1)], '鎖住馬達仍可微動', { color: col, bg: cssVar('--bg-elev', '#fff'), font: 'bold 12px sans-serif', dy: -6 });
+    if (!strong) return;
+    const endA: Pt = [cfg.P[0] + n[0] * L, cfg.P[1] + n[1] * L];
+    const endB: Pt = [cfg.P[0] - n[0] * L, cfg.P[1] - n[1] * L];
+    keepFree.push([endA, 8], [endB, 8]);
+    const pastA: Pt = [cfg.P[0] + n[0] * (L + 0.1), cfg.P[1] + n[1] * (L + 0.1)];
+    const pastB: Pt = [cfg.P[0] - n[0] * (L + 0.1), cfg.P[1] - n[1] * (L + 0.1)];
+    say(3, [nudge(c, pastA, 0, -6), nudge(c, pastB, 0, 6), nudge(c, pastA, 75, -6), nudge(c, pastA, -75, -6), nudge(c, pastB, 75, 6), nudge(c, pastB, -75, 6)],
+      '鎖住馬達仍可微動', { color: col, bg: cssVar('--bg-elev', '#fff'), font: 'bold 12px sans-serif' });
   }
 
   function drawVirtual(c: Canvas2D): void {
@@ -685,8 +712,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     c.line(cfg.B2, virt, { color: Math.abs(lt.e2) < tol ? ok : danger, width: 4 });
     c.point(virt, 5, { color: cssVar('--fg', '#222') });
+    keepFree.push([virt, 7]);
     const f1 = (x: number) => `${x >= 0 ? '+' : ''}${fmt(1000 * x, 1)} mm`;
-    labelInside(c, virt, lt.rigidLeft ? `左腿鎖死：偏離 ${f1(lt.e1)}；e₂ ${f1(lt.e2)}` : `e₁ ${f1(lt.e1)}，e₂ ${f1(lt.e2)}`, { color: cssVar('--fg', '#222'), bg, dy: -22, font: '12px sans-serif' });
+    say(2, [nudge(c, virt, 0, -22), nudge(c, virt, 0, 24), nudge(c, virt, 95, -22), nudge(c, virt, -95, -22)],
+      lt.rigidLeft ? `左腿鎖死：偏離 ${f1(lt.e1)}；e₂ ${f1(lt.e2)}` : `e₁ ${f1(lt.e1)}，e₂ ${f1(lt.e2)}`, { color: cssVar('--fg', '#222'), bg, font: '12px sans-serif' });
   }
 
   function drawInset(c: Canvas2D): void {
@@ -697,12 +726,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const q = insetGeom();
     const [x0, y0] = q.c;
     c.polygon([[x0 - q.P, y0 - q.P], [x0 + q.P, y0 - q.P], [x0 + q.P, y0 + q.P], [x0 - q.P, y0 + q.P]], { fill: bg, color: cssVar('--border', '#ddd'), width: 1, alpha: 0.95 });
+    const [bx, by] = c.toScreen([x0 - q.P, y0 + q.P]);
+    insetRect = { x: bx, y: by, w: 2 * q.P * c.scale, h: 2 * q.P * c.scale };
     c.line([x0 - q.R * 1.2, y0], [x0 + q.R * 1.2, y0], { color: muted, width: 1 });
     c.line([x0, y0 - q.R * 1.2], [x0, y0 + q.R * 1.2], { color: muted, width: 1 });
     c.circle([x0, y0], q.R, { color: cssVar('--fg', '#222'), width: 1.5 });
-    c.text([x0 + q.R * 1.2, y0], 'dθ₁/dt', { color: muted, align: 'right', dy: -9, font: '11px sans-serif' });
-    c.text([x0, y0 + q.R * 1.2], 'dθ₂/dt', { color: muted, align: 'left', dx: 4, dy: 2, font: '11px sans-serif' });
-    c.text([x0, y0 - q.P], '‖dθ_a/dt‖ = 1', { color: muted, dy: -9, font: '11px sans-serif' });
+    // axis labels on small pills so the unit circle never runs through them
+    c.text([x0 + q.R * 1.2, y0], 'dθ₁/dt', { color: muted, align: 'right', dy: -9, font: '11px sans-serif', bg });
+    c.text([x0, y0 + q.R * 1.2], 'dθ₂/dt', { color: muted, align: 'left', dx: 4, dy: 2, font: '11px sans-serif', bg });
+    c.text([x0, y0 - q.P], '‖dθ_a/dt‖ = 1', { color: muted, dy: -9, font: '11px sans-serif', bg });
     // the corresponding tip velocity
     const rates: [number, number] = [Math.cos(rateDir), Math.sin(rateDir)];
     const v = tipVelocity(g, cfg, rates);
@@ -712,10 +744,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       if (n > 1e-9) {
         const head: Pt = [cfg.P[0] + (v[0] / n) * len, cfg.P[1] + (v[1] / n) * len];
         c.arrow(cfg.P, head, { color: purple, width: 3, head: 12 });
-        labelInside(c, head, n * VEL_SCALE > CAP ? 'v（很大）' : 'v', { color: purple, dx: 14 * Math.sign(v[0] || 1), dy: -10, bg, font: 'bold 12px sans-serif' });
+        keepFree.push([head, 7]);
+        const sx = Math.sign(v[0] || 1);
+        say(3, [nudge(c, head, 14 * sx, -10), nudge(c, head, -14 * sx, -10), nudge(c, head, 14 * sx, 14), nudge(c, head, -14 * sx, 14)],
+          n * VEL_SCALE > CAP ? 'v（很大）' : 'v', { color: purple, bg, font: 'bold 12px sans-serif' });
       }
     } else {
-      labelInside(c, cfg.P, 'v 發散（H_p 不可逆）', { color: purple, dy: 26, bg, font: 'bold 12px sans-serif' });
+      say(3, [nudge(c, cfg.P, 0, 26), nudge(c, cfg.P, 0, -26), nudge(c, cfg.P, 90, 26), nudge(c, cfg.P, -90, 26)],
+        'v 發散（H_p 不可逆）', { color: purple, bg, font: 'bold 12px sans-serif' });
     }
   }
 
@@ -725,13 +761,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const f: Pt = [Math.cos(loadDir), Math.sin(loadDir)];
     const head: Pt = [cfg.P[0] + f[0] * FORCE_LEN, cfg.P[1] + f[1] * FORCE_LEN];
     c.arrow(cfg.P, head, { color: danger, width: 3, head: 12 });
-    const style: TextStyle = { color: danger, bg: cssVar('--bg-elev', '#fff'), font: 'bold 12px sans-serif' };
+    keepFree.push([head, 8]);
+    const font = 'bold 12px sans-serif';
+    const style: TextStyle = { color: danger, bg: cssVar('--bg-elev', '#fff'), font };
+    const txt = 'f = 1 N';
     const u = lostDirection();
+    const mid: Pt = [cfg.P[0] + f[0] * FORCE_LEN * 0.6, cfg.P[1] + f[1] * FORCE_LEN * 0.6];
     if (loadAlong(u)) {
-      // the lost-direction glyph continues past the head: label the load on the other side of the line
-      const mid: Pt = [cfg.P[0] + f[0] * FORCE_LEN * 0.6, cfg.P[1] + f[1] * FORCE_LEN * 0.6];
-      labelBeside(c, mid, u!, -outerSide(mid, u!), 'f = 1 N', style);
-    } else labelInside(c, head, 'f = 1 N', { ...style, dx: 16 * f[0], dy: -16 * f[1] });
+      // the lost-direction glyph continues past the head: label the load beside the arrow instead
+      const s = -outerSide(mid, u!);
+      say(2, [besidePos(c, mid, u!, s, txt, font), besidePos(c, mid, u!, -s, txt, font)], txt, style);
+    } else {
+      say(2, [nudge(c, head, 16 * f[0], -16 * f[1]), besidePos(c, mid, f, 1, txt, font), besidePos(c, mid, f, -1, txt, font), nudge(c, head, 40 * f[0], -40 * f[1])], txt, style);
+    }
   }
 
   cv.draw = (c) => {
@@ -739,6 +781,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     hM2.color = cssVar('--series-4', '#d97706');
     hTip.color = cssVar('--accent', '#2563eb');
     hRate.color = cssVar('--series-5', '#7c3aed');
+    labelQueue = [];
+    keepFree = [];
+    insetRect = null;
     c.grid(0.5);
     drawGround(c);
     if (trail.length > 1) c.polyline(trail, { color: cssVar('--series-5', '#7c3aed'), width: 2, alpha: 0.8 });
@@ -750,6 +795,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     drawVirtual(c);
     drawLoad(c);
     drawInset(c);
+    // all labels last, in priority order, kept off each other, the handles, the arrow heads and the inset
+    const placer = new LabelPlacer(c, labelTop);
+    placer.block(cfg.P, 11);
+    for (const p of [basePoint(g, 0), basePoint(g, 1), cfg.B1, cfg.B2]) placer.block(p, 9);
+    for (const h of [hM1, hM2]) if (h.enabled) placer.block(h.get(), 9);
+    for (const [p, r] of keepFree) placer.block(p, r);
+    if (insetRect) placer.blockRect(insetRect);
+    labelQueue.sort((a, b) => a.prio - b.prio).forEach((l) => placer.place(l.cands, l.text, l.style));
     const ind = indicators(g, cfg);
     const det = redundant ? '—' : fmt(ind.act, 3);
     // a compact line on narrow canvases so the overlay stays on one line above the labels

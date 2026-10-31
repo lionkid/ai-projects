@@ -89,8 +89,8 @@ const quiz: QuizQuestion[] = [
     options: [
       '全程鎖定 elbow-down 即可：整條路徑都在環帶內，$\\theta$ 自然連續',
       '過原點時讓 $\\theta_2$ 越過 $\\pm180^\\circ$、換到 elbow-up；硬鎖分支則 $\\theta_1$ 跳 $180^\\circ$',
-      '做不到：原點不在工作空間內，手臂根本到不了 $(0, 0)$',
-      '在原點先把 $\\theta_2$ 歸零（伸直）再繼續，分支就能保持不變',
+      '做不到：原點不在工作空間內，手臂根本到不了 $(0, 0)$，路徑必須繞開基座',
+      '在原點先把 $\\theta_2$ 歸零（伸直）再繼續，分支就能保持不變，關節角也不會跳',
     ],
     answer: 1,
     explanation: '路徑看似都在可達區內，但 $L_1 = L_2$ 時原點正是縮成一點的內圓，也就是 $\\theta_2 = \\pm180^\\circ$ 的奇異線。這時 $\\beta = \\theta_2/2$，同一分支上 $\\theta_1 = \\gamma \\mp |\\theta_2|/2$；末端越過原點時方向角 $\\gamma$ 突變 $180^\\circ$，鎖定的分支只好讓 $\\theta_1$ 也跳 $180^\\circ$。若讓 $\\theta_2$ 從 $180^\\circ$ 繼續轉、包裹成 $-180^\\circ$（換到 elbow-up），$\\theta_1$ 就接得上：手肘停在原來那一側，只是分支標籤換了。原點本身可達，只是那一點的 $\\theta_1$ 可以任意；在原點把 $\\theta_2$ 歸零則會讓末端離開原點，做不到。',
@@ -120,10 +120,10 @@ const quiz: QuizQuestion[] = [
   {
     question: 'PUMA 型 6R 手臂（腕部三軸交於一點）一般最多有幾組 IK 解？理由是什麼？',
     options: [
-      '2 組：和 2R 一樣，只有手肘朝上、朝下兩種',
-      '6 組：每個關節各自貢獻一種姿勢選擇',
+      '2 組：和 2R 一樣，只有手肘朝上、朝下兩種，腕部沒有選擇',
+      '6 組：每個關節各自貢獻一種姿勢選擇，6 個關節就是 6 組',
       '無限多組：6 個關節對 6 個約束，必定有冗餘',
-      '8 組：肩部 2 種 × 手肘 2 種 × 腕部翻轉 2 種',
+      '8 組：肩部 2 × 手肘 2 × 腕部翻轉 2',
     ],
     answer: 3,
     explanation: '腕部三軸交於一點時，腕心位置與後三軸無關，所以先用前三軸解腕心：轉盤可以面向或背對腕心（2 種），手肘再有上、下兩種，共 4 組。接著後三軸只負責姿態，球形腕對同一個旋轉通常有兩組解（$\\theta_5$ 與 $-\\theta_5$，$\\theta_4$、$\\theta_6$ 各差 $180^\\circ$），所以 $4 \\times 2 = 8$。6 個關節對 6 個約束並沒有冗餘，解是有限個。',
@@ -587,7 +587,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const at = Math.atan(y / x);
       kvA.set(K.atan, `${fmt(at / D, 1)}°${x < 0 ? '（差 180°！）' : '（= γ）'}`);
     } else kvA.set(K.atan, 'x = 0：y/x 無定義');
-    kvA.set(K.shown, reachable ? `elbow-${cur.branch}（${mode === 'nearest' ? '最近解' : '鎖定'}）` : '最接近的姿勢');
+    kvA.set(K.shown, !reachable ? '最接近的姿勢'
+      : ik.degenerate ? '摺疊（θ₁ 沿用前一個值）'
+        : ik.reach === 'one' ? '兩解合一（邊界上）'
+          : `elbow-${cur.branch}（${mode === 'nearest' ? '最近解' : '鎖定'}）`);
   }
 
   // ------------------------------------------------------------------ drawing helpers
@@ -666,7 +669,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   /** Label the elbow on the outer side of the base–tip chord so it never sits on a link. */
-  function elbowLabel(c: Canvas2D, s: Solution, color: string): void {
+  function elbowLabel(c: Canvas2D, s: Solution, color: string, text = `elbow-${s.branch}`): void {
     const E = elbowOf(L1, s);
     const P = tipOf(L1, L2, s);
     const lp = Math.hypot(P[0], P[1]);
@@ -675,8 +678,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     let nx = E[0] - k * u[0], ny = E[1] - k * u[1];
     let ln = Math.hypot(nx, ny);
     if (ln < 1e-9) { nx = -u[1]; ny = u[0]; ln = 1; }
-    const off = 20 / c.scale;
-    c.text([E[0] + (nx / ln) * off, E[1] + (ny / ln) * off], `elbow-${s.branch}`, { color, bg: cssVar('--sim-bg', '#fff') });
+    // Offset the label centre by the pill's half-extent along the normal (+ 8 px), so the whole pill
+    // stays clear of the elbow and of the links through it, even for a stretched arm.
+    const font = `12px ${cssVar('--font') || 'sans-serif'}`;
+    c.ctx.font = font;
+    const w = c.ctx.measureText(text).width + 8;
+    const ux = nx / ln, uy = ny / ln;
+    const off = (8 + (w / 2) * Math.abs(ux) + 8 * Math.abs(uy)) / c.scale;
+    c.text([E[0] + ux * off, E[1] + uy * off], text, { color, bg: cssVar('--sim-bg', '#fff'), font });
   }
 
   const branchColor = (b: Branch, col: Colors) => (b === 'down' ? col.down : col.up);
@@ -699,7 +708,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (show.tri && reachable) drawTriangle(c, col);
     if (show.atan && reachable) drawAtan(c, col);
     const pts = drawArm(c, [L1, L2], [cur.theta1, cur.theta2], reachable ? branchColor(cur.branch, col) : col.danger, reachable ? 'solid' : 'dashed');
-    if (reachable && !ik.degenerate && !show.arcs) elbowLabel(c, cur, branchColor(cur.branch, col));
+    // On the boundary both branches coincide (sin θ₂ = 0), so the single arm is not labelled with a branch.
+    if (reachable && !ik.degenerate && !show.arcs) elbowLabel(c, cur, branchColor(cur.branch, col), ik.reach === 'one' ? '兩解合一' : undefined);
     if (show.arcs && reachable) drawArcs(c, col);
     if (!reachable) {
       c.text(pts[2], ik.reach === 'outside' ? '伸直也搆不到' : '摺起來還是太遠', { color: col.danger, dy: 18, bg: col.bg });

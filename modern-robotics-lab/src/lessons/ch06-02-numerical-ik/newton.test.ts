@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { FKinBody, IKinBody, JacobianBody, dot, matVec, norm, pinv, wrapToPi } from '@/mr';
 import {
-  MODEL, REACH, TRACK_PATHS, advanceTracking, circleTarget, converged, evaluate, isStalled, iterate, nullSpaceDirection,
-  poseReachable, reducedJacobian, residual, runNewton, screwArc, solveStep, targetTransform, trackingRates, trackingStart,
-  type StepOptions, type Task,
+  DEFAULT_TASK, FAR_TASK, GUESS, LINKS, MODEL, REACH, TRACK_PATHS, W_JOINT1, advanceTracking, circleTarget, converged, evaluate,
+  isStalled, iterate, nullSpaceDirection, poseReachable, reducedJacobian, residual, runNewton, screwArc, solveStep,
+  targetTransform, trackingRates, trackingStart, type StepOptions, type Task,
 } from './newton';
 
 const D = Math.PI / 180;
 const th = (deg: number[]) => deg.map((x) => x * D);
 const PINV: StepOptions = { method: 'pinv', lambda: 0, maxStep: Infinity };
 const dls = (lambda: number): StepOptions => ({ method: 'dls', lambda, maxStep: Infinity });
-const TASK: Task = { x: 1.0, y: 1.2, phi: 60 * D, positionOnly: false };
+const TASK: Task = DEFAULT_TASK;
 const angleDiff = (a: number[], b: number[]) => Math.max(...a.map((x, i) => Math.abs(wrapToPi(x - b[i]))));
 
 describe('residual and Jacobian reduction', () => {
@@ -55,7 +55,7 @@ describe('Newton–Raphson runs', () => {
   });
 
   it('converges quadratically from a good initial guess', () => {
-    const run = runNewton(th([0, 90, 0]), TASK, PINV);
+    const run = runNewton(GUESS.good, TASK, PINV);
     expect(run.status).toBe('converged');
     expect(run.records.length - 1).toBeLessThanOrEqual(5);
     const e = run.records.map((r) => r.omegaNorm + r.vNorm);
@@ -64,8 +64,8 @@ describe('Newton–Raphson runs', () => {
   });
 
   it('a bad guess lands on the other elbow branch', () => {
-    const good = runNewton(th([0, 90, 0]), TASK, PINV);
-    const bad = runNewton(th([-150, 60, 90]), TASK, PINV);
+    const good = runNewton(GUESS.good, TASK, PINV);
+    const bad = runNewton(GUESS.bad, TASK, PINV);
     expect(bad.status).toBe('converged');
     const qa = good.records[good.records.length - 1].theta;
     const qb = bad.records[bad.records.length - 1].theta;
@@ -73,11 +73,13 @@ describe('Newton–Raphson runs', () => {
   });
 
   it('near a singularity the pseudo-inverse step explodes but DLS stays bounded', () => {
-    const q0 = th([40, 3, -20]);
+    const q0 = GUESS.sing;
     const rec = evaluate(q0, TASK);
     expect(rec.sigmaMin).toBeLessThan(0.05);
     iterate(rec, TASK, PINV);
-    expect(rec.dthetaNorm).toBeGreaterThan(10);
+    // the step-4 hint quotes a first step of about 41 rad
+    expect(rec.dthetaNorm).toBeGreaterThan(39);
+    expect(rec.dthetaNorm).toBeLessThan(43);
     const rec2 = evaluate(q0, TASK);
     iterate(rec2, TASK, dls(0.1));
     expect(rec2.dthetaNorm).toBeLessThan(2);
@@ -95,9 +97,9 @@ describe('Newton–Raphson runs', () => {
   });
 
   it('detects stagnation for an unreachable target', () => {
-    const far: Task = { x: 2.6, y: 0.6, phi: 0, positionOnly: true };
+    const far = FAR_TASK;
     expect(poseReachable(far).reachable).toBe(false);
-    const run = runNewton(th([30, 30, 30]), far, dls(0.3));
+    const run = runNewton(GUESS.far, far, dls(0.3));
     expect(run.status).toBe('stalled');
     const last = run.records[run.records.length - 1];
     expect(last.vNorm).toBeCloseTo(Math.hypot(2.6, 0.6) - REACH, 3);
@@ -126,6 +128,32 @@ describe('redundancy (position-only task)', () => {
     for (const d of [a, b]) matVec(J, d).forEach((x, i) => expect(x).toBeCloseTo(V[i], 12));
     expect(Math.abs(b[0])).toBeLessThan(Math.abs(a[0]));
     expect(norm(b)).toBeGreaterThan(norm(a));
+  });
+
+  it('the step-6 preset: the weighted J⁺ turns joint 1 much less and ends in a visibly different posture', () => {
+    const task: Task = { ...DEFAULT_TASK, positionOnly: true };
+    const a = runNewton(GUESS.redund, task, PINV);
+    const b = runNewton(GUESS.redund, task, { ...PINV, weights: W_JOINT1 });
+    expect(a.status).toBe('converged');
+    expect(b.status).toBe('converged');
+    const qa = a.records[a.records.length - 1].theta;
+    const qb = b.records[b.records.length - 1].theta;
+    // the step-6 hint quotes joint-1 rotations of about 44° (J⁺) and 19° (weighted)
+    const turn = (q: number[]) => Math.abs(wrapToPi(q[0] - GUESS.redund[0])) / D;
+    expect(turn(qa)).toBeGreaterThan(42);
+    expect(turn(qa)).toBeLessThan(46);
+    expect(turn(qb)).toBeGreaterThan(17);
+    expect(turn(qb)).toBeLessThan(21);
+    // same elbow side, yet the elbow points are well apart on the canvas
+    expect(Math.sign(qa[1])).toBe(Math.sign(qb[1]));
+    const elbow = (q: number[]) => [LINKS[0] * Math.cos(q[0]), LINKS[0] * Math.sin(q[0])];
+    const ea = elbow(qa), eb = elbow(qb);
+    expect(Math.hypot(ea[0] - eb[0], ea[1] - eb[1])).toBeGreaterThan(0.3);
+    // first step: none of the J⁺ step lies along the null space, most of the weighted one does
+    const n = nullSpaceDirection(reducedJacobian(GUESS.redund, true))!;
+    const share = (d: number[]) => Math.abs(dot(d, n)) / norm(d);
+    expect(share(a.records[0].dtheta!)).toBeLessThan(1e-9);
+    expect(share(b.records[0].dtheta!)).toBeGreaterThan(0.5);
   });
 });
 

@@ -414,3 +414,31 @@ export function advanceTracking(s: TrackState, path: (t: number) => MovingTarget
   s.reachable = poseReachable({ x: tg.x, y: tg.y, phi: tg.phi, positionOnly: false }).reachable;
   return s;
 }
+
+// ---------------------------------------------------------------------------
+// Lesson presets (shared with the tests, so the numbers quoted in the text stay true)
+// ---------------------------------------------------------------------------
+
+/** Pose target used by most steps: (1.0, 1.2) m with the tip x-axis at 60°. */
+export const DEFAULT_TASK: Task = { x: 1.0, y: 1.2, phi: 60 * DEG, positionOnly: false };
+/** Position-only target 2.67 m from the base: 0.27 m beyond reach (quiz question 1). */
+export const FAR_TASK: Task = { x: 2.6, y: 0.6, phi: 0, positionOnly: true };
+/** Joint weights of the weighted pseudo-inverse: joint 1 is ten times as "expensive". */
+export const W_JOINT1: number[] = [10, 1, 1];
+
+const degs = (a: number[]): Vec => a.map((x) => x * DEG);
+/** Initial guesses offered by the presets (radians). */
+export const GUESS = {
+  /** Steps 1–2: about 1.4 m and 90° away from DEFAULT_TASK. */
+  start: degs([0, 60, -90]),
+  /** Converges quadratically in 4 iterations. */
+  good: degs([0, 90, 0]),
+  /** Wild first steps, then the other elbow branch. */
+  bad: degs([-150, 60, 90]),
+  /** θ₂ = 3°: σ_min ≈ 0.019, so the first J⁺ step is ≈ 41 rad. */
+  sing: degs([40, 3, -20]),
+  /** Position-only task: J⁺ and the weighted J⁺ end ≈ 0.4 m apart (joint 1 turns 44° vs 19°). */
+  redund: degs([45, 75, 60]),
+  /** Start for the unreachable FAR_TASK. */
+  far: degs([30, 30, 30]),
+};

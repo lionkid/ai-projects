@@ -1,7 +1,7 @@
 import type { Lesson, LessonContext, LessonHandle } from '@/types';
 import {
   el, cssVar, fmt, themeColor, controlPanel, row, slider, toggle, button, select, kv, note, simTitle, legend, presetChips,
-  algorithmStepper, mdElement, Canvas2D, Plot2D, RasterLayer, createLoop, viridisLike,
+  algorithmStepper, mdElement, Canvas2D, Plot2D, RasterLayer, createLoop,
   type Preset, type RGBA,
 } from '@/ui';
 import { meta } from './meta';
@@ -117,6 +117,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // ------------------------------------------------------------------ layout
   simTitle(host, '取樣式規劃器實驗台', 'RRT / PRM');
   const chips = presetChips(host, [], { label: '預設' });
+  // Stage strip for the single-stage RRT mode (DOM, so it never covers the canvas or its handles).
+  const stageStrip = el('div', { class: 'mr-chips', style: { margin: '0 0 0.3rem' } }, el('span', { class: 'mr-chips-label' }, '本輪階段'));
+  const stagePills = STAGES.map((s) => {
+    const pill = el('span', { class: 'mr-chip', style: { cursor: 'default' } }, s);
+    stageStrip.appendChild(pill);
+    return pill;
+  });
+  host.appendChild(stageStrip);
   const views = el('div');
   host.appendChild(views);
   const leftCol = el('div');
@@ -190,7 +198,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     label: '通道寬度', min: NARROW.minGap, max: NARROW.maxGap, step: 0.05, value: gap, unit: 'm',
     onInput: (v) => { gap = v; chips.clear(); setMap('narrow'); restart(); },
   });
-  const sSeed = slider(panel, { label: '隨機種子', min: 1, max: 99, step: 1, value: seed, format: (v) => fmt(v, 0), onInput: (v) => { seed = Math.round(v); restart(); } });
+  const sSeed = slider(panel, {
+    label: '隨機種子', min: 1, max: 99, step: 1, value: seed, format: (v) => fmt(v, 0),
+    // steps that show a finished plan re-plan right away with the new seed (like dragging S / G)
+    onInput: (v) => { seed = Math.round(v); restart(); if (curStepCfg()?.pre === 'finish') preRun('finish'); },
+  });
   const togRow = row(panel);
   const tStage = toggle(togRow, { label: '逐階段（四個動作分開看）', value: stageMode, onChange: (v) => { stageMode = v; restart(); } });
   const tVor = toggle(togRow, { label: 'Voronoi 區域', value: showVor, onChange: (v) => { showVor = v; vorDirty = true; cv.requestRender(); } });
@@ -201,7 +213,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const previewBox = el('div', { class: 'card', style: { padding: '0.5rem 0.7rem', margin: '0.5rem 0' } });
   host.appendChild(previewBox);
-  previewBox.appendChild(mdElement('**下一課預告：位能場。** 不取樣也不長樹：目標是谷底、障礙是山丘，機器人沿著 $-\\nabla U$ 往下滑。下圖是同一張地圖的位能（越亮越高）。'));
+  previewBox.appendChild(mdElement('**下一課預告：位能場。** 不取樣也不長樹：目標是谷底、障礙是山丘，機器人沿著 $-\\nabla U$ 往下滑。下圖是同一張地圖的位能：藍色的谷底在目標，橘色的山丘圍著障礙。'));
   const pv = new Canvas2D(previewBox, { aspect: 2.4, world: FLOOR, margin: 0.02 });
 
   // ------------------------------------------------------------------ rasters (theme-aware, repainted on demand)
@@ -271,13 +283,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (!pvRaster) pvRaster = new RasterLayer(FLOOR, 144, 108);
     const g = goalFor('prm')!;
     const obs = map.obstacles;
+    const lo = rgbaOf('--series-1', 1), hi = rgbaOf('--series-4', 1);
     pvRaster.paint((x, y) => {
       const d = obstacleDistance(obs, [x, y]);
       if (d <= 0) return NaN;
       const att = 0.5 * ((x - g[0]) ** 2 + (y - g[1]) ** 2);
       const rep = d < 1.2 ? 1.5 * (1 / d - 1 / 1.2) ** 2 : 0;
       return Math.log1p(att + rep);
-    }, { colormap: viridisLike, range: [0, 5.2], alpha: 0.85 });
+    }, {
+      // same theme-aware look as the potential-field lesson: blue valley, amber hills
+      colormap: (v) => {
+        const t = Math.max(0, Math.min(1, v));
+        return t < 0.5 ? [lo[0], lo[1], lo[2], 255 * 0.45 * (1 - 2 * t)] : [hi[0], hi[1], hi[2], 255 * 0.8 * (2 * t - 1)];
+      },
+      range: [0, 5.2],
+    });
   }
 
   // ------------------------------------------------------------------ planner lifecycle
@@ -295,7 +315,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     views.className = arm ? 'mr-split' : '';
     rightCol.style.display = arm ? '' : 'none';
     cv.setSize({ aspect: arm ? 1 : 4 / 3 });
-    cv.setWorld(arm ? { xmin: -Math.PI - 0.62, xmax: Math.PI + 0.12, ymin: -Math.PI - 0.5, ymax: Math.PI + 0.12 } : FLOOR);
+    // the torus view leaves room on the left / bottom for the tick labels and the θ₁, θ₂ axis titles
+    cv.setWorld(arm ? { xmin: -Math.PI - 1.3, xmax: Math.PI + 0.12, ymin: -Math.PI - 1.0, ymax: Math.PI + 0.3 } : FLOOR);
     pvDirty = true;
     cobsDirty = true;
     updateVisibility();
@@ -502,9 +523,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (finished) stepper.finish(st); else stepper.setStatus('');
     smoothBtn.disabled = !p || p.length < 3;
     playBtn.disabled = !p;
+    paintStages();
     vorDirty = true;
     cv.requestRender();
     if (isArm()) ws.requestRender();
+  }
+
+  /** Highlight the current stage (stage mode only): done stages solid, the current one accented, later ones faded. */
+  function paintStages(): void {
+    const on = stageMode && algo === 'rrt' && !!rrt && !rrt.finished;
+    stageStrip.style.display = on ? '' : 'none';
+    if (!on) return;
+    stagePills.forEach((pill, i) => {
+      pill.classList.toggle('active', i + 1 === stage);
+      pill.style.opacity = i + 1 > stage ? '0.55' : '1';
+    });
   }
 
   function updateVisibility(): void {
@@ -629,11 +662,20 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const v = (k * P) / 2;
       c.line([v, -P], [v, P], { color: '--grid', width: 1 });
       c.line([-P, v], [P, v], { color: '--grid', width: 1 });
-      c.text([v, -P], deg(v), { dy: 12, color: muted, font: font(10) });
-      c.text([-P, v], deg(v), { dx: -20, color: muted, font: font(10) });
+      c.text([v, -P], deg(v), { dy: 11, color: muted, font: font(10) });
+      c.text([-P, v], deg(v), { dx: -5, align: 'right', color: muted, font: font(10) });
     }
-    c.text([0, -P], 'θ₁', { dy: 26, color: '--fg', font: font(12, true) });
-    c.text([-P, 0], 'θ₂', { dx: -34, color: '--fg', font: font(12, true) });
+    c.text([0, -P], 'θ₁', { dy: 27, color: '--fg', font: font(12, true) });
+    // vertical axis title, rotated so it never collides with the tick labels
+    const [sx, sy] = c.toScreen([-P, 0]);
+    const g = c.ctx;
+    g.save();
+    g.translate(sx - 40, sy);
+    g.rotate(-Math.PI / 2);
+    g.font = font(12, true); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = themeColor('--fg');
+    g.fillText('θ₂', 0, 0);
+    g.restore();
   }
 
   function drawTorusEdges(c: Canvas2D): void {
@@ -717,29 +759,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
   }
 
-  function drawStageList(c: Canvas2D): void {
-    const g = c.ctx;
-    const w = 196, h = 84, x = c.width - w - 8, y = 8;
-    g.save();
-    g.globalAlpha = 0.92;
-    g.fillStyle = themeColor('--bg-elev');
-    g.strokeStyle = themeColor('--border');
-    g.beginPath(); g.roundRect(x, y, w, h, 6); g.fill(); g.stroke();
-    g.globalAlpha = 1;
-    g.textAlign = 'left'; g.textBaseline = 'middle';
-    STAGES.forEach((s, i) => {
-      const cur = i + 1 === stage;
-      g.font = font(12, cur);
-      g.fillStyle = themeColor(cur ? '--accent' : i + 1 < stage ? '--fg' : '--fg-muted');
-      g.fillText((cur ? '▶ ' : '   ') + s, x + 8, y + 12 + i * 19);
-    });
-    g.restore();
-  }
-
   function drawPRM(c: Canvas2D, P: PRM): void {
     const comps = P.phase === 'done' ? P.components().labels : null;
     strokeSegs(c, P.edges.map(([i, j]) => [P.nodes[i], P.nodes[j]] as [Q, Q]).flatMap(([a, b]) => segsFor(a, b)), '--fg-muted', 1, 0.5);
-    for (const t of P.lastTried) strokeSegs(c, segsFor(P.nodes[t.a], P.nodes[t.b]), t.ok ? '--accent' : '--danger', t.ok ? 2 : 1.4, 0.9, t.ok ? [] : [4, 3]);
+    // highlight the connections tried in the last build step (only while the roadmap is being built)
+    if (!comps) for (const t of P.lastTried) strokeSegs(c, segsFor(P.nodes[t.a], P.nodes[t.b]), t.ok ? '--accent' : '--danger', t.ok ? 2 : 1.4, 0.9, t.ok ? [] : [4, 3]);
     if (comps) {
       const groups = new Map<number, Q[]>();
       comps.forEach((l, i) => { const k = Math.min(l, PALETTE.length - 1); if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(P.nodes[i]); });
@@ -795,14 +819,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.ctx.restore();
       drawTorusEdges(c);
     }
-    if (stageMode && algo === 'rrt' && rrt && !rrt.finished) drawStageList(c);
     if (showVor && rrt && vorCounts && vorIds) {
       const near = vorNear;
       const frac = near >= 0 && near < vorCounts.length ? vorCounts[near] / vorIds.length : NaN;
       info.set('q_near 的 Voronoi 面積', Number.isFinite(frac) ? `${fmt(100 * frac, 1)} %（平均每個節點 ${fmt(100 / rrt.tree.size, 1)} %）` : '—（單步一次就會標出）');
     }
     const n = rrt ? rrt.tree.size : con ? con.size : prm ? prm.nodes.length : demo ? demo.samples.length : 0;
-    c.setOverlayText(`${ALGO_LABEL[algo]} · ${algo === 'demo' ? '樣本' : '節點'} ${n} · 碰撞查詢 ${space.checks}`);
+    // the torus view is narrow (side by side with the arm): its numbers live in the table below instead
+    c.setOverlayText(arm ? '' : `${ALGO_LABEL[algo]} · ${algo === 'demo' ? '樣本' : '節點'} ${n} · 碰撞查詢 ${space.checks}`);
   };
 
   const sHandle = cv.addHandle({

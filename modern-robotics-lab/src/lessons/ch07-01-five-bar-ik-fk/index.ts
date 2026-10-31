@@ -13,6 +13,7 @@ import {
   type Branch, type Config, type ElbowSide, type FiveBarGeom, type Mode, type Pose2, type Pt, type Side,
 } from './fiveBar';
 import { stewartCard } from './stewartSketch';
+import { LabelPlacer } from './labelPlacer';
 
 const D = Math.PI / 180;
 const DEFAULT_MOTORS: [number, number] = [115 * D, 65 * D];
@@ -27,6 +28,10 @@ const RPR_WORLD = { xmin: -2.6, xmax: 2.6, ymin: -1.1, ymax: 2.5 };
 const SENS_SCALE = 10;
 /** Motor handles sit on the proximal links at this fraction of their length. */
 const HANDLE_FRAC = 0.62;
+/** Distance from the 3xRPR platform centre to its heading knob (world units). */
+const RPR_KNOB = 0.62;
+const TITLE_FIVE = '平面五連桿：IK 與 FK';
+const TITLE_RPR = '平面 3×RPR 平台：IK 與 FK';
 
 type ViewMode = 'fk' | 'ik' | 'open' | 'rpr';
 
@@ -160,7 +165,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let tween: { from: [number, number]; to: [number, number]; t: number } | null = null;
 
   // ---------------------------------------------------------------- layout
-  simTitle(host, '平面五連桿：IK 與 FK', 'closed chain');
+  const titleText = document.createTextNode(TITLE_FIVE);
+  simTitle(host, '', 'closed chain').prepend(titleText);
   const cv = new Canvas2D(host, { aspect: 1.7, world: WORLD, overlay: true });
   const status = note(host, '');
   status.style.minHeight = '1.2em';
@@ -464,9 +470,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   // ---------------------------------------------------------------- 3xRPR platform
-  const ph = poseHandle(cv, { ...RPR_PRESETS.six }, {
+  const ph = poseHandle(cv, { ...RPR_PRESETS.four }, {
     color: '--warn',
-    knob: 0.62,
+    knob: RPR_KNOB,
     frameSize: 0.3,
     enabled: false,
     onChange: (p) => {
@@ -538,6 +544,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // ---------------------------------------------------------------- UI sync
   function syncUI(): void {
     const five = mode !== 'rpr';
+    titleText.data = five ? TITLE_FIVE : TITLE_RPR;
     hM1.enabled = (mode === 'fk' && !lockTh1) || mode === 'open';
     hM2.enabled = mode === 'fk' || mode === 'open';
     hTip.enabled = mode === 'ik';
@@ -597,7 +604,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (mode === 'ik') {
       // count geometrically distinct branches: a stretched or folded leg has one elbow pose, not two
       const [nl, nr] = legBranchCounts(g, c.P);
-      fKV.set(K.sol, `IK：左 ${nl} × 右 ${nr} = ${nl * nr} 組不同分支，目前 ${branchName(branchOf(c))}`);
+      // the selected branch (on a leg's boundary its inner and outer elbow are the same pose)
+      fKV.set(K.sol, `IK：左 ${nl} × 右 ${nr} = ${nl * nr} 組不同分支，目前 ${branchName(branch)}${nl * nr < 4 ? '（邊界上那條腿內、外重合）' : ''}`);
     } else {
       const f = fkAll(g, c.th1, c.th2);
       const which = f.solutions.length === 2 ? `，目前在 B₁→B₂ ${c.mode === 1 ? '左' : '右'}側` : '';
@@ -605,8 +613,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     shifts = [tipShift(g, c, 0, D), tipShift(g, c, 1, D)];
     const cm = (sh: Pt | null) => (sh ? `${fmt(100 * Math.hypot(sh[0], sh[1]), 2)} cm` : '無法裝配');
-    const J = fkJacobianFD(g, c);
-    fKV.set(K.sens, `θ₁: ${cm(shifts[0])}，θ₂: ${cm(shifts[1])}${J ? `（最大 ≈ ${fmt(100 * sigmaMax(J) * D, 2)} cm/°）` : ''}`);
+    // exactly at tangency the derivative is unbounded: a finite-difference number would only reflect the step size
+    const tangentNow = fkAll(g, c.th1, c.th2).status === 'tangent';
+    const J = tangentNow ? null : fkJacobianFD(g, c);
+    const rate = tangentNow ? '（相切：dp/dθ → ∞）' : J ? `（最大 ≈ ${fmt(100 * sigmaMax(J) * D, 2)} cm/°）` : '';
+    fKV.set(K.sens, `θ₁: ${cm(shifts[0])}，θ₂: ${cm(shifts[1])}${rate}`);
   }
 
   function updateRprReadouts(): void {
@@ -878,7 +889,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const bg = cssVar('--bg-elev', '#fff');
     const base = DEFAULT_RPR.base;
     const pose = ph.pose;
-    // other FK solutions (same leg lengths)
+    // other FK solutions (same leg lengths); their "#k" labels are placed after everything else
+    const ghosts: { k: number; col: string; qq: Pt[] }[] = [];
     rprSols.forEach((s, k) => {
       if (isSame(s, pose)) return;
       const col = cssVar(`--series-${[2, 3, 5, 6, 7, 8][k % 6]}`, '#888');
@@ -886,10 +898,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       for (let i = 0; i < 3; i++) c.line(base[i], qq[i], { color: col, width: 1, dash: [2, 4], alpha: 0.45 });
       c.polygon(qq, { fill: col, alpha: 0.06, width: 0 });
       c.polygon(qq, { color: col, width: 1.6, dash: [6, 4], alpha: 0.9 });
-      c.text(centroid(qq), `#${k + 1}`, { color: col, font: 'bold 11px sans-serif', bg: cssVar('--bg-elev', '#fff') });
+      ghosts.push({ k, col, qq });
     });
     const q = rprJoints(DEFAULT_RPR, pose);
     const lens = rprIK(DEFAULT_RPR, pose);
+    const legDirs: Pt[] = [];
     for (let i = 0; i < 3; i++) {
       const a = base[i];
       const b = q[i];
@@ -899,8 +912,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const m: Pt = [a[0] + u[0] * sl, a[1] + u[1] * sl];
       c.line(a, m, { color: muted, width: 11 });
       c.line(m, b, { color: accent, width: 4 });
-      const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      labelInside(c, mid, `ℓ${'₁₂₃'[i]} = ${fmt(L, 2)}`, { color: accent, bg, font: '12px sans-serif', dx: -12 * u[1], dy: -12 * u[0] });
+      legDirs.push(u);
     }
     c.polygon(q, { fill: accent, alpha: 0.14, width: 0 });
     c.polygon(q, { color: accent, width: 2 });
@@ -910,6 +922,31 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     for (const p of q) passiveSymbol(c, p, 1, 5);
     ph.draw();
+    // Labels last: the placer keeps them apart and off the pose handle, its knob and the joints.
+    const placer = new LabelPlacer(c, labelTop);
+    placer.block([pose.x, pose.y], 15);
+    placer.block([pose.x + RPR_KNOB * Math.cos(pose.theta), pose.y + RPR_KNOB * Math.sin(pose.theta)], 11);
+    for (const p of [...base, ...q]) placer.block(p, 8);
+    const off = 14 / c.scale;
+    for (let i = 0; i < 3; i++) {
+      const a = base[i];
+      const b = q[i];
+      const n: Pt = [-legDirs[i][1], legDirs[i][0]];
+      const at = (t: number, s: number): Pt => [a[0] + t * (b[0] - a[0]) + s * off * n[0], a[1] + t * (b[1] - a[1]) + s * off * n[1]];
+      placer.place(
+        [at(0.5, 1), at(0.5, -1), at(0.3, 1), at(0.3, -1), at(0.7, 1), at(0.7, -1), at(0.5, 2.6), at(0.5, -2.6),
+          at(0.15, 1.6), at(0.15, -1.6), at(0.85, 1.6), at(0.85, -1.6)],
+        `ℓ${'₁₂₃'[i]} = ${fmt(lens[i], 2)}`, { color: accent, bg, font: '12px sans-serif' },
+      );
+    }
+    for (const gh of ghosts) {
+      const ctr = centroid(gh.qq);
+      const toward = (j: number, f: number): Pt => [ctr[0] + f * (gh.qq[j][0] - ctr[0]), ctr[1] + f * (gh.qq[j][1] - ctr[1])];
+      placer.place(
+        [ctr, toward(0, 0.45), toward(1, 0.45), toward(2, 0.45), toward(0, 0.75), toward(1, 0.75), toward(2, 0.75)],
+        `#${gh.k + 1}`, { color: gh.col, font: 'bold 11px sans-serif', bg },
+      );
+    }
     const cur = rprSols.findIndex((s) => isSame(s, pose));
     c.setOverlayText(`3×RPR：${rprSols.length} 組 FK 實數解（目前是 #${cur + 1}）`);
   }
@@ -1002,8 +1039,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       { label: '接近相切：另一個模式', apply: asFk(() => presetMargin(0.02, -1)) },
     ],
     [
-      { label: '3×RPR：6 組解', apply: () => { setMode('rpr'); setRprPose(RPR_PRESETS.six); update(); } },
-      { label: '4 組解', apply: () => { setMode('rpr'); setRprPose(RPR_PRESETS.four); update(); } },
+      { label: '3×RPR：4 組解', apply: () => { setMode('rpr'); setRprPose(RPR_PRESETS.four); update(); } },
+      { label: '6 組解（最多）', apply: () => { setMode('rpr'); setRprPose(RPR_PRESETS.six); update(); } },
       { label: '2 組解', apply: () => { setMode('rpr'); setRprPose(RPR_PRESETS.two); update(); } },
       {
         label: '預告：遠端桿共線',

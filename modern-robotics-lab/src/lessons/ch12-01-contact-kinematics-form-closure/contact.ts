@@ -310,6 +310,25 @@ export function representativeEscape(Fs: V3[], tol = 1e-9): V3 | null {
   return scale3(V, 1 / s);
 }
 
+/**
+ * An escape twist that is easy to describe in words: a pure translation (|v| = 1) whenever the
+ * contacts allow one (the middle of the widest allowed sector of directions), otherwise
+ * `representativeEscape`. Null under form closure.
+ */
+export function preferredEscape(Fs: V3[], tol = 1e-9): V3 | null {
+  // For V = (0, v): Fᵢᵀ V = (fx, fy)ᵢ · v, so the allowed translations form the cone of `translationCone`.
+  const tc = translationCone(Fs.map((F) => [F[1], F[2]] as P2), tol);
+  if (tc.kind === 'all') return [0, 0, 1];
+  if (tc.kind === 'arcs') {
+    let a: number | null = null;
+    let widest = -1;
+    for (const [a0, a1] of tc.arcs) if (a1 - a0 > widest) { widest = a1 - a0; a = (a0 + a1) / 2; }
+    if (a === null && tc.rays.length) a = tc.rays[0];
+    if (a !== null) return [0, Math.cos(a), Math.sin(a)];
+  }
+  return representativeEscape(Fs, tol);
+}
+
 // ---------------------------------------------------------------- convex hull in wrench space
 export interface Facet { normal: V3; offset: number; idx: number[] }
 

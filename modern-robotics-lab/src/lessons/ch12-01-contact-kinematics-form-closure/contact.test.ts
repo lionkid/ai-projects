@@ -3,7 +3,7 @@ import {
   type P2, type V3, makeShape, perimeter, boundaryAt, projectToBoundary, contactWrench, twistAbout, translationTwist,
   corOf, pointVelocity, classifyContact, planarExp, applyPose, escapeTwist, isFormClosure, closureCertificate,
   originMargin, scaleMoments, shapeRadius, linprog, resistWrench, corRegion, corPointLabel, translationCone,
-  autoFormClosure, representativeEscape, feasibleCorPoints, dot3, wrenchRank, insidePolygon, polygonAreaAbs,
+  autoFormClosure, representativeEscape, preferredEscape, feasibleCorPoints, dot3, wrenchRank, insidePolygon, polygonAreaAbs,
 } from './contact';
 
 const square = makeShape('square', 'square', [[-0.75, -0.75], [0.75, -0.75], [0.75, 0.75], [-0.75, 0.75]]);
@@ -270,6 +270,28 @@ describe('form closure', () => {
       const sum: V3 = [0, 0, 0];
       out.k.forEach((k, i) => { expect(k).toBeGreaterThanOrEqual(0); for (let a = 0; a < 3; a++) sum[a] += k * Fs[i][a]; });
       for (let a = 0; a < 3; a++) expect(sum[a] + Fext[a]).toBeCloseTo(0, 7);
+    }
+  });
+  it('preferredEscape is feasible, prefers translations and is null exactly under form closure', () => {
+    // one bottom contact: lift straight up
+    const one = contactsAt(square.verts, [0.95]).map((c) => contactWrench(c.p, c.n));
+    const up = preferredEscape(one)!;
+    expect(up[0]).toBe(0);
+    expect(up[1]).toBeCloseTo(0, 12);
+    expect(up[2]).toBeCloseTo(1, 12);
+    // concurrent normals: no translation survives, so the rotation about the centre is reported
+    const mids = contactsAt(square.verts, [0.75, 2.25, 3.75, 5.25]).map((c) => contactWrench(c.p, c.n));
+    const rot = preferredEscape(mids)!;
+    expect(Math.abs(rot[0])).toBeCloseTo(1, 12);
+    const r = rng(13);
+    for (let trial = 0; trial < 200; trial++) {
+      const verts = makeShape('p', 'p', randomConvexPolygon(r)).verts;
+      const P = perimeter(verts);
+      const j = 1 + Math.floor(r() * 5);
+      const Fs = contactsAt(verts, Array.from({ length: j }, () => r() * P)).map((c) => contactWrench(c.p, c.n));
+      const V = preferredEscape(Fs);
+      expect(V === null).toBe(isFormClosure(Fs));
+      if (V) for (const F of Fs) expect(dot3(F, V)).toBeGreaterThanOrEqual(-1e-9);
     }
   });
   it('without closure some wrench needs a pulling contact', () => {

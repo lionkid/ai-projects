@@ -62,7 +62,7 @@ $$a_2=\\frac{3\\Delta q-(2\\dot q_j+\\dot q_{j+1})T_j}{T_j^{2}},\\qquad a_3=\\fr
 
 - **五次多項式段**：每段再指定兩端的加速度，6 個條件定出 6 個係數；
 - **整體三次樣條（C² spline）**：仍用三次，但經過點速度不再自由選擇，而是解一組聯立方程，讓每個接縫的加速度相等。代價是**失去局部性**：動一個點，所有段都會改變。`,
-    simHint: '右下圖已切到「加速度」：實線在經過點時刻斷開跳變。用「對照曲線」選「五次段」或「整體三次樣條」，比較虛線是否連續，以及畫布上的路徑差多少。',
+    simHint: '已套用「等時距」情境，右下圖切到「加速度」：實線在經過點時刻斷開跳變，虛線（五次段）則連續。再把「對照曲線」換成「整體三次樣條」比較，並看畫布上兩條路徑差多少。',
   },
   {
     title: '手臂跟著走，以及時間最佳化',
@@ -103,15 +103,15 @@ const quiz: QuizQuestion[] = [
     explanation: '夾爪在抓取與放下的瞬間必須相對物體靜止，所以這些點速度要為 0（起點本來就靜止）。「物體上方」「箱子上方」只是避開碰撞的中途點，在那裡停下既浪費時間，也讓馬達反覆加減速。',
   },
   {
-    question: '同一組經過點與時間，把啟發式改成零速策略。總時間不變，各段的速度峰值會怎樣？',
+    question: '經過點與時刻都不變，只把速度策略從「啟發式」改成「零速」。畫布上的路徑會變成什麼樣子？',
     options: [
-      '不變，因為總時間一樣',
-      '變大：每段都要從靜止加速再減速到 0，峰值是該段平均速度的 1.5 倍',
-      '變小：因為中途會停頓',
-      '全部變成 0',
+      '同一條平滑曲線，只是走得比較慢',
+      '相鄰經過點之間的直線段（折線），而且在每個轉角停一下',
+      '一條仍然平滑、但更貼近折線的曲線',
+      '每一段都會衝過下一個經過點再折回',
     ],
     answer: 1,
-    explanation: '零速時每段都是靜止到靜止的三次曲線 $q=q_j+\\Delta q\\,(3u^2-2u^3)$（$u=\\tau/T$），速度在段中央達到 $1.5\\,\\Delta q/T$。啟發式讓機器人帶著速度通過經過點，速度分佈較平均，峰值通常較低。',
+    explanation: '兩端速度都為 0 時，每段的每個座標都是 $q_j+\\Delta q\\,(3u^2-2u^3)$（$u=\\tau/T_j$）。$x$ 與 $y$ 共用同一個純量函數 $s(u)=3u^2-2u^3$，所以 $p(\\tau)=p_j+s(u)\\,(p_{j+1}-p_j)$ 只沿著兩點間的弦移動——這正是前一課「直線路徑＋三次時間縮放」。轉角處速度為 0，方向才能瞬間改變；$s(u)$ 單調遞增，所以也不會過衝。可以套用「零速」情境驗證。',
   },
 ];
 
@@ -220,14 +220,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const [colA, colB] = split(host);
   const plotOpts = { height: 165, legend: false, xLabel: 't (s)' };
-  // Series colours are resolved CSS variables, so they are rebuilt on theme change (restyle()).
+  // Colours are CSS variable names: Plot2D resolves them at draw time, so theme switches just work.
   const xy = (a: string, b: string, cmp: boolean): SeriesSpec[] => [
-    { name: a, color: cssVar('--axis-x') }, { name: b, color: cssVar('--axis-y') },
-    ...(cmp ? [{ name: `${a} 對照`, color: cssVar('--axis-x'), dash: [5, 4], width: 1.3 }, { name: `${b} 對照`, color: cssVar('--axis-y'), dash: [5, 4], width: 1.3 }] : []),
+    { name: a, color: '--axis-x' }, { name: b, color: '--axis-y' },
+    ...(cmp ? [{ name: `${a} 對照`, color: '--axis-x', dash: [5, 4], width: 1.3 }, { name: `${b} 對照`, color: '--axis-y', dash: [5, 4], width: 1.3 }] : []),
   ];
-  const velSeries = (): SeriesSpec[] => [...xy('ẋ', 'ẏ', false), { name: '|v|', color: cssVar('--fg-muted'), dash: [3, 3], width: 1.3 }];
-  const jSeries = (): SeriesSpec[] => [{ name: 'θ₁', color: cssVar('--series-1') }, { name: 'θ₂', color: cssVar('--series-4') }];
-  const pPos = new Plot2D(colA, { ...plotOpts, title: '位置 x(t)、y(t)（m）', series: xy('x', 'y', true) });
+  const velSeries = (): SeriesSpec[] => [...xy('ẋ', 'ẏ', false), { name: '|v|', color: '--fg-muted', dash: [3, 3], width: 1.3 }];
+  const jSeries = (): SeriesSpec[] => [{ name: 'θ₁', color: '--series-1' }, { name: 'θ₂', color: '--series-4' }];
+  // Extra headroom: overshoot markers sit at extrema and their labels are drawn above the dot.
+  const pPos = new Plot2D(colA, { ...plotOpts, yPad: 0.2, title: '位置 x(t)、y(t)（m）', series: xy('x', 'y', true) });
   const tabRow = el('div');
   colB.appendChild(tabRow);
   const paneVel = el('div'), paneAcc = el('div'), paneJ = el('div');
@@ -241,12 +242,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const pAcc = new Plot2D(paneAcc, { ...plotOpts, height: 135, title: '加速度 ẍ、ÿ（m/s²）', series: xy('ẍ', 'ÿ', true) });
   const pJ = new Plot2D(paneJ, { ...plotOpts, height: 135, title: '2R 關節角 θ₁（藍）、θ₂（橘）（rad）', series: jSeries() });
   const plots = [pPos, pVel, pAcc, pJ];
-  const restyle = () => {
-    pPos.setOptions({ series: xy('x', 'y', true) });
-    pVel.setOptions({ series: velSeries() });
-    pAcc.setOptions({ series: xy('ẍ', 'ÿ', true) });
-    pJ.setOptions({ series: jSeries() });
-  };
   const group = plotGroup(plots);
   legend(host, [
     { color: 'var(--accent)', label: '分段三次路徑' }, { color: 'var(--series-5)', label: '經過點速度（箭頭＝v×0.35 s）' },
@@ -257,7 +252,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const preview = el('div', { class: 'card', style: { padding: '0.4rem 0.6rem', margin: '0.2rem 0', display: 'none' } });
   host.insertBefore(preview, coef);
   preview.appendChild(mdElement('**下一課預告：$(s,\\dot s)$ 相平面。** 路徑固定後，力矩上限讓每個狀態 $(s,\\dot s)$ 只能有一段加速度區間 $[L,U]$；最快的走法是先全力加速、再全力減速，而且不能越過速度極限曲線（紅）。'));
-  const pv = new Canvas2D(preview, { aspect: 5, world: { xmin: -0.06, xmax: 1.06, ymin: -0.02, ymax: 0.2 } });
+  const pv = new Canvas2D(preview, { aspect: 4.2, world: { xmin: -0.06, xmax: 1.06, ymin: -0.025, ymax: 0.245 } });
 
   // ---------------------------------------------------------------- sampling / rebuild
   function velocitiesFor(strategy: VelStrategy): Pt2[] {
@@ -310,18 +305,29 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     pJ.setXY(1, S.t, thetas.map((q) => q[1]));
     group.setXRange([0, Ttot()]);
 
-    const muted = cssVar('--fg-muted'), danger = cssVar('--danger');
-    const via: Marker[] = st.times.slice(1, -1).map((t) => ({ x: t, color: muted, dash: [3, 4] }));
-    group.setMarkers(0, [...via, ...overs.map((o) => ({ x: o.t, y: o.q[o.coord], color: danger, label: '過衝' }))]);
+    const via: Marker[] = st.times.slice(1, -1).map((t) => ({ x: t, color: '--fg-muted', dash: [3, 4] }));
+    group.setMarkers(0, [...via, ...overs.map((o) => ({ x: o.t, y: o.q[o.coord], color: '--danger', label: '過衝' }))]);
     group.setMarkers(1, via);
     const jumps = accelJumps(sp);
+    // Label the largest jump at an interior via point (the step is about the joints between segments).
     let big = 0, bigIdx = -1;
-    jumps.forEach((j, k) => { const m = Math.hypot(j.jump[0], j.jump[1]); if (m > big) { big = m; bigIdx = k; } });
+    jumps.forEach((j, k) => {
+      if (k === 0 || k === jumps.length - 1) return;
+      const m = Math.hypot(j.jump[0], j.jump[1]);
+      if (m > big) { big = m; bigIdx = k; }
+    });
     const jm: Marker[] = [...via];
     jumps.forEach((j, k) => {
+      const cBig = Math.abs(j.jump[0]) >= Math.abs(j.jump[1]) ? 0 : 1;
       for (const c of [0, 1] as const) {
-        const col = cssVar(c === 0 ? '--axis-x' : '--axis-y');
-        jm.push({ x: j.t, y: j.left[c], color: col }, { x: j.t, y: j.right[c], color: col, label: k === bigIdx && c === (Math.abs(j.jump[0]) >= Math.abs(j.jump[1]) ? 0 : 1) ? `跳 ${fmt(Math.abs(j.jump[c]), 2)}` : undefined });
+        const col = c === 0 ? '--axis-x' : '--axis-y';
+        const label = k === bigIdx && c === cBig ? `跳 ${fmt(Math.abs(j.jump[c]), 2)}` : undefined;
+        // The label is drawn above its dot, so attach it to the lower one to keep it inside the plot.
+        const lowerIsLeft = j.left[c] <= j.right[c];
+        jm.push(
+          { x: j.t, y: j.left[c], color: col, label: lowerIsLeft ? label : undefined },
+          { x: j.t, y: j.right[c], color: col, label: lowerIsLeft ? undefined : label },
+        );
       }
     });
     group.setMarkers(2, jm);
@@ -355,7 +361,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const bad = st.arm ? reach.filter((r) => !r).length : 0;
     if (bad) parts.push(`⚠ 有 ${fmt((100 * bad) / reach.length, 0)}% 的路徑在 2R 手臂工作空間外（紅色）。`);
     status.textContent = parts.join(' ');
-    status.style.color = overs.length || bad ? cssVar('--danger') : cssVar('--fg-muted');
+    status.style.color = overs.length || bad ? 'var(--danger)' : 'var(--fg-muted)';
   }
 
   // ---------------------------------------------------------------- main canvas
@@ -412,7 +418,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.disk(r.q, 0.045, { fill: cssVar('--warn') });
     const sp0 = Math.hypot(r.qd[0], r.qd[1]);
     if (sp0 > 1e-4) c.arrow(r.q, [r.q[0] + r.qd[0] * ARROW, r.q[1] + r.qd[1] * ARROW], { color: cssVar('--warn'), width: 2, head: 8 });
-    c.overlay.textContent = `t = ${fmt(st.t, 2)} s  |v| = ${fmt(sp0, 2)} m/s`;
+    c.setOverlayText(`t = ${fmt(st.t, 2)} s  |v| = ${fmt(sp0, 2)} m/s`);
   };
 
   // Via-point handles (rebuilt when the number of points changes) and velocity-tip handles.
@@ -444,7 +450,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         },
         onStart: () => { grab(); st.selPt = k; st.selSeg = Math.min(k, K - 2); },
         onEnd: release,
-        radius: 6, color: cssVar('--series-5'),
+        radius: 6, color: '--series-5',
       }));
     }
     velHandles.forEach((h, k) => { h.enabled = st.strategy === 'custom' && k > 0 && k < K - 1; });
@@ -522,8 +528,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     c.polyline(L, { color: cssVar('--danger'), width: 2 });
     c.polyline(O, { color: cssVar('--series-5'), width: 2.4 });
-    c.text([0.2, 0.205], '速度極限曲線', { color: cssVar('--danger'), font: '11px ' + (cssVar('--font') || 'sans-serif') });
-    c.text([0.8, 0.06], '最快：全力加速 → 全力減速', { color: cssVar('--series-5'), font: '11px ' + (cssVar('--font') || 'sans-serif') });
+    const font = '11px ' + (cssVar('--font') || 'sans-serif');
+    c.text([0.03, 0.222], '速度極限曲線（上方不可行）', { color: cssVar('--danger'), font, align: 'left' });
+    c.text([0.5, 0.035], '最快：全力加速 → 全力減速', { color: cssVar('--series-5'), font });
   };
 
   // ---------------------------------------------------------------- actions
@@ -606,32 +613,31 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (o.seg != null) st.selSeg = Math.min(o.seg, st.points.length - 2);
     rebuild();
   };
+  const chip = (id: ScenarioId) => chips.activate(SCENARIO_IDS.indexOf(id));
   const onStep = (i: number) => {
     preview.style.display = i === 5 ? '' : 'none';
     coef.style.display = i === 5 ? 'none' : '';
     if (i === 5) pv.requestRender();
     switch (i) {
-      case 0: chips.activate(0); setView({ compare: 'global', arm: false, tab: 'vel' }); setFocus([cv.el]); break;
+      case 0: chip('demo'); setView({ compare: 'global', arm: false, tab: 'vel' }); setFocus([cv.el]); break;
       case 1: setView({ compare: 'none', arm: false, tab: 'vel', seg: 1 }); setFocus([coef, cv.el]); break;
-      case 2: chips.activate(1); setView({ compare: 'none', arm: false, tab: 'vel' }); setFocus([stratSel.el, pVel.el]); break;
-      case 3: chips.activate(2); setView({ compare: 'none', arm: false, tab: 'vel', seg: 1 }); setFocus([tl.el, cv.el]); break;
-      case 4: setView({ compare: 'quintic', arm: false, tab: 'acc' }); setFocus([pAcc.el, cmpSel.el]); break;
+      case 2: chip('zero'); setView({ compare: 'none', arm: false, tab: 'vel' }); setFocus([stratSel.el, pVel.el]); break;
+      case 3: chip('overshoot'); setView({ compare: 'none', arm: false, tab: 'vel', seg: 1 }); setFocus([tl.el, cv.el]); break;
+      case 4: chip('equal'); setView({ compare: 'quintic', arm: false, tab: 'acc' }); setFocus([pAcc.el, cmpSel.el]); break;
       case 5: setView({ compare: 'none', arm: true, tab: 'joint' }); setFocus([armToggle.el, preview]); break;
       default: setFocus([]);
     }
   };
 
   applyScenario('demo');
-  chips.activate(0);
+  chip('demo');
   tabs.activate(0);
   onStep(ctx.currentStep);
-  const unsubTheme = ctx.onThemeChange(() => { restyle(); rebuild(); });
 
   return {
     onStep,
     destroy() {
       loop.stop();
-      unsubTheme();
       unsubPointer();
       unsubTl();
       cv.destroy();
