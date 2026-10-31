@@ -489,7 +489,21 @@ export class Scene3D {
     this.scene.add(line);
     return {
       line,
-      update: (pts) => { line.geometry.setFromPoints(pts.map(vec3)); if (opts.dashed) line.computeLineDistances(); this.requestRender(); },
+      update: (pts) => {
+        const vs = pts.map(vec3);
+        const pos = line.geometry.getAttribute('position');
+        if (!pos || pos.count !== vs.length) {
+          // BufferGeometry.setFromPoints cannot grow an existing buffer (extra points are dropped),
+          // so a polyline whose point count changes gets a fresh geometry.
+          line.geometry.dispose();
+          line.geometry = new THREE.BufferGeometry().setFromPoints(vs);
+        } else {
+          line.geometry.setFromPoints(vs);
+          line.geometry.computeBoundingSphere();
+        }
+        if (opts.dashed) line.computeLineDistances();
+        this.requestRender();
+      },
     };
   }
   /**
