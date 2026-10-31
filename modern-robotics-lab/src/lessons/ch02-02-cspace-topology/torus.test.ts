@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { planarFK } from '@/mr';
 import {
   PATH_PRESETS, PI, TWO_PI, densify, glueStages, ikNearest, implicitCoords, morphNormal, morphPoint, otherElbow,
-  pathLength, samplePath, torusDist, unwrapSeq, wrapAngle, wrapPolylines, type Th,
+  pathLength, pushTrail, samplePath, torusDist, trailPieces, unwrapSeq, wrapAngle, wrapPolylines, type Th, type Trail,
 } from './torus';
 
 const R = 1;
@@ -88,6 +88,30 @@ describe('wrap-aware paths', () => {
     const wrapped = truth.map((p) => [wrapAngle(p[0]), wrapAngle(p[1])] as Th);
     const back = unwrapSeq(wrapped);
     back.forEach((p, i) => close(p, truth[i], 1e-9));
+  });
+
+  it('a trail breaks at jumps instead of drawing a motion that never happened', () => {
+    const trail: Trail = [];
+    const o = { minStep: 0.025, max: 50 };
+    for (let k = 0; k < 10; k++) pushTrail(trail, [0.1 * k, 0.5], o);
+    expect(pushTrail(trail, [0.9 + 0.01, 0.5], o)).toBe(false);       // closer than minStep: skipped
+    pushTrail(trail, [-2.5, -1], { ...o, jump: true });               // explicit jump (e.g. preset loaded)
+    pushTrail(trail, [-2.45, -1], o);
+    pushTrail(trail, [2.0, 2.0], o);                                  // a 4-rad leap counts as a jump too
+    pushTrail(trail, [2.05, 2.0], o);
+    const pieces = trailPieces(trail);
+    expect(pieces.map((p) => p.length)).toEqual([10, 2, 2]);
+    // crossing the ±π seam is a small move on the torus, not a jump
+    const seam: Trail = [];
+    pushTrail(seam, [PI - 0.05, 0], o);
+    pushTrail(seam, [-PI + 0.05, 0], o);
+    expect(trailPieces(seam)).toHaveLength(1);
+    // the cap drops the oldest samples and never leaves a leading break
+    const capped: Trail = [];
+    pushTrail(capped, [0, 0], { minStep: 0.01, max: 3 });
+    pushTrail(capped, [2, 2], { minStep: 0.01, max: 3, jump: true });
+    pushTrail(capped, [2.1, 2], { minStep: 0.01, max: 3 });
+    expect(capped).toEqual([[2, 2], [2.1, 2]]);
   });
 
   it('densify bounds the step and samplePath hits both ends', () => {

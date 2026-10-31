@@ -6,7 +6,7 @@ import {
 import { wrapToPi, type P2 } from '@/mr';
 import { meta } from './meta';
 import {
-  HIT_LINK1, HIT_LINK2, armPoints, blockedFraction, cellAngle, checkPath, circleCover, clearance, componentAt,
+  HIT_LINK1, HIT_LINK2, angleCell, armPoints, blockedFraction, cellAngle, checkPath, circleCover, clearance, componentAt,
   computeCobsCodes, linkCollisions, pathAt, seamRuns, torusComponents, torusDist, torusSegmentPieces, wrapQ,
   type ClearanceResult, type CollisionMode, type Components, type Obstacle, type PathCheck,
 } from './cspace';
@@ -15,7 +15,7 @@ import { LINK_HALF_WIDTH as W, SCENARIOS } from './scenarios';
 const steps: LessonStep[] = [
   {
     title: '規劃問題長什麼樣',
-    md: `**運動規劃（motion planning）**問的是：給定起點組態 $q_{\\rm start}$、目標組態 $q_{\\rm goal}$ 與障礙物，能否找到一條**連續**路徑把兩者接起來，而且途中機器人的**整個身體**都不碰到障礙？
+    md: `**運動規劃**（motion planning）問的是：給定起點組態 $q_{\\rm start}$、目標組態 $q_{\\rm goal}$ 與障礙物，能否找到一條**連續**路徑把兩者接起來，而且途中機器人的**整個身體**都不碰到障礙？
 
 所有不碰撞的組態構成自由空間 $\\mathcal C_{\\rm free}$，要找的就是一條曲線
 
@@ -30,8 +30,8 @@ $$q:[0,1]\\to\\mathcal C_{\\rm free},\\qquad q(0)=q_{\\rm start},\\; q(1)=q_{\\r
 
 $$\\mathcal C_{\\rm obs}=\\{\\,q \\mid \\mathcal A(q)\\cap\\mathcal B\\neq\\emptyset\\,\\},\\qquad \\mathcal C_{\\rm free}=\\mathcal C\\setminus\\mathcal C_{\\rm obs}$$
 
-其中 $\\mathcal A(q)$ 是手臂在 $q$ 佔據的區域，$\\mathcal B$ 是障礙。同一個圓在這裡長成兩種形狀：連桿 1 撞不撞與 $\\theta_2$ 無關，所以是**整條垂直帶**（紅）；只有連桿 2 撞到的部分則是彎曲的斑塊（橙）。`,
-    simHint: '按「▶ 掃描」：左圖的扇形是「θ₁ 固定、θ₂ 轉一圈」的所有前臂，紅色的那幾支就對應右圖同一欄被塗色的格子。掃完後把右圖的 q 點拖進色塊試試。',
+其中 $\\mathcal A(q)$ 是手臂在 $q$ 佔據的區域，$\\mathcal B$ 是障礙。同一個圓在這裡長成兩種形狀：連桿 1 撞不撞與 $\\theta_2$ 無關，所以是**整條垂直帶**（紅），障礙離基座越近、從肩關節看去張得越開，這條帶就越寬；只有連桿 2 撞到的部分則是彎曲的斑塊（橙）。`,
+    simHint: '掃描從目前的 θ₁ 開始繞一圈：左圖的扇形是「θ₁ 固定、θ₂ 轉一圈」的所有前臂，紅色的那幾支就對應右圖同一欄被塗色的格子。掃完後把右圖的 q 點拖進色塊試試；想再看一次就按「▶ 掃描」。',
   },
   {
     title: '環面上的障礙',
@@ -46,7 +46,7 @@ $$\\mathcal C_{\\rm obs}=\\{\\,q \\mid \\mathcal A(q)\\cap\\mathcal B\\neq\\empt
 
 $$d_{ij}=\\|c_i-c_j\\|-r_i-r_j$$
 
-所有圓對的最小值 $d_{\\min}\\le 0$ 就判定碰撞，正值則是**間隙（clearance）**的保守估計。覆蓋圓比連桿略胖，C-obstacle 因此多出一圈紫色的保守區：寧可誤報，絕不漏報。每桿圓數 $K$ 越多，這圈越薄。`,
+所有圓對的最小值 $d_{\\min}\\le 0$ 就判定碰撞，正值則是**間隙**（clearance）的保守估計。覆蓋圓比連桿略胖，C-obstacle 因此多出一圈紫色的保守區：寧可誤報，絕不漏報。每桿圓數 $K$ 越多，這圈越薄。`,
     simHint: '拖曳手肘或末端靠近障礙，比較 d_min 的精確值與圓覆蓋值（藍色虛線是最近的一對點）；再把 K 從 2 拉到 8，看紫色保守區變薄。',
   },
   {
@@ -67,26 +67,26 @@ $$d_{ij}=\\|c_i-c_j\\|-r_i-r_j$$
 
 const quiz: QuizQuestion[] = [
   {
-    question: '同一個半徑 0.15 m 的圓形障礙，分別放在離基座 0.5 m 與 1.6 m 處（$L_1=L_2=1$ m）。哪一個在 C-space 裡佔的比例比較大？',
+    question: '在「單一障礙」場景中，障礙不動，只把第二桿 $L_2$ 從 1.0 m 拉長到 1.3 m。右圖的 C-obstacle 會怎麼變？',
     options: [
-      '離基座 0.5 m 的那個，而且大很多',
-      '離基座 1.6 m 的那個，因為末端在外圈移動得最快',
-      '一樣大，因為障礙的面積相同',
-      '無法判斷，C-obstacle 與障礙的位置無關',
-    ],
-    answer: 0,
-    explanation: '放在 0.5 m 時連桿 1 會掃到它，而連桿 1 撞不撞與 $\\theta_2$ 無關，整條垂直帶都被擋住；帶寬約為障礙（加上連桿半寬 $w$）對基座張開的角度 $2\\arcsin\\frac{r+w}{d}$，$d$ 越小越寬。放在 1.6 m 只有連桿 2 可能碰到，只擋住一小塊。以本課的手臂計算，前者約佔 C-space 的 17%，後者約 2%。',
-  },
-  {
-    question: '把障礙的半徑減半（它在工作空間中的面積變成 1/4），C-obstacle 的面積大約會怎樣？',
-    options: [
-      '同樣變成約 1/4',
-      '變小，但遠不到 1/4（例如「單一障礙」場景約從 14% 降到 9%）',
-      '完全不變',
-      '反而變大',
+      '整個 C-obstacle 等比例放大約 1.3 倍',
+      '紅色垂直帶（連桿 1 碰撞）完全不變，只有橙色斑塊（只有連桿 2 碰撞）改變',
+      '紅色垂直帶變寬，橙色斑塊不變',
+      '完全不變，因為障礙沒有移動',
     ],
     answer: 1,
-    explanation: 'C-obstacle 的寬度由「從關節看過去，障礙加上連桿粗細佔了多大的角度」決定，大致隨 $r+w$ 線性變化，而連桿的半寬 $w$ 並不會跟著縮小。所以面積縮小的比例接近半徑的比例，而不是工作空間面積的比例。可以用左圖障礙邊緣的把手縮小半徑，對照「C-obstacle 佔比」的讀數。',
+    explanation: '連桿 1 撞不撞只取決於 $\\theta_1$ 與 $L_1$，所以那幾欄紅色垂直帶與 $L_2$ 毫無關係。會變的是前臂掃過的範圍：前臂變長、伸得更遠，原本碰不到的 $(\\theta_1,\\theta_2)$ 也會撞上，橙色斑塊只會變大、不會縮小（較長的前臂掃過的範圍包含原本的範圍；本場景的佔比由 13.6% 增為 14.5%）。拉動「第二桿長 L₂」滑桿就能驗證。',
+  },
+  {
+    question: '用圓覆蓋做碰撞查詢，覆蓋圓與障礙之間的最小距離為 $d_{\\min}=0.05$ m。對真正的手臂，哪個結論**一定**成立？',
+    options: [
+      '手臂沒有碰撞，而且真正的間隙至少 0.05 m',
+      '手臂可能已經碰撞，必須再用精確方法確認',
+      '真正的間隙剛好等於 0.05 m',
+      '真正的間隙一定小於 0.05 m',
+    ],
+    answer: 0,
+    explanation: '覆蓋圓把每根連桿整個包住，手臂上每一點都落在某個覆蓋圓裡，所以手臂離障礙不可能比覆蓋圓更近：真正的間隙 $\\ge 0.05$ m。反方向則不成立：覆蓋圓回報 $d_{\\min}\\le 0$ 時，手臂本身可能還沒碰到（紫色保守區）。正值可以放心採信，負值只代表「可能碰撞」。',
   },
   {
     question: '在「夾住基座」場景中，S 讓手臂朝右、G 讓手臂朝左。下列哪個做法能讓規劃成功？',
@@ -120,7 +120,7 @@ const D2R = PI / 180;
 /** Width (rad) of the periodic copy shown around the fundamental square. */
 const MARGIN = 0.6;
 const MAX_OBS = 4;
-const SWEEP_SECONDS = 4;
+const SWEEP_SECONDS = 3.6;
 /** Playback speed along a joint-space path (rad/s). */
 const PLAY_SPEED = 1.4;
 /** A waypoint closer than this (torus distance, rad) to G closes the drawn path. */
@@ -184,6 +184,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let showComps = false;
   let showPreview = false;
   let sweepCol: number | null = null;
+  /** Column where the current sweep started (the sweep goes once around the torus from there). */
+  let sweepStart = 0;
   let playU: number | null = null;
   let playDur = 1;
   let codes: Uint8Array = new Uint8Array(res * res);
@@ -322,7 +324,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const jd = clampN(Math.floor(((y - y0) / TAU) * n), 0, n - 1);
       const i = (id + s) % n;
       const j = (jd + s) % n;
-      if (i >= lim) return NaN;
+      if ((i - sweepStart + n) % n >= lim) return NaN;
       const k = j * n + i;
       if (cds[k]) return cds[k];
       if (cov && cov[k]) return 4;
@@ -420,7 +422,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     if (sweepCol !== null) {
       // every forearm of the column being scanned: red = this (θ₁, θ₂) is in C_obs
-      const i = Math.min(res - 1, Math.floor(sweepCol));
+      const i = (sweepStart + Math.min(res - 1, Math.floor(sweepCol))) % res;
       const th1 = cellAngle(i, res);
       const e = armPoints(L, [th1, 0])[1] as Pt;
       for (let k = 0; k < 36; k++) {
@@ -443,7 +445,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       }
     }
     const dNow = showCover ? curCv?.d : curEx?.d;
-    c.overlay.textContent = `θ = ${qStr(q)}${showNearest && dNow !== undefined && Number.isFinite(dNow) ? `  d_min = ${fmt(dNow, 3)} m` : ''}`;
+    c.setOverlayText(`θ = ${qStr(q)}${showNearest && dNow !== undefined && Number.isFinite(dNow) ? `  d_min = ${fmt(dNow, 3)} m` : ''}`);
   };
 
   // ---------------- C-space drawing
@@ -516,6 +518,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     if (!showCobs) {
       c.text([c0[0], sq.ymax - 0.45], 'C-obstacle 尚未畫出', { color: muted, font: `13px ${cssVar('--font') || 'sans-serif'}`, bg: cssVar('--bg-elev') });
+    } else if (drawMode && path.length <= 1) {
+      c.text([c0[0], sq.ymax - 0.45], '從 S 開始點選路徑點，靠近 G 會自動接上', { color: accent, font: `12px ${cssVar('--font') || 'sans-serif'}`, bg: cssVar('--bg-elev') });
     }
     // joint-space path (shortest torus segments, with faded periodic copies)
     const seg = (a: P2, b: P2, color: string, width: number, dash?: number[]): void => {
@@ -549,7 +553,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.point(disp(q), 4, { color: curBits ? danger : cssVar('--fg') });
     }
     if (sweepCol !== null) {
-      const x = disp([cellAngle(Math.min(n - 1, Math.floor(sweepCol)), n), 0])[0];
+      const x = disp([cellAngle((sweepStart + Math.min(n - 1, Math.floor(sweepCol))) % n, n), 0])[0];
       c.line([x, sq.ymin], [x, sq.ymax], { color: accent, width: 2 });
     }
     // ticks
@@ -766,6 +770,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     stopPlay();
     if (!showCobs) { showCobs = true; tCobs.set(true, { silent: true }); }
     sweepCol = 0;
+    sweepStart = angleCell(q[0], res);
     sweepBtn.disabled = true;
     paintRaster();
     loop.start();
@@ -795,7 +800,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   // ---------------- scenarios and steps
-  function loadScenario(i: number): void {
+  function loadScenario(i: number, doRebuild = true): void {
     const s = SCENARIOS[i];
     stopPlay();
     stopSweep();
@@ -810,7 +815,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     path = [S, G];
     pathDone = true;
     syncObsHandles();
-    rebuild();
+    if (doRebuild) rebuild();
   }
 
   const setT = (t: ToggleHandle, v: boolean): void => t.set(v, { silent: true });
@@ -826,7 +831,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   function applyStep(i: number): void {
     const k = clampN(i, 0, STEP_CFG.length - 1);
     const cfg = STEP_CFG[k];
-    chips.activate(cfg.scen);
+    chips.highlight(cfg.scen);
+    loadScenario(cfg.scen, false);
     showCobs = cfg.cobs; setT(tCobs, showCobs);
     showCover = cfg.cover; setT(tCover, showCover); sK.disabled = !showCover;
     showComps = cfg.comps; setT(tComps, showComps);

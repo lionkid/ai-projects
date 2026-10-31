@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } from '@/types';
 import {
-  el, cssVar, fmt, fmtVec, controlPanel, row, slider, angleSlider, toggle, button, select, matrixView, simTitle, kv,
-  presetChips, mathEl, playback, setThemedColor, Plot2D, Scene3D, Arrow3D, createLoop, type MatrixHandle,
+  el, fmt, fmtVec, controlPanel, row, slider, angleSlider, toggle, button, select, matrixView, simTitle, kv,
+  presetChips, mathEl, playback, setThemedColor, Plot2D, Scene3D, Arrow3D, createLoop, type MatrixHandle, type Marker,
 } from '@/ui';
-import { type Mat, type Vec, RotX, cross, det, eulerZYX, eye, matMul, matSub, matVec, norm, normFro, transpose, vecAdd, vecScale, wrapTo2Pi } from '@/mr';
+import {
+  type Mat, type Vec, ProjectToSO3, RotX, cross, det, eulerZYX, eye, matMul, matSub, matVec, norm, normFro, transpose, vecAdd,
+  vecScale, wrapTo2Pi, zeros,
+} from '@/mr';
 import { meta } from './meta';
 import {
   type LogInfo, anglesFromAxis, axisFromAngles, eulerPath, expPath, foldedAngle, integratedOmega, logInfo, omegaFromDerivative,
   orbitPoints, rodriguesTerms, rotAxisAngle, rotatePointTerms, topMotion,
 } from './expCoords';
-import { AXIS_VARS, DashedSegments, Trail, Triad, disposeSprite, label3D } from './view3d';
+import { AXIS_VARS, DashedSegments, Trail, Triad, TubePath, disposeSprite, label3D } from './view3d';
 import { attachDrag3D } from './drag3d';
 
 // ---------------------------------------------------------------------------
@@ -47,7 +50,7 @@ $$\\mathrm{Rot}(\\hat\\omega,\\theta) = e^{[\\hat\\omega]\\theta} = I + \\sin\\t
 套到一個點 $p$ 上看：$\\sin\\theta\\,(\\hat\\omega\\times p)$ 沿圓的切線往前推，$(1-\\cos\\theta)\\,\\hat\\omega\\times(\\hat\\omega\\times p)$ 再朝軸心拉回，兩段頭尾相接，正好把點送到圓上轉過 $\\theta$ 的位置。
 
 另外，$\\theta$ 每增加 $2\\pi$，兩個係數都回到原值，$R$ 完全不變：同一個 $R$ 對應無限多個 $\\theta$，這正是下一步反解時要面對的問題。`,
-    simHint: '拖動 θ：橘色（sin 項）與紫色（1 − cos 項）箭頭頭尾相接，把追蹤點從灰點送到圓上。關掉其中一項：框架變形，det R 與 ‖RᵀR − I‖ 立刻偏離。',
+    simHint: '拖動 θ：橘色（sin 項）與紫色（1 − cos 項）箭頭頭尾相接，把追蹤點從灰點送到圓上。面板上 R 旁邊的兩個矩陣就是這兩項：sin 項反對稱、(1 − cos) 項對稱。關掉其中一項：框架變形，det R 與 ‖RᵀR − I‖ 立刻偏離。',
   },
   {
     title: '反向：矩陣對數',
@@ -55,8 +58,8 @@ $$\\mathrm{Rot}(\\hat\\omega,\\theta) = e^{[\\hat\\omega]\\theta} = I + \\sin\\t
 
 $$\\theta = \\cos^{-1}\\!\\Big(\\frac{\\tr R - 1}{2}\\Big), \\qquad [\\hat\\omega] = \\frac{R - R^{\\T}}{2\\sin\\theta}$$
 
-注意 $\\tr R$ 只告訴你轉了多少，對轉軸一無所知；轉軸的資訊全部藏在反對稱部分 $R - R^{\\T} = 2\\sin\\theta\\,[\\hat\\omega]$ 裡。$\\cos^{-1}$ 只給出 $[0, \\pi]$ 的角度，所以對數永遠挑「較短的轉法」：繞 $\\hat\\omega$ 轉 220° 和繞 $-\\hat\\omega$ 轉 140° 是同一個 $R$，$\\log R$ 回傳的是後者。`,
-    simHint: '把 θ 從 0 拉到 360°：下方圖中 θ_out 在 180° 折返，紫色的 log 軸同時翻到 −ω̂，紫色虛線弧是 log 走的「較短的路」。也可以把「輸入」切成「自由旋轉」，直接在 3D 畫面裡拖曳物體。',
+注意 $\\tr R$ 只告訴你轉了多少，對轉軸一無所知；轉軸的資訊全部藏在反對稱部分 $R - R^{\\T} = 2\\sin\\theta\\,[\\hat\\omega]$ 裡（Rodrigues 公式中的 $I$ 與 $[\\hat\\omega]^2$ 項都是對稱的，相減就消掉了）。$\\cos^{-1}$ 只給出 $[0, \\pi]$ 的角度，所以對數永遠挑「較短的轉法」：繞 $\\hat\\omega$ 轉 220° 和繞 $-\\hat\\omega$ 轉 140° 是同一個 $R$，$\\log R$ 回傳的是後者。`,
+    simHint: '把 θ 從 0 拉到 360°：下方圖中 θ_out 在 180° 折返，紫色的 log 軸同時翻到 −ω̂。紅色粗弧是 x_b 實際轉過的 θ_in，紫色粗弧是 log 描述的「較短的路」。也可以把「輸入」切成「自由旋轉」，直接在 3D 畫面裡拖曳物體。',
   },
   {
     title: 'θ = π 與 θ = 0 的特殊情況',
@@ -125,6 +128,8 @@ const R0_TILT = RotX(70 * DEG);
 const PITCH = 0.12;
 const PATH_T = 2.4;
 const FULL = { sin: true, cos: true };
+const PLOT_TITLE = 'log 回傳的角度 θ_out（紫）；灰色虛線：若不折返';
+const ZERO3: Mat = zeros(3, 3);
 
 type Input = 'axis' | 'free';
 type Motion = 'axis' | 'top';
@@ -142,6 +147,11 @@ const CSS = `
 .c302 .c302-hint { position: absolute; right: 0.5rem; bottom: 0.3rem; font-size: 0.72rem; color: var(--fg-muted); pointer-events: none; text-align: right; }
 .c302 .mr-kv { margin: 0.2rem 0; }
 .c302 .mr-plot { margin-top: 0.2rem; }
+.c302 .c302-capm { display: inline-flex; flex-direction: column; align-items: center; gap: 0.05rem; }
+.c302 .c302-capm .mr-matrix { margin: 0; }
+.c302 .c302-capm .mr-mlabel { display: none; }
+.c302 .c302-cap { font-size: 0.78rem; line-height: 1.15; color: var(--fg-muted); }
+.c302 .c302-capm.off { opacity: 0.4; }
 `;
 
 // ---------------------------------------------------------------------------
@@ -216,14 +226,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const rSin = new Arrow3D('--series-4', 0.016, 0.08);
   const rCos = new Arrow3D('--series-5', 0.016, 0.08);
   scene.scene.add(rSin.group, rCos.group);
-  // matrix logarithm
+  // matrix logarithm: its axis (both ±ω̂ at θ = π) and, as thick arcs, the way the x_b tip actually went
+  // (θ_in about ω̂, red) versus the way log R describes it (θ_out ≤ π about the returned axis, purple)
   const logLine = new DashedSegments(scene, '--series-5', 1, { dash: 0.06, gap: 0.05 });
   const logArrows = [0, 1].map(() => { const a = new Arrow3D('--series-5', 0.02, 0.12); scene.scene.add(a.group); return a; });
   const logLabel = label3D(scene, 'log R', '--series-5', 0.75);
-  const logArc = new Trail(scene, '--series-5', { dashed: true, max: 100 });
-  // two paths from I to R
-  const pathExp = [0, 1, 2].map(() => new Trail(scene, '--series-6', { opacity: 0.9, max: 200 }));
-  const pathEul = [0, 1, 2].map(() => new Trail(scene, '--series-8', { opacity: 0.9, max: 200 }));
+  const longArc = new TubePath(scene, '--axis-x', 0.008, 0.8);
+  const logArc = new TubePath(scene, '--series-5', 0.014);
+  // two paths from I to R (tubes, so they stay visible on small screens)
+  const pathExp = [0, 1, 2].map(() => new TubePath(scene, '--series-6', 0.008));
+  const pathEul = [0, 1, 2].map(() => new TubePath(scene, '--series-8', 0.008));
+  let pathCache: { key: string; pe: Vec[][]; pu: Vec[][] } | null = null;
   const sprites = [axisLabel, wLabel, logLabel];
 
   const drag = attachDrag3D(scene, {
@@ -239,7 +252,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     },
     objectMode: () => S.input === 'free' && S.dragObject && S.scenario === 3,
     onRotate: (axis, angle) => { S.Rfree = matMul(rotAxisAngle(axis, angle), S.Rfree); update(); },
-    onDragState: (k) => { guide.visible = k === 'axis'; update(); },
+    onDragState: (k) => {
+      guide.visible = k === 'axis';
+      // a long arcball drag multiplies many small rotations: snap the product back onto SO(3) when it ends
+      if (k === null) S.Rfree = ProjectToSO3(S.Rfree);
+      update();
+    },
   });
 
   // ---- controls ----
@@ -313,6 +331,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const readRow = el('div', { class: 'c302-eq' });
   root.appendChild(readRow);
   const mvR = labelled(readRow, 'R =', 3);
+  // step 3: R = I + sin θ [ω̂] + (1 − cos θ)[ω̂]², the two terms as numbers (captions on top keep the row narrow)
+  const termSpan = el('span', { class: 'c302-eq', style: { margin: '0' } });
+  readRow.appendChild(termSpan);
+  termSpan.appendChild(mathEl('= I \\,+'));
+  const sinM = captioned(termSpan, '\\sin\\theta\\,[\\hat\\omega]');
+  termSpan.appendChild(mathEl('+'));
+  const cosM = captioned(termSpan, '(1-\\cos\\theta)\\,[\\hat\\omega]^2');
   // step 2: [ω_s], [ω_b]
   const omegaSpan = el('span', { class: 'c302-eq', style: { margin: '0' } });
   readRow.appendChild(omegaSpan);
@@ -329,35 +354,32 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   chainSpan.appendChild(mathEl('='));
   const mvEnd = labelled(chainSpan, "p'", 2);
 
-  const kv1 = kv(readRow, ['ω = ω̂ dθ/dt（rad/s）', '|ṗ| = |ω|·(到軸距離)']);
+  const kv1 = kv(readRow, ['ω = ω̂ dθ/dt（rad/s）', '尖端速率 |ω × p|']);
   const kv2 = kv(readRow, ['ω_s（{s} 座標）', 'ω_b（{b} 座標）', 'R ω_b（應等於 ω_s）']);
   const kv3 = kv(readRow, ['det R', '‖RᵀR − I‖', '|p′ − 圓心| vs 半徑']);
   const kvLog = kv(readRow, ['tr R', 'θ = cos⁻¹((trR − 1)/2)', 'log 的軸 ω̂', 'ω̂θ（指數座標）']);
   const kvEul = kv(readRow, ['ZYX Euler (α, β, γ)', 'log R = ω̂θ', '∫ω_s dt：一步（繞 ω̂）', '∫ω_s dt：三步（ZYX）']);
 
+  // colours are CSS variable names: Plot2D resolves them at draw time, so a theme switch just works
+  let plotTitle = PLOT_TITLE;
   const plot = new Plot2D(root, {
-    title: 'log 回傳的角度 θ_out（紫）；虛線：若不折返',
+    title: PLOT_TITLE,
     xLabel: 'θ_in（度）',
     yLabel: 'θ_out（度）',
-    series: plotSeries(),
+    series: [
+      { name: 'θ_out = ‖log R‖', color: '--series-5', width: 2.2 },
+      { name: '若不折返：θ_out = θ_in', color: '--fg-muted', dash: [4, 4], width: 1.2 },
+    ],
     xRange: [0, 360],
-    yRange: [0, 200],
-    height: 132,
+    yRange: [0, 360],
+    height: 150,
     legend: false,
   });
   {
     const xs: number[] = [], ys: number[] = [];
     for (let k = 0; k <= 360; k += 2) { xs.push(k); ys.push(foldedAngle(k * DEG).theta / DEG); }
     plot.setXY(0, xs, ys);
-    plot.setXY(1, [0, 200], [0, 200]);
-  }
-  const unsubTheme = ctx.onThemeChange(() => plot.setOptions({ series: plotSeries() }));
-
-  function plotSeries() {
-    return [
-      { name: 'θ_out = ‖log R‖', color: cssVar('--series-5', '#7c3aed'), width: 2.2 },
-      { name: '若不折返：θ_out = θ_in', color: cssVar('--fg-muted', '#777'), dash: [4, 4], width: 1.2 },
-    ];
+    plot.setXY(1, [0, 360], [0, 360]);
   }
 
   // ---- helpers ----
@@ -411,11 +433,30 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (!playing) loop.stop();
   }
 
+  /** Tips of the three axes along the single-axis path and along the ZYX path (memoised by `key`). */
+  function pathPoints(Rt: Mat, lg: LogInfo, key: string): { pe: Vec[][]; pu: Vec[][] } {
+    if (pathCache?.key === key) return pathCache;
+    const N = 72;
+    const pe: Vec[][] = [[], [], []], pu: Vec[][] = [[], [], []];
+    for (let k = 0; k <= N; k++) {
+      const u = k / N;
+      const Re = expPath(Rt, u), Ru = eulerPath(Rt, u);
+      const off = S.helix && lg.omghat ? vecScale(lg.omghat, PITCH * lg.theta * u) : [0, 0, 0];
+      for (let j = 0; j < 3; j++) {
+        pe[j].push(vecAdd([Re[0][j], Re[1][j], Re[2][j]], off));
+        pu[j].push([Ru[0][j], Ru[1][j], Ru[2][j]]);
+      }
+    }
+    pathCache = { key, pe, pu };
+    return pathCache;
+  }
+
   const loop = createLoop((rawDt) => {
     // createLoop can report a slightly negative dt on its first frame (rAF timestamp < start time)
     const dt = Math.max(0, rawDt);
     if (pathAnim) {
-      pathAnim.u = Math.min(1, pathAnim.u + dt / PATH_T);
+      // the path demo (step 6) has no speed control of its own: undo the playback speed chosen in steps 1–2
+      pathAnim.u = Math.min(1, pathAnim.u + dt / (loop.speed > 0 ? loop.speed : 1) / PATH_T);
       if (pathAnim.u >= 1) { pathAnim = null; if (!playing) loop.stop(); }
     } else if (playing) {
       if (S.input === 'free') { /* nothing moves in free mode */ } else if (S.motion === 'top') {
@@ -490,17 +531,20 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
     // orbits and swept arcs of the three tips (fixed-axis motion)
     const arcsOn = (sc === 0 || sc === 1 || sc === 3 || sc === 4) && S.input === 'axis' && S.motion === 'axis' && !pathAnim;
-    // in the log steps only the x_b tip is traced, to compare with the log's short way round
+    // in the log steps only the x_b tip is traced (as a thick arc), to compare with the log's short way round
     const onlyX = sc === 3 || sc === 4;
     for (let j = 0; j < 3; j++) {
       orbits[j].setVisible(arcsOn && (!onlyX || j === 0));
-      arcs[j].setVisible(arcsOn && (!onlyX || j === 0));
+      arcs[j].setVisible(arcsOn && !onlyX);
       if (arcsOn) {
         const p0 = [S.R0[0][j], S.R0[1][j], S.R0[2][j]];
         orbits[j].set(orbitPoints(w, p0, 0, TWO_PI, 90));
-        arcs[j].set(orbitPoints(w, p0, 0, S.theta, Math.max(2, Math.ceil(S.theta / (4 * DEG)))));
+        if (!onlyX) arcs[j].set(orbitPoints(w, p0, 0, S.theta, Math.max(2, Math.ceil(S.theta / (4 * DEG)))));
       }
     }
+    const longOn = arcsOn && onlyX;
+    longArc.setVisible(longOn);
+    if (longOn) longArc.set(`${S.az},${S.el},${S.theta}`, () => orbitPoints(w, [1, 0, 0], 0, S.theta, Math.max(2, Math.ceil(S.theta / (3 * DEG)))));
     topTrails.forEach((t) => t.setVisible(sc === 1 && S.motion === 'top'));
 
     // projection of ω onto the axes of {s} or {b} (step 2)
@@ -545,7 +589,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     logLine.setVisible(logOn && lg!.omghat != null);
     logArrows.forEach((a) => { a.visible = false; });
     logLabel.visible = false;
-    logArc.setVisible(false);
+    logArc.setVisible(logOn && lg?.omghat != null);
     if (logOn && lg && lg.omghat) {
       const a = lg.omghat;
       logLine.set([[vecScale(a, -1.4), vecScale(a, 1.4)]]);
@@ -554,26 +598,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       logLabel.visible = true;
       logLabel.position.set(a[0], a[1], a[2] + 0.12);
       // the short way round for the x_b tip: log R rotates I into R, so the arc starts at x̂_s
-      logArc.setVisible(true);
-      logArc.set(orbitPoints(a, [1, 0, 0], 0, lg.theta, 60));
+      logArc.set(lg.expc.map((x) => x.toFixed(6)).join(','), () => orbitPoints(a, [1, 0, 0], 0, lg.theta, 60));
     }
 
-    // two paths from I to R (step 6)
-    const pathsOn = sc === 5;
-    for (let j = 0; j < 3; j++) { pathExp[j].setVisible(pathsOn); pathEul[j].setVisible(pathsOn); }
+    // two paths from I to R (step 6); the tubes are rebuilt only when R or the helix option changes
+    const pathsOn = sc === 5 && lg != null;
+    for (let j = 0; j < 3; j++) { pathExp[j].setVisible(pathsOn); pathEul[j].setVisible(pathsOn && !S.helix); }
     if (pathsOn && lg) {
-      const N = 72;
+      const key = `${Rt.flat().map((x) => x.toFixed(6)).join(',')}|${S.helix}`;
+      const pts = () => pathPoints(Rt, lg, key);
       for (let j = 0; j < 3; j++) {
-        const pe: Vec[] = [], pu: Vec[] = [];
-        for (let k = 0; k <= N; k++) {
-          const u = k / N;
-          const Re = expPath(Rt, u), Ru = eulerPath(Rt, u);
-          const off = S.helix && lg.omghat ? vecScale(lg.omghat, PITCH * lg.theta * u) : [0, 0, 0];
-          pe.push(vecAdd([Re[0][j], Re[1][j], Re[2][j]], off));
-          pu.push([Ru[0][j], Ru[1][j], Ru[2][j]]);
-        }
-        pathExp[j].set(pe);
-        pathEul[j].set(S.helix ? [] : pu);
+        pathExp[j].set(key, () => pts().pe[j]);
+        pathEul[j].set(key, () => pts().pu[j]);
       }
     }
 
@@ -613,12 +649,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function updateReadouts(R: Mat, Rt: Mat, lg: LogInfo | null, om: ReturnType<typeof omegaFromDerivative> | null, pr: ReturnType<typeof rotatePointTerms> | null): void {
     const sc = S.scenario;
-    mvR.set(R, { highlightCols: ['x', 'y', 'z'] });
+    // two decimals in the Rodrigues step, so that R and its two terms fit on one line
+    mvR.set(R, { highlightCols: ['x', 'y', 'z'], digits: sc === 2 ? 2 : 3 });
     if (sc === 0 && om) {
       kv1.set('ω = ω̂ dθ/dt（rad/s）', fmtVec(om.wS, 2));
       const w = norm(om.wS);
       const d = [0, 1, 2].map((j) => norm(cross(om.wS, [R[0][j], R[1][j], R[2][j]])));
-      kv1.set('|ṗ| = |ω|·(到軸距離)', `x_b：${fmt(d[0], 2)}　y_b：${fmt(d[1], 2)}　z_b：${fmt(d[2], 2)}　（|ω| = ${fmt(w, 2)}）`);
+      kv1.set('尖端速率 |ω × p|', `x_b：${fmt(d[0], 2)}　y_b：${fmt(d[1], 2)}　z_b：${fmt(d[2], 2)}　（|ω| = ${fmt(w, 2)} rad/s）`);
     }
     if (sc === 1 && om) {
       mvWs.set(om.WS);
@@ -628,6 +665,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       kv2.set('R ω_b（應等於 ω_s）', `${fmtVec(matVec(R, om.wB), 3)}　✓　|ω_s| = |ω_b| = ${fmt(norm(om.wB), 3)}`);
     }
     if (sc === 2 && pr) {
+      // the matrix terms (sin term skew-symmetric, (1 − cos) term symmetric); a switched-off term shows as zeros
+      const T = rodriguesTerms(axisVec(), S.theta);
+      sinM.mv.set(S.terms.sin ? T.sinTerm : ZERO3);
+      cosM.mv.set(S.terms.cos ? T.cosTerm : ZERO3);
+      sinM.box.classList.toggle('off', !S.terms.sin);
+      cosM.box.classList.toggle('off', !S.terms.cos);
       mvP.set(pr.p);
       mvSinP.set(S.terms.sin ? pr.sinPart : [0, 0, 0]);
       mvCosP.set(S.terms.cos ? pr.cosPart : [0, 0, 0]);
@@ -643,11 +686,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       kvLog.set('θ = cos⁻¹((trR − 1)/2)', `${fmt(lg.theta, 4)} rad（${fmt(lg.theta / DEG, 1)}°）`);
       kvLog.set('log 的軸 ω̂', lg.omghat ? `${lg.branch === 'pi' ? '±' : ''}${fmtVec(lg.omghat, 3)}` : '沒有定義（任何軸都行）');
       kvLog.set('ω̂θ（指數座標）', fmtVec(lg.expc, 3));
-      const marks: { x?: number; y?: number; label?: string; color?: string }[] = [{ x: 180, label: 'π：軸翻面' }];
+      const marks: Marker[] = [{ x: 180, label: 'π：軸翻面' }];
       if (S.input === 'axis') {
+        const thIn = S.theta / DEG;
         const f = foldedAngle(S.theta);
-        const near = Math.abs(S.theta / DEG - 180) < 25;
-        marks.push({ x: S.theta / DEG, y: f.theta / DEG, label: near ? undefined : `θ_in = ${fmt(S.theta / DEG, 0)}°`, color: cssVar('--series-5', '#7c3aed') });
+        // grey dot: where θ_out would be without the fold; purple dot: what log R returns. The numbers go in the
+        // title (a label next to the dot would sit on the curve itself for θ_in < 180°)
+        if (f.flipped) marks.push({ x: thIn, y: thIn, color: '--fg-muted' });
+        marks.push({ x: thIn, y: f.theta / DEG, color: '--series-5' });
+        const narrowPlot = plot.el.clientWidth > 0 && plot.el.clientWidth < 480;
+        const title = `θ_in = ${fmt(thIn, 0)}° → ${narrowPlot ? '' : 'log 回傳 '}θ_out = ${fmt(f.theta / DEG, 0)}°；灰色：若不折返`;
+        if (title !== plotTitle) { plotTitle = title; plot.setOptions({ title }); }
       }
       plot.setMarkers(marks);
     }
@@ -680,6 +729,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     box6.style.display = sc === 5 ? '' : 'none';
     mvR.el.style.display = sc === 1 ? 'none' : '';
     omegaSpan.style.display = sc === 1 ? '' : 'none';
+    termSpan.style.display = sc === 2 ? '' : 'none';
     chainSpan.style.display = sc === 2 ? '' : 'none';
     kv1.el.style.display = sc === 0 ? '' : 'none';
     kv2.el.style.display = sc === 1 ? '' : 'none';
@@ -740,7 +790,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onStep,
     destroy() {
       loop.stop();
-      unsubTheme();
       drag.destroy();
       triS.dispose();
       triB.dispose();
@@ -765,13 +814,20 @@ function labelled(parent: HTMLElement, tex: string, digits = 3): MatrixHandle {
   return mv;
 }
 
+/** A matrixView with a small KaTeX caption above it instead of a label on its left (keeps a row of matrices narrow). */
+function captioned(parent: HTMLElement, tex: string, digits = 2): { mv: MatrixHandle; box: HTMLElement } {
+  const box = el('span', { class: 'c302-capm' }, el('span', { class: 'c302-cap' }, mathEl(tex)));
+  parent.appendChild(box);
+  return { mv: matrixView(box, { digits }), box };
+}
+
 const SCENARIOS: { label: string; title: string }[] = [
   { label: '① 角速度', title: 'ω = ω̂ θ̇ 與 ṗ = ω × p' },
-  { label: '② ω_s 與 ω_b', title: 'ṘRᵀ 與 RᵀṘ' },
+  { label: '② ω_s、ω_b', title: 'ṘRᵀ 與 RᵀṘ' },
   { label: '③ Rodrigues', title: 'exp 的三項' },
   { label: '④ log', title: '由 R 反推 (ω̂, θ)' },
-  { label: '⑤ θ = π／0', title: '對數的特殊情況' },
-  { label: '⑥ 不是 Euler 角', title: '一步 vs 三步' },
+  { label: '⑤ 特殊角', title: 'θ = π 與 θ = 0：對數的特殊情況' },
+  { label: '⑥ 非 Euler 角', title: '一步 vs 三步' },
 ];
 
 const lesson: Lesson = { meta, steps, quiz, mount };

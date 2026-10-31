@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MatrixExp3, MatrixLog3, RotX, RotY, VecToso3, approxEqual, det, eye, matMul, matVec, norm, so3ToVec, transpose, vecScale } from '@/mr';
+import { MatrixExp3, MatrixLog3, RotX, RotY, VecToso3, approxEqual, det, eye, matMul, matScale, matSub, matVec, norm, so3ToVec, transpose, vecScale } from '@/mr';
 import {
   anglesFromAxis, axisFromAngles, eulerPath, expPath, fixedAxisMotion, foldedAngle, helixPoint, integratedOmega, logInfo,
   omegaFromDerivative, orbitPoints, rodriguesTerms, rotAxisAngle, rotatePointTerms, topMotion,
@@ -22,6 +22,14 @@ describe('Rodrigues terms', () => {
       const { R } = rodriguesTerms(w, th);
       expect(approxEqual(R, MatrixExp3(VecToso3(vecScale(w, th))), 1e-12)).toBe(true);
     }
+  });
+
+  it('sin term is skew-symmetric, (1 − cos θ) term symmetric, so R − Rᵀ = 2 sin θ [ω̂] (used by the log)', () => {
+    const th = 2.2;
+    const { sinTerm, cosTerm, R } = rodriguesTerms(w, th);
+    expect(approxEqual(transpose(sinTerm), matScale(sinTerm, -1), 1e-12)).toBe(true);
+    expect(approxEqual(transpose(cosTerm), cosTerm, 1e-12)).toBe(true);
+    expect(approxEqual(matSub(R, transpose(R)), matScale(VecToso3(w), 2 * Math.sin(th)), 1e-12)).toBe(true);
   });
 
   it('dropping the (1 − cos θ) term breaks orthogonality: det = 1 + sin²θ', () => {

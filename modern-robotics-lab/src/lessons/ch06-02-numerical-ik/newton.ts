@@ -328,3 +328,89 @@ export function poseReachable(t: Task): { reachable: boolean; w: [number, number
   const r = Math.hypot(w[0], w[1]);
   return { reachable: r <= L1 + L2 + 1e-12 && r >= Math.abs(L1 - L2) - 1e-12, w, r };
 }
+
+// ---------------------------------------------------------------------------
+// Moving targets and the tracking integrator (last step of the lesson)
+// ---------------------------------------------------------------------------
+
+/** A target pose moving around a circle at constant angular rate. */
+export interface CirclePath {
+  cx: number;
+  cy: number;
+  rho: number;
+  /** Angular rate along the circle (rad/s) and phase at t = 0 (rad). */
+  omega: number;
+  a0: number;
+  /**
+   * 'radial': the target's x-axis always points away from the base, so the pose is reachable exactly
+   * when 0.8 m ≤ |p| ≤ 2.4 m for this arm. 'wiggle': φ = phi0 + amp·sin(a).
+   */
+  orient: { kind: 'radial' } | { kind: 'wiggle'; phi0: number; amp: number };
+}
+
+/** Target pose and its time derivative (analytic) at time t. */
+export function circleTarget(P: CirclePath, t: number): MovingTarget {
+  const a = P.a0 + P.omega * t;
+  const x = P.cx + P.rho * Math.cos(a);
+  const y = P.cy + P.rho * Math.sin(a);
+  const dx = -P.rho * P.omega * Math.sin(a);
+  const dy = P.rho * P.omega * Math.cos(a);
+  if (P.orient.kind === 'radial') {
+    return { x, y, phi: Math.atan2(y, x), dx, dy, dphi: (x * dy - y * dx) / (x * x + y * y) };
+  }
+  const { phi0, amp } = P.orient;
+  return { x, y, phi: phi0 + amp * Math.sin(a), dx, dy, dphi: amp * P.omega * Math.cos(a) };
+}
+
+const DEG = Math.PI / 180;
+
+/**
+ * The two tracking demos: a circle that stays well inside the workspace, and one whose outer part
+ * leaves it for about 2 s (|p| reaches 2.5 m > 2.4 m while the target points radially outward).
+ */
+export const TRACK_PATHS: CirclePath[] = [
+  { cx: 1.1, cy: 0.9, rho: 0.5, omega: 0.6, a0: 0, orient: { kind: 'wiggle', phi0: 30 * DEG, amp: 0.3 } },
+  { cx: 1.4, cy: 1.05, rho: 0.75, omega: 0.6, a0: -136 * DEG, orient: { kind: 'radial' } },
+];
+
+export interface TrackState {
+  theta: Vec;
+  t: number;
+  /** Joint rates commanded during the last sub-step. */
+  rates: Vec;
+  /** ‖ω_err‖ + ‖v_err‖ at the last sub-step. */
+  err: number;
+  /** Whether the target pose at time t can be reached at all. */
+  reachable: boolean;
+}
+
+/** Joint configuration that realises the target at t = 0 (Newton from a fixed guess, capped steps). */
+export function trackingStart(path: (t: number) => MovingTarget, guess: Vec): TrackState {
+  const tg = path(0);
+  const task: Task = { x: tg.x, y: tg.y, phi: tg.phi, positionOnly: false };
+  const run = runNewton(guess, task, { method: 'pinv', lambda: 0, maxStep: 0.5 }, 100);
+  const theta = run.records[run.records.length - 1].theta.slice();
+  return { theta, t: 0, rates: theta.map(() => 0), err: errorSize(run.records[run.records.length - 1]), reachable: poseReachable(task).reachable };
+}
+
+/**
+ * Advances the tracking controller θ̇ = J_b⁺ (Ad V_d + K V_err) by `dt` seconds with fixed explicit-Euler
+ * sub-steps of at most `h` (angles wrapped after every sub-step). Non-finite rates are zeroed so a
+ * degenerate Jacobian can never poison the state. Mutates and returns `s`.
+ */
+export function advanceTracking(s: TrackState, path: (t: number) => MovingTarget, dt: number, K: number, o: StepOptions, h = 1 / 120): TrackState {
+  let remaining = dt;
+  while (remaining > 1e-12) {
+    const step = Math.min(h, remaining);
+    const r = trackingRates(s.theta, path(s.t), false, K, o);
+    const qd = r.thetadot.map((x) => (Number.isFinite(x) ? x : 0));
+    s.theta = s.theta.map((x, i) => wrapToPi(x + qd[i] * step));
+    s.rates = qd;
+    s.err = r.err.omegaNorm + r.err.vNorm;
+    s.t += step;
+    remaining -= step;
+  }
+  const tg = path(s.t);
+  s.reachable = poseReachable({ x: tg.x, y: tg.y, phi: tg.phi, positionOnly: false }).reachable;
+  return s;
+}

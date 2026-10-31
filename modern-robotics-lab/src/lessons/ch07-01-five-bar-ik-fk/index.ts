@@ -12,9 +12,14 @@ import {
   motorSweep, symmetricMarginAngle, rprIK, rprFKAll, rprJoints,
   type Branch, type Config, type ElbowSide, type FiveBarGeom, type Mode, type Pose2, type Pt, type Side,
 } from './fiveBar';
+import { stewartCard } from './stewartSketch';
 
 const D = Math.PI / 180;
 const DEFAULT_MOTORS: [number, number] = [115 * D, 65 * D];
+/** FK step: elbows farther apart, so the second assembly mode sits clearly above the ground line. */
+const FK_MOTORS: [number, number] = [130 * D, 50 * D];
+/** Canvas labels stay below the mono overlay line at the top-left (px). */
+const LABEL_TOP = 30;
 const WORLD = { xmin: -2.6, xmax: 2.6, ymin: -0.8, ymax: 2.45 };
 /** The 3xRPR solutions reach a little lower than the five-bar. */
 const RPR_WORLD = { xmin: -2.6, xmax: 2.6, ymin: -1.1, ymax: 2.5 };
@@ -28,7 +33,7 @@ type ViewMode = 'fk' | 'ik' | 'open' | 'rpr';
 const steps: LessonStep[] = [
   {
     title: '哪些關節是馬達，哪些是被動的',
-    md: `平面五連桿（five-bar）由四根活動連桿加上地桿首尾相接，圍成**一個迴路**，共有五個旋轉關節。只有底座的兩個關節裝了馬達，稱為**致動關節（actuated joint）**；兩個肘關節與末端關節沒有馬達，是**被動關節（passive joint）**，它們的角度完全由迴路決定。
+    md: `平面五連桿（five-bar）由四根活動連桿加上地桿首尾相接，圍成**一個迴路**，共有五個旋轉關節。只有底座的兩個關節裝了馬達，稱為**致動關節（actuated joint）**；兩個肘關節與末端關節沒有馬達，是**被動關節（passive joint）**，它們的角度由馬達角透過迴路閉合決定。
 
 用 Grübler 公式數自由度（$N = 5$ 根連桿含地桿，$J = 5$ 個各有 1 自由度的關節）：
 
@@ -66,17 +71,17 @@ $$\\|p - B_1\\| = L_2, \\qquad \\|p - B_2\\| = L_4 ,$$
   },
   {
     title: '解會合併、會翻面',
-    md: `把兩個肘點越拉越開，兩個交點會互相靠近；當 $\\|B_1 - B_2\\| = L_2 + L_4$ 時兩圓相切，兩個 FK 解合而為一，兩根遠端桿排成一直線。這正是「可裝配馬達角」的邊界，再往外就沒有解。
+    md: `把兩個肘點越拉越開，兩個交點會互相靠近；當 $\\|B_1 - B_2\\| = L_2 + L_4$ 時兩圓相切，兩個 FK 解合而為一，兩根遠端桿排成一直線。這是「可裝配馬達角」的邊界，再往外就無解；它也是兩個裝配模式的接口：從這裡退回時，機構可能沿原來那一支，也可能**翻面**走進另一支。
 
-接近相切時，交點離 $B_1B_2$ 連線的距離約為 $\\sqrt{L\\,\\delta}$（$\\delta$ 是剩下的間隙，$L$ 為遠端桿長），它對 $\\delta$ 的變化率趨近無限大：馬達只轉 1°，末端可能移動好幾公分。這種馬達幾乎管不住末端的構型，就是下一課要正式定義的奇異點。`,
-    simHint: '依序按「遠離相切」「接近相切」「正好相切」，比較兩支 1° 位移箭頭與下方的位移讀數；再把 θ₁ 往左拉，馬達會停在相切邊界。',
+接近相切時，交點離 $B_1B_2$ 連線的距離約為 $\\sqrt{L\\,\\delta}$（$\\delta$ 是剩下的間隙，$L$ 為遠端桿長），它對 $\\delta$ 的變化率趨近無限大：馬達只轉 1°，末端就可能移動好幾公分。這種馬達幾乎管不住末端的構型，正是下一課要定義的奇異點。`,
+    simHint: '依序按「遠離相切」「接近相切」「正好相切」，比較兩支 1° 位移箭頭與下方讀數；「接近相切：另一個模式」是翻面後的另一支。把 θ₁ 往左拉，馬達會停在相切邊界。',
   },
   {
     title: '3×RPR、Stewart–Gough 與下一課',
     md: `「IK 容易、FK 困難」是並聯機構的共同特徵。平面 **3×RPR** 平台用三條可伸縮的腿撐住一塊三角板，中間的移動關節（P）是馬達：給定平台位姿，每條腿長只是一個距離公式；反過來由三個腿長求位姿，消去變數後得到六次多項式，最多 **6** 組實數解。空間中的 **Stewart–Gough 平台**有 6 條腿，IK 仍是 6 個距離公式，FK 卻最多有 **40** 組解。
 
 下一課把迴路閉合方程式微分，區分兩種奇異：遠端桿共線的**致動器奇異**，與一條腿伸直的**末端奇異**。`,
-    simHint: '拖動平台中心或外側的轉向把手：三個腿長立刻更新（IK），淡色虛線是同一組腿長的其他 FK 解。按「6 組解」看極端情況；最後兩個按鈕預覽下一課的兩種奇異。',
+    simHint: '拖動平台中心或外側的轉向把手：三個腿長立刻更新（IK），彩色虛線是同一組腿長的其他 FK 解。按「6 組解」看極端情況，下方卡片是 6 腿平台的示意圖；最後兩個按鈕預覽下一課的兩種奇異。',
   },
 ];
 
@@ -84,40 +89,40 @@ const quiz: QuizQuestion[] = [
   {
     question: 'Stewart–Gough 平台有 6 條可伸縮的腿。為什麼常說它的 IK 比 FK 容易？',
     options: [
-      '給定平台位姿，每條腿長都是一個獨立的距離公式；反過來給 6 個腿長，必須聯立 6 條耦合的非線性方程，最多可有 40 組解',
-      'IK 永遠只有唯一解，而 FK 一定無解',
-      '6 條腿彼此獨立，所以 FK 也只是 6 個互不相關的公式',
-      '因為平台只有 3 個自由度，比腿的數目少',
+      'IK 只要解一個 6×6 線性方程組，FK 則必須用 Newton 法迭代',
+      '6 條腿彼此獨立，所以 FK 同樣是 6 個互不相干的距離公式，只是計算量較大',
+      '給定位姿，每條腿長各是一個距離公式；給定 6 個腿長，卻要聯立 6 條耦合的非線性方程，最多 40 組解',
+      '平台只有 3 個自由度卻有 6 條腿，FK 成了方程比未知數多的超定問題',
     ],
-    answer: 0,
-    explanation: '給定位姿 $(R, p)$，第 $i$ 條腿長就是 $\\|p + R\\,b_i - a_i\\|$，六條腿各算各的，就像五連桿的 IK 拆成兩個 2R。反過來，六個腿長同時約束同一個位姿，必須聯立求解；這個多項式系統最多有 40 個（複數）解，實數解也常不只一個。平台有 6 個自由度，正好由 6 條腿驅動。',
+    answer: 2,
+    explanation: '給定位姿 $(R, p)$，第 $i$ 條腿長就是 $\\|p + R\\,b_i - a_i\\|$，六條腿各算各的，就像五連桿的 IK 拆成兩個 2R，不需要解任何方程組。反過來，六個腿長同時約束同一個位姿，必須聯立求解；這個多項式系統最多有 40 個（複數）解，實數解也常不只一個。平台有 6 個自由度，正好由 6 條腿驅動，並不是超定問題。',
   },
   {
     question: '把五連桿右底座的馬達拆掉，改裝在左肘，也就是改由 $\\theta_1$ 與 $\\phi_1$ 驅動。下列哪個說法正確？',
     options: [
-      'FK 變簡單了：左腿成為兩個關節都有馬達的 2R 開鏈，用 2R 正向運動學就得到唯一的末端位置',
-      'FK 仍然是兩圓求交點，而且一樣有兩種裝配模式',
-      '機構的自由度變成 1',
-      'IK 從此無解',
+      'FK 仍然是兩圓求交點，一樣有兩種裝配模式',
+      '機構的自由度變成 1，因為只剩一條腿裝了馬達',
+      'IK 從此無解，因為右腿沒有任何馬達',
+      'FK 反而變簡單：左腿成為兩個關節都有馬達的 2R 開鏈，末端位置唯一確定',
     ],
-    answer: 0,
-    explanation: '馬達換位置不改變 Grübler 算出的 dof（仍是 2），卻改變了哪個問題容易。左腿兩個關節都被指定後就是普通的 2R 開鏈，末端位置唯一確定；右腿兩個關節都是被動的，只要末端還在它的可達範圍內，它就只是跟著動、不再限制末端。IK 也還能解：只用左腿的 2R IK（兩組解）。可見「IK 易、FK 難」取決於馬達裝在哪裡。',
+    answer: 3,
+    explanation: '馬達換位置不改變 Grübler 算出的 dof（仍是 2），卻改變了哪個問題容易。左腿兩個關節都被指定後就是普通的 2R 開鏈，用 2R 正向運動學就得到唯一的末端位置；右腿兩個關節都是被動的，只要末端還在它的可達範圍內，它就只是跟著動。IK 也還能解：只用左腿的 2R IK（兩組解）。可見「IK 易、FK 難」取決於馬達裝在哪裡。',
   },
   {
     question: '五連桿的兩個 FK 解在什麼時候合併成一個？',
     options: [
-      '兩肘點距離 $\\|B_1 - B_2\\|$ 等於 $L_2 + L_4$（或 $|L_2 - L_4|$），兩圓相切，兩根遠端桿共線',
       '兩個馬達角相等時',
-      '末端位於兩個底座正中間時',
-      '左腿完全伸直時',
+      '兩肘點距離 $\\|B_1 - B_2\\|$ 等於 $L_2 + L_4$（或 $|L_2 - L_4|$），兩圓相切，兩根遠端桿共線',
+      '末端正好位於兩個底座的正中間時',
+      '左腿完全伸直、末端到達左腿的最遠距離時',
     ],
-    answer: 0,
+    answer: 1,
     explanation: 'FK 的兩個解是兩個圓的交點，只有兩圓相切時才會重合，這時 $B_1$、$p$、$B_2$ 在同一直線上。這個構型位於可裝配馬達角的邊界：再往外就無解，而在它附近末端對馬達角極度敏感。左腿伸直是另一回事：那是 IK 可達區的邊界，下一課會看到它屬於另一類奇異。',
   },
   {
     question: '在 IK 模式中，把末端拖到距離左底座正好 $L_1 + L_2$ 的位置（右腿仍可彎曲）。模擬中會剩幾組彼此不同的分支？',
-    options: ['4 組', '2 組', '1 組', '0 組'],
-    answer: 1,
+    options: ['0 組', '1 組', '2 組', '4 組'],
+    answer: 2,
     explanation: '左腿完全伸直時，「肘朝外」與「肘朝內」是同一個姿勢，左腿只剩 1 個解；右腿仍有 2 個。不同的組合從 $2\\times 2 = 4$ 變成 $1\\times 2 = 2$。IK 的分支是每條腿分開計數再相乘，這正是「拆成兩個獨立 2R」的結果。',
   },
 ];
@@ -127,6 +132,13 @@ const branchName = (b: Branch): string => `左${sideName(b[0])}・右${sideName(
 const deg = (x: number, d = 1): string => `${fmt(x / D, d)}°`;
 const sci = (x: number): string => (x === 0 ? '0' : x < 1e-3 ? x.toExponential(1) : fmt(x, 3));
 const centroid = (pts: Pt[]): Pt => [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+/** RGB of a resolved theme colour ('#rrggbb' or 'rgb(...)'); used to tint the workspace raster. */
+const rgbOf = (color: string): [number, number, number] => {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color.trim());
+  if (hex) { const n = parseInt(hex[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  const rgb = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(color);
+  return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : [37, 99, 235];
+};
 
 function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // ---------------------------------------------------------------- state
@@ -212,8 +224,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const gKV = kv(gWrap, Object.values(GK));
   const RK = { len: '腿長 ℓ₁, ℓ₂, ℓ₃（IK）', pose: '平台位姿 (x, y, θ)', n: 'FK：同一組腿長的實數解', sg: '6 腿 Stewart–Gough' };
   const rKV = kv(host, Object.values(RK));
+  const sgCard = stewartCard(host);
 
-  // ---------------------------------------------------------------- workspace raster (repainted when the lengths change)
+  // ---------------------------------------------------------------- workspace raster (repainted when the lengths or the theme change)
   const ws = new RasterLayer({ xmin: -2.8, xmax: 2.8, ymin: -2.6, ymax: 2.8 }, 224, 216);
   let wsKey = '';
   const inAnnulus = (side: Side, x: number, y: number): boolean => {
@@ -223,10 +236,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     return r <= Lp + Ld && r >= Math.abs(Lp - Ld);
   };
   function ensureWorkspace(): void {
-    const key = `${g.L1}|${g.L2}|${g.L3}|${g.L4}|${g.d}`;
+    const tint = cssVar('--accent', '#2563eb');
+    const key = `${g.L1}|${g.L2}|${g.L3}|${g.L4}|${g.d}|${tint}`;
     if (key === wsKey) return;
     wsKey = key;
-    ws.paint((x, y) => inAnnulus(0, x, y) && inAnnulus(1, x, y), { color: [37, 99, 235, 46] });
+    ws.paint((x, y) => inAnnulus(0, x, y) && inAnnulus(1, x, y), { color: [...rgbOf(tint), 50] });
   }
 
   // ---------------------------------------------------------------- helpers on the state
@@ -451,6 +465,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // ---------------------------------------------------------------- 3xRPR platform
   const ph = poseHandle(cv, { ...RPR_PRESETS.six }, {
+    color: '--warn',
     knob: 0.62,
     frameSize: 0.3,
     enabled: false,
@@ -543,6 +558,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     info.style.display = five ? '' : 'none';
     gWrap.style.display = step === 0 ? '' : 'none';
     rKV.el.style.display = five ? 'none' : '';
+    sgCard.style.display = five ? 'none' : '';
     cv.requestRender();
   }
 
@@ -605,7 +621,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (mode === 'rpr') return `IK：三個腿長由位姿直接算出。FK：這組腿長共有 ${rprSols.length} 個平台位姿。`;
     if (mode === 'open') return '迴路已拆開：兩條腿各自是 2R 開鏈，紅色箭頭是閉合殘差 g = p_L − p_R。';
     if (mode === 'ik') return `IK：給定末端，兩條腿各解一次 2R；目前分支 ${branchName(branch)}。`;
-    if (lockTh1) return '鎖住 θ₁ 後只剩 θ₂ 一個輸入：末端只能沿虛線（四連桿的耦合曲線）移動。';
+    if (lockTh1) return '鎖住 θ₁ 後左近端桿不動，機構成了只剩 θ₂ 一個輸入的四連桿：末端只能沿以 B₁ 為圓心的圓弧（虛線）移動。';
     return 'FK：馬達角決定兩個肘點，末端在兩個圓的交點上。';
   }
 
@@ -632,7 +648,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const half = c.ctx.measureText(str).width / 2 + 8;
     const [sx, sy] = c.toScreen(p);
     const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
-    const y = Math.min(c.height - 12, Math.max(12, sy + (style.dy ?? 0)));
+    const y = Math.min(c.height - 12, Math.max(LABEL_TOP, sy + (style.dy ?? 0)));
     c.text(c.toWorld(x, y), str, { ...style, dx: 0, dy: 0 });
   };
 
@@ -651,10 +667,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const muted = cssVar('--fg-muted', '#777');
     const A1 = basePoint(g, 0);
     const A2 = basePoint(g, 1);
-    const x0 = A1[0] - 0.3;
-    const x1 = A2[0] + 0.3;
-    c.line([x0, 0], [x1, 0], { color: muted, width: 2 });
-    for (let x = x0 + 0.06; x <= x1 + 1e-9; x += 0.12) c.line([x, 0], [x - 0.08, -0.08], { color: muted, width: 1 });
+    // ground link between the motors, hatched pivot pads under each motor only (keeps the middle readable)
+    c.line([A1[0], 0], [A2[0], 0], { color: muted, width: 2 });
+    for (const A of [A1, A2]) {
+      c.line([A[0] - 0.26, 0], [A[0] + 0.26, 0], { color: muted, width: 2 });
+      for (let x = A[0] - 0.2; x <= A[0] + 0.26 + 1e-9; x += 0.115) c.line([x, 0], [x - 0.08, -0.08], { color: muted, width: 1 });
+    }
     if (show.labels) c.text([0, -0.1], `地桿 d = ${fmt(g.d, 2)} m`, { color: muted, dy: 8, font: '11px sans-serif', bg: cssVar('--bg-elev', '#fff') });
   }
 
@@ -736,9 +754,23 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const active = current && Math.hypot(s.P[0] - current.P[0], s.P[1] - current.P[1]) < 1e-6;
       if (active) continue; // the active tip is drawn by the mechanism itself
       c.circle(s.P, 7 / c.scale, { color: accent, width: 2.5 });
-      if (current) labelInside(c, s.P, show.sens ? '另一解' : '另一個交點（另一個裝配模式）', { color: accent, dx: show.sens ? 34 : 0, dy: 20, bg: cssVar('--bg-elev', '#fff'), font: '12px sans-serif' });
     }
-    if (current && res.status === 'tangent') labelInside(c, current.P, '兩圓相切：兩解合一', { color: cssVar('--danger', '#b91c1c'), dy: -24, bg: cssVar('--bg-elev', '#fff'), font: 'bold 12px sans-serif' });
+  }
+
+  /** Labels for the FK circles, drawn after the mechanism so links and motors never cover them. */
+  function drawCircleLabels(c: Canvas2D, current: Config): void {
+    const accent = cssVar('--accent', '#2563eb');
+    const bg = cssVar('--bg-elev', '#fff');
+    const res = fkAll(g, current.th1, current.th2);
+    for (const s of res.solutions) {
+      if (Math.hypot(s.P[0] - current.P[0], s.P[1] - current.P[1]) < 1e-6) continue;
+      // on the far side of the other intersection, as seen from the active tip; never on the ground band
+      const below = s.P[1] <= current.P[1];
+      let anchor: Pt = [s.P[0], s.P[1] + (below ? -1 : 1) * (20 / c.scale)];
+      if (anchor[1] > -0.22 && anchor[1] < 0.14) anchor = [anchor[0], below ? -0.27 : 0.22];
+      labelInside(c, anchor, show.sens ? '另一解' : '另一個交點（另一個裝配模式）', { color: accent, dx: show.sens ? 34 : 0, bg, font: '12px sans-serif' });
+    }
+    if (res.status === 'tangent') labelInside(c, current.P, '兩圓相切：兩解合一', { color: cssVar('--danger', '#b91c1c'), dy: -24, bg, font: 'bold 12px sans-serif' });
   }
 
   function drawLoopArrows(c: Canvas2D, q: Config): void {
@@ -867,7 +899,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     for (const p of q) passiveSymbol(c, p, 1, 5);
     ph.draw();
     const cur = rprSols.findIndex((s) => isSame(s, pose));
-    c.overlay.textContent = `3×RPR：${rprSols.length} 組 FK 實數解（目前是 #${cur + 1}）`;
+    c.setOverlayText(`3×RPR：${rprSols.length} 組 FK 實數解（目前是 #${cur + 1}）`);
   }
 
   cv.draw = (c) => {
@@ -880,12 +912,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     drawGround(c);
     if (mode === 'open') {
       drawOpen(c);
-      c.overlay.textContent = `迴路拆開  θ = (${deg(open.th1, 0)}, ${deg(open.th2, 0)})`;
+      c.setOverlayText(`迴路拆開  θ = (${deg(open.th1, 0)}, ${deg(open.th2, 0)})`);
       return;
     }
     if (!cfg) {
       drawInvalid(c);
-      c.overlay.textContent = `FK  θ = (${deg(badMotors[0], 0)}, ${deg(badMotors[1], 0)})  無法裝配`;
+      c.setOverlayText(`FK  θ = (${deg(badMotors[0], 0)}, ${deg(badMotors[1], 0)})  無法裝配`);
       return;
     }
     const q = cfg;
@@ -901,21 +933,22 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     if (show.circles) drawCircles(c, q.th1, q.th2, q);
     drawFiveBar(c, q, { labels: show.labels });
+    if (show.circles) drawCircleLabels(c, q);
     if (show.loop) drawLoopArrows(c, q);
     if (show.sens) drawSensitivity(c, q);
     if (mode === 'ik') {
       labelInside(c, q.P, branchName(branch), { color: cssVar('--accent', '#2563eb'), dy: -24, bg: cssVar('--bg-elev', '#fff'), font: 'bold 12px sans-serif' });
-      c.overlay.textContent = `IK  p = (${fmt(q.P[0], 2)}, ${fmt(q.P[1], 2)})  → θ = (${deg(q.th1, 0)}, ${deg(q.th2, 0)})`;
+      c.setOverlayText(`IK  p = (${fmt(q.P[0], 2)}, ${fmt(q.P[1], 2)})  → θ = (${deg(q.th1, 0)}, ${deg(q.th2, 0)})`);
     } else {
       const n = fkAll(g, q.th1, q.th2).solutions.length;
-      c.overlay.textContent = `FK  θ = (${deg(q.th1, 0)}, ${deg(q.th2, 0)})  → ${n} 個解`;
+      c.setOverlayText(`FK  θ = (${deg(q.th1, 0)}, ${deg(q.th2, 0)})  → ${n} 個解`);
     }
   };
 
   // ---------------------------------------------------------------- per-step presets
   const asFk = (fn: () => void) => () => { setMode('fk'); setLock(false); fn(); update(); };
   const leftStraight = (): void => {
-    for (const a of [60, 70, 50, 80, 40].map((x) => x * D)) {
+    for (const a of [45, 40, 50, 60, 35].map((x) => x * D)) {
       const A1 = basePoint(g, 0);
       const P: Pt = [A1[0] + (g.L1 + g.L2) * Math.cos(a), A1[1] + (g.L1 + g.L2) * Math.sin(a)];
       const c = ikConfig(g, P, [1, 1]);
@@ -946,8 +979,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       apply: () => { setMode('ik'); if (!cfg) resetConfig(); setBranch(b); },
     })),
     [
-      { label: '一般構型（兩個交點）', apply: asFk(() => presetMotors(DEFAULT_MOTORS[0], DEFAULT_MOTORS[1], 1)) },
-      { label: '另一個裝配模式', apply: asFk(() => presetMotors(DEFAULT_MOTORS[0], DEFAULT_MOTORS[1], -1)) },
+      { label: '一般構型（兩個交點）', apply: asFk(() => presetMotors(FK_MOTORS[0], FK_MOTORS[1], 1)) },
+      { label: '另一個裝配模式', apply: asFk(() => presetMotors(FK_MOTORS[0], FK_MOTORS[1], -1)) },
       { label: '無法裝配的馬達角', apply: asFk(() => presetMotors(160 * D, 20 * D)) },
     ],
     [

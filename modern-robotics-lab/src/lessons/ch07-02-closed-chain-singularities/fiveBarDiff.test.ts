@@ -3,7 +3,7 @@ import { inv, matMul, svd } from '@/mr';
 import {
   DEFAULT_GEOM, assembleConfig, basePoint, buildSnapPath, constraintJacobians, det2, doubleSingularConfig, driveTip,
   eeJacobian, fkMode, fkNearest, holdingTorques, ikNearest, indicators, inverseRates, jacobianFD, lockStretch,
-  loopResidual, motorSlice, perLegForm, snapConfig, softestDirection, straightLegConfig, symmetricMarginAngle,
+  loopResidual, motorSlice, passiveRateMap, perLegForm, snapConfig, softestDirection, straightLegConfig, symmetricMarginAngle,
   tipVelocity, velocityEllipse, type Config, type FiveBarGeom, type Pt,
 } from './fiveBarDiff';
 
@@ -31,6 +31,23 @@ describe('constraint Jacobians from the loop closure', () => {
     const cPh2 = dg({ phi2: c.phi2 + h });
     close(Ha, [[cTh1[0], cTh2[0]], [cTh1[1], cTh2[1]]], 1e-5);
     close(Hp, [[cPh1[0], cPh2[0]], [cPh1[1], cPh2[1]]], 1e-5);
+  });
+
+  it('the passive-rate map −H_p^{-1} H_a matches finite differences of the passive angles along FK', () => {
+    const c = general();
+    const P = passiveRateMap(g, c)!;
+    const h = 1e-6;
+    for (const m of [0, 1]) {
+      const f = fkNearest(g, c.th1 + (m === 0 ? h : 0), c.th2 + (m === 1 ? h : 0), c.P)!;
+      const b = fkNearest(g, c.th1 - (m === 0 ? h : 0), c.th2 - (m === 1 ? h : 0), c.P)!;
+      expect(P[0][m]).toBeCloseTo((f.phi1 - b.phi1) / (2 * h), 5);
+      expect(P[1][m]).toBeCloseTo((f.phi2 - b.phi2) / (2 * h), 5);
+    }
+    // the loop stays closed to first order: H_a + H_p (−H_p^{-1} H_a) = 0
+    const { Ha, Hp } = constraintJacobians(g, c);
+    const HpP = matMul(Hp, P);
+    close([[Ha[0][0] + HpP[0][0], Ha[0][1] + HpP[0][1]], [Ha[1][0] + HpP[1][0], Ha[1][1] + HpP[1][1]]], [[0, 0], [0, 0]], 1e-12);
+    expect(passiveRateMap(g, tangent())).toBeNull();
   });
 
   it('J = J_a - J_p H_p^{-1} H_a equals A^{-1} B and the finite-difference FK Jacobian', () => {

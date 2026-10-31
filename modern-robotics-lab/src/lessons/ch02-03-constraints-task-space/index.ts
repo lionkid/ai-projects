@@ -14,7 +14,7 @@ import {
 const steps: LessonStep[] = [
   {
     title: '硬幣只能往前滾',
-    md: `從正上方看一枚直立滾動的硬幣（或一台單輪車）。描述它需要朝向角與接觸點的位置：$q = (\\phi, x, y)$，C-space 是 3 維的 $\\R^2 \\times S^1$。
+    md: `從正上方看一枚直立滾動的硬幣（或一台單輪車）。先不管硬幣本身滾了幾圈，描述它只需要朝向角與接觸點的位置：$q = (\\phi, x, y)$，C-space 是 3 維的 $\\R^2 \\times S^1$。
 
 輪子**不打滑**時，接觸點只能沿著輪子的朝向移動：可以前進、後退、原地轉向，卻**無法直接往側邊滑**。可是經驗告訴我們，來回幾次之後，車子仍然停得進正側邊的車位。速度受到限制，能到達的組態卻好像一個也沒少——這一課要把這件事說清楚。`,
     simHint: '點一下上方畫布，用 W/S 前進後退、A/D 轉向（或拉 v、ω 滑桿）；再按「嘗試側滑」看看會怎樣。',
@@ -25,8 +25,10 @@ const steps: LessonStep[] = [
 
 $$\\dot x\\sin\\phi - \\dot y\\cos\\phi = 0 \\iff \\underbrace{\\begin{bmatrix} 0 & \\sin\\phi & -\\cos\\phi \\end{bmatrix}}_{A(q)} \\begin{bmatrix} \\dot\\phi \\\\ \\dot x \\\\ \\dot y \\end{bmatrix} = 0$$
 
-形如 $A(q)\\dot q = 0$、$A(q) \\in \\R^{k \\times n}$ 的速度約束稱為 **Pfaffian 約束**。這裡 $k = 1$、$n = 3$：每一瞬間，3 維的速度只剩 2 個方向可用——沿朝向前進（$v$）與原地轉向（$\\omega$），也就是 $\\dot q = (\\omega,\\ v\\cos\\phi,\\ v\\sin\\phi)$。`,
-    simHint: '邊開邊看「數值」面板：A(q) 隨 φ 改變，A(q) q̇ 卻始終是 0。「速度空間」圖中的藍線就是此刻允許的 (ẋ, ẏ)。',
+形如 $A(q)\\dot q = 0$、$A(q) \\in \\R^{k \\times n}$ 的速度約束稱為 **Pfaffian 約束**。這裡 $k = 1$、$n = 3$：每一瞬間，3 維的速度只剩 2 個方向可用——沿朝向前進（$v$）與原地轉向（$\\omega$），也就是 $\\dot q = (\\omega,\\ v\\cos\\phi,\\ v\\sin\\phi)$。
+
+「速度空間」圖把這個限制畫了出來：藍線是此刻允許的 $(\\dot x, \\dot y)$，紅色虛線是被刪掉的側向；車子一轉向，藍線就跟著轉。`,
+    simHint: '車子正以固定的 v、ω 繞圈：看「數值」面板，A(q) 隨 φ 不停改變，A(q) q̇ 卻一直是 0；「速度空間」圖中的藍線就是此刻允許的 (ẋ, ẏ)。按「■ 煞車」可以停下。',
   },
   {
     title: '能不能積分？完整 vs 非完整',
@@ -52,9 +54,9 @@ $$(\\Delta x_b,\\ \\Delta y_b,\\ \\Delta\\phi) = (0,\\ s\\sin\\alpha,\\ 0)$$
   },
   {
     title: 'Task space 與 workspace',
-    md: `**Task space（任務空間）**由任務決定，只放任務在乎的座標：送貨只管 $(x, y)$，是 2 維；停車還要管朝向 $(x, y, \\phi)$，是 3 維。同一台車，任務不同，task space 就不同。
+    md: `**Task space**（任務空間）由任務決定，只放任務在乎的座標：送貨只管 $(x, y)$，是 2 維；停車還要管朝向 $(x, y, \\phi)$，是 3 維。同一台車，任務不同，task space 就不同。
 
-**Workspace（工作空間）**則由機器人決定：末端實際能到達的範圍。「對照」圖中的 2R 手臂要在紙上寫字：紙面座標是 task space，手臂的 workspace 是一個環帶。兩者不必相符——紙上落在環帶外的部分（紅色）就是做不到的任務。反過來，若用 6 軸手臂寫字，task space 只有 2–3 維，多出來的自由度可以拿來避開障礙。`,
+**Workspace**（工作空間）則由機器人決定：末端實際能到達的範圍。「對照」圖中的 2R 手臂要在紙上寫字：紙面座標是 task space，手臂的 workspace 是一個環帶。兩者不必相符——紙上落在環帶外的部分（紅色）就是做不到的任務。反過來，若用 6 軸手臂寫字，task space 只有 2–3 維，多出來的自由度可以拿來避開障礙。`,
     simHint: '拖曳「對照」圖中的紙張與筆尖，或切換 L₂：紅色是 task space 中超出 workspace 的部分。上方畫布的送貨點則不在乎車頭朝向。',
   },
   {
@@ -64,7 +66,7 @@ $$(\\Delta x_b,\\ \\Delta y_b,\\ \\Delta\\phi) = (0,\\ s\\sin\\alpha,\\ 0)$$
 $$T_{sb} = \\begin{bmatrix} \\cos\\phi & -\\sin\\phi & x \\\\ \\sin\\phi & \\cos\\phi & y \\\\ 0 & 0 & 1 \\end{bmatrix}$$
 
 前兩欄是 $\\hat x_b$、$\\hat y_b$ 在 $\\{s\\}$ 中的方向，第三欄是位置。注意 $\\hat x_b$ 正是允許的前進方向，$\\hat y_b$ 正是被禁止的側滑方向。第 3 章會把這套語言推廣到三維的 $\\SO(3)$ 與 $\\SE(3)$；先完成下方的自我檢測吧。`,
-    simHint: '開動車子，對照「數值」面板中 T_sb 的紅、綠兩欄與畫布上 {b} 的紅、綠軸。',
+    simHint: '車子正在繞圈：對照「數值」面板中 T_sb 的紅、綠兩欄與畫布上 {b} 的紅、綠軸，它們一起轉；第三欄則是 {b} 原點的位置。',
   },
 ];
 
@@ -146,12 +148,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let secMode: SecMode = 'vel';
   let stepNow = ctx.currentStep;
   let dirty = true;
+  let autoCruise = false;             // a step started the gentle circle (stopped again when another step opens)
   // pendulum (holonomic comparison)
   let psi = -0.9;
   let pendPointer: Pt | null = null;
   // task-space card
   let L2 = 0.6;
-  let paper = { cx: 0.95, cy: 0.6, w: 1.35, h: 0.85 };
+  // the default sheet pokes out of the annulus on both sides (beyond L1 + L2 and into the hole of radius |L1 − L2|)
+  let paper = { cx: 1.0, cy: 0.45, w: 1.5, h: 1.0 };
   let penTarget: Pt = [1.0, 0.5];
   let penTh: [number, number] = [0.3, 1.2];
   let penReach = true;
@@ -162,7 +166,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   simTitle(host, '俯視單輪車：速度受限，組態不受限', 'A(q) q̇ = 0');
   const cv = new Canvas2D(host, { aspect: 2, world: WORLD, overlay: true, margin: 0.01 });
   Object.assign(cv.overlay.style, { whiteSpace: 'pre', background: 'color-mix(in srgb, var(--sim-bg) 82%, transparent)', padding: '0.05rem 0.3rem', borderRadius: '4px' });
-  const kb = keyboardDrive(cv.el, { hint: '點一下畫布啟用鍵盤：W/S 前後、A/D 轉向、空白鍵煞車', onChange: () => { if (demo && kb.pressed.size) stopDemo(); dirty = true; } });
+  const kb = keyboardDrive(cv.el, {
+    hint: '點一下畫布啟用鍵盤：W/S 前後、A/D 轉向、空白鍵煞車',
+    onChange: () => { if (kb.pressed.size) { autoCruise = false; if (demo) stopDemo(); } dirty = true; },
+  });
+  // keyboardDrive consumes the arrow keys but lets them bubble up; the lesson view also listens for ← / → on window
+  // to change steps, so stop them here or driving with the arrow keys would flip the lesson step.
+  const stopArrowBubble = (ev: KeyboardEvent) => { if (ev.key.startsWith('Arrow')) ev.stopPropagation(); };
+  cv.el.addEventListener('keydown', stopArrowBubble);
 
   const panel = controlPanel(host, { compact: true });
   const r1 = row(panel);
@@ -184,9 +195,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     value: 'free',
     onChange: (t) => setTask(t),
   });
-  const sV = slider(panel, { label: '前進速度 v', min: -1, max: 1, step: 0.05, value: 0, unit: 'm/s', onInput: () => { dirty = true; } });
-  const sW = slider(panel, { label: '轉向率 ω', min: -1.5, max: 1.5, step: 0.05, value: 0, unit: 'rad/s', onInput: () => { dirty = true; } });
-  const sVS = slider(panel, { label: '側向速度 v⊥', min: -0.8, max: 0.8, step: 0.05, value: 0, unit: 'm/s', onInput: () => { dirty = true; } });
+  const own = () => { autoCruise = false; dirty = true; };
+  const sV = slider(panel, { label: '前進速度 v', min: -1, max: 1, step: 0.05, value: 0, unit: 'm/s', onInput: own });
+  const sW = slider(panel, { label: '轉向率 ω', min: -1.5, max: 1.5, step: 0.05, value: 0, unit: 'rad/s', onInput: own });
+  const sVS = slider(panel, { label: '側向速度 v⊥', min: -0.8, max: 0.8, step: 0.05, value: 0, unit: 'm/s', onInput: own });
   sVS.el.style.display = 'none';
   const r2 = row(panel);
   const slipBtn = button(r2, { label: '↔ 嘗試側滑', small: true, title: '命令車子直接往左側移動', onClick: () => trySlip() });
@@ -203,17 +215,20 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const l2Chips = presetChips(secCtl, ([[1.0, '1.0'], [0.6, '0.6'], [0.35, '0.35']] as const).map(([v, txt]) => ({ label: txt, apply: () => { L2 = v; repaintPaper(); updatePen(); } })), { label: '手臂 L₁ = 1、L₂ =' });
 
   numHost.appendChild(el('div', { class: 'mr-note', style: { margin: '0 0 0.2rem', fontWeight: '600', color: 'var(--fg)' } }, '數值'));
-  const info = kv(numHost, ['q = (φ, x, y)', 'q̇ = (φ̇, ẋ, ẏ)', '輸入', 'A(q) q̇']);
+  // dφ/dt is written ω here: a combining dot over φ renders badly in plain (non-KaTeX) text
+  const QD = 'q̇ = (ω, ẋ, ẏ)';
+  const info = kv(numHost, ['q = (φ, x, y)', QD, '輸入', 'A(q) q̇']);
   const aView = matrixView(numHost, { label: 'A(q) =', digits: 3 });
   const tView = matrixView(numHost, { label: 'T_sb =', digits: 2 });
   const status = el('div', { class: 'mr-note', style: { minHeight: '2.4em', margin: '0.3rem 0 0' } });
   numHost.appendChild(status);
 
+  // var(...) swatches follow theme switches
   legend(host, [
-    { color: cssVar('--accent'), label: '允許的速度方向' },
-    { color: cssVar('--danger'), label: '被禁止的側滑' },
-    { color: cssVar('--warn'), label: '軌跡／實際速度' },
-    { color: cssVar('--series-5'), label: '隨機輸入的終點' },
+    { color: 'var(--accent)', label: '允許的速度方向' },
+    { color: 'var(--danger)', label: '被禁止的側滑' },
+    { color: 'var(--warn)', label: '軌跡／實際速度' },
+    { color: 'var(--series-5)', label: '隨機輸入的終點' },
   ]);
   note(host, '位姿用 SE(2) 指數映射精確積分（等速圓弧），不會因 Euler 積分而慢慢漂移。');
 
@@ -267,7 +282,30 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     sV.set(0, { silent: true });
     sW.set(0, { silent: true });
     sVS.set(0, { silent: true });
+    autoCruise = false;
     stopDemo();
+    dirty = true;
+  }
+
+  /**
+   * Drive a gentle circle (radius 0.5 m) so A(q) and T_sb change live while the learner reads. Picks the turning
+   * direction whose circle stays inside the arena; if neither does, restarts from the initial pose.
+   */
+  function startCruise(): void {
+    stopDemo();
+    const v = 0.4, w = 0.8, R = v / w, m = 0.3;
+    const fits = (sg: number) => {
+      // turning centre: R to the left of the heading for ω > 0, to the right for ω < 0
+      const cx = q.x - sg * R * Math.sin(q.phi);
+      const cy = q.y + sg * R * Math.cos(q.phi);
+      return cx - R > WORLD.xmin + m && cx + R < WORLD.xmax - m && cy - R > WORLD.ymin + m && cy + R < WORLD.ymax - m;
+    };
+    let sg = fits(1) ? 1 : fits(-1) ? -1 : 0;
+    if (!sg) { q = { ...VIEW_POSE }; trail = [[q.x, q.y]]; sg = -1; }
+    sV.set(v, { silent: true });
+    sW.set(sg * w, { silent: true });
+    autoCruise = true;
+    if (!runner.running) { runner.start(); pb.setPlaying(true, { silent: true }); }
     dirty = true;
   }
 
@@ -389,7 +427,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.text(P(-0.36, 0.22), 'P', { color: done ? okc : muted, font: `600 13px ${cssVar('--font')}` });
       drawVehicle(c, g, { ghost: true, alpha: 0.6, frameSize: 0.32 });
       c.point([PARK_START.x, PARK_START.y], 3, { color: muted });
-      c.text([PARK_START.x, PARK_START.y], '起點', { color: muted, dx: -40 });
+      c.text([PARK_START.x, PARK_START.y], '起點', { color: muted, dy: 30, bg });
     } else if (task === 'deliver') {
       const done = doneAt != null;
       const col = done ? okc : cssVar('--series-6');
@@ -417,7 +455,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     // overlay
     let line2 = '';
     if (demo) line2 = `自動示範 ${demo.seg + 1}/${demo.plan.length}：${demo.plan[demo.seg].label}`;
-    else if (flash) line2 = '嘗試側滑：A(q)q̇ = −0.50 ≠ 0 → 被約束擋下';
+    else if (flash) line2 = '嘗試側滑：這個速度讓 A(q) 乘出 −0.50 ≠ 0 → 被約束擋下';
     else if (performance.now() < wallUntil) line2 = '撞到邊界了：轉向或倒車離開';
     else if (task === 'park') {
       const e = poseError(q, PARK_GOAL);
@@ -435,7 +473,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     set: (p) => { psi = Math.atan2(p[1], p[0]); pendPointer = p; sec.requestRender(); },
     onEnd: () => { pendPointer = null; sec.requestRender(); },
     radius: 9,
-    color: cssVar('--accent'),
+    color: '--accent',
     enabled: false,
   });
   const paperHandle = sec.addHandle({
@@ -447,7 +485,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       updatePen();
     },
     radius: 7,
-    color: cssVar('--fg-muted'),
+    color: '--fg-muted',
     label: '拖曳紙張',
     enabled: false,
   });
@@ -455,7 +493,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     get: () => penTarget,
     set: (p) => { penTarget = [p[0], p[1]]; clampPen(); updatePen(); },
     radius: 8,
-    color: cssVar('--accent'),
+    color: '--accent',
     label: '筆尖',
     enabled: false,
   });
@@ -514,9 +552,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       if (performance.now() < flashUntil && model === 'unicycle') {
         const a: Pt = [-sn * 0.5, cs * 0.5];
         c.arrow([0, 0], a, { color: danger, width: 3.5, head: 11 });
-        c.text(a, '嘗試的 q̇', { color: danger, dx: 30, dy: -8, bg, font: `12px ${font}` });
+        c.text(a, '嘗試的速度', { color: danger, dx: 34, dy: -8, bg, font: `12px ${font}` });
       }
-      c.overlay.textContent = '速度空間 (ẋ, ẏ)\nφ̇ = ω 不受限制';
+      c.overlay.textContent = '速度空間 (ẋ, ẏ)\n轉向 ω = dφ/dt 不受限制';
     } else if (secMode === 'pend') {
       c.grid(0.5);
       c.circle([0, 0], PEND_L, { color: accent, width: 3.5, alpha: 0.85 });
@@ -542,7 +580,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const x0 = paper.cx - paper.w / 2, x1 = paper.cx + paper.w / 2;
       const y0 = paper.cy - paper.h / 2, y1 = paper.cy + paper.h / 2;
       c.polygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], { color: fg, width: 1.5 });
-      c.text([x1, y0], '紙＝task space', { color: fg, dy: 11, align: 'right', bg, font: `11px ${font}` });
+      c.text([x1, y1], '紙＝task space', { color: fg, dx: -5, dy: 10, align: 'right', bg, font: `11px ${font}` });
       drawPlanarArm(c, [ARM_L1, L2], penTh, { linkWidth: 7, eeRadius: 5 });
       const tip = planarFK([ARM_L1, L2], penTh).tip as Pt;
       if (!penReach) {
@@ -570,7 +608,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const qd = qdotOf(q.phi, inputs.v, inputs.vs, inputs.w);
     const flash = performance.now() < flashUntil && model === 'unicycle';
     info.set('q = (φ, x, y)', `(${fmt((q.phi * 180) / Math.PI, 0)}°, ${fmt(q.x, 2)}, ${fmt(q.y, 2)})`);
-    info.set('q̇ = (φ̇, ẋ, ẏ)', `(${fmt(qd[0], 2)}, ${fmt(qd[1], 2)}, ${fmt(qd[2], 2)})`);
+    info.set(QD, `(${fmt(qd[0], 2)}, ${fmt(qd[1], 2)}, ${fmt(qd[2], 2)})`);
     info.set('輸入', model === 'omni' ? `v ${fmt(inputs.v, 2)}, v⊥ ${fmt(inputs.vs, 2)}, ω ${fmt(inputs.w, 2)}` : `v ${fmt(inputs.v, 2)}, ω ${fmt(inputs.w, 2)}`);
     if (flash) {
       const slip = qdotOf(q.phi, 0, 0.5, 0);
@@ -584,7 +622,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     let s = '';
     if (task === 'park') s = doneAt != null ? `✓ 停車成功（用時 ${fmt(doneAt, 1)} s）。只靠 v、ω 兩個輸入就移到了 3 維 C-space 中的正側方。` : '停車：位置與朝向（包裹到 ±180°）都要在容許誤差內。';
     else if (task === 'deliver') s = doneAt != null ? '✓ 送達：送貨任務只在乎 (x, y)，車頭朝哪都算數。' : '送貨任務的 task space 只有 (x, y) 兩維。';
-    else s = model === 'omni' ? '全向平台沒有側滑約束：3 個輸入 (v, v⊥, ω) 對應 3 維速度。' : '單輪車：2 個輸入 (v, ω)，3 維 C-space。';
+    else s = model === 'omni' ? '全向平台沒有側滑約束：3 個輸入 (v, v⊥, ω) 對應 3 維速度（鍵盤 Q/E 側移）。' : '單輪車：2 個輸入 (v, ω)，3 維 C-space。';
     status.textContent = s;
   }
 
@@ -598,12 +636,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const onStep = (i: number) => {
     stepNow = i;
     if (i !== 2) { cloud = []; pendCloud = []; }
+    // steps 2 and 6 are about live quantities (A(q), T_sb), so they set the car on a gentle circle; leaving them
+    // stops that circle again unless the learner has taken over the controls
+    if (i !== 1 && i !== 5 && autoCruise) brake();
     if (i === 0) { setSecMode('vel'); setTask('free'); focusOn([slipBtn, cv.el]); }
-    else if (i === 1) { setSecMode('vel'); setTask('free'); focusOn([aView.el, sec.el]); }
+    else if (i === 1) { setSecMode('vel'); setTask('free'); startCruise(); focusOn([aView.el, sec.el]); }
     else if (i === 2) { setSecMode('pend'); setTask('free'); if (!cloud.length) sampleClouds(); focusOn([cloudBtn, sec.el]); }
     else if (i === 3) { setSecMode('vel'); setTask('park'); focusOn([taskSel.el, demoBtn, cv.el]); }
     else if (i === 4) { setSecMode('task'); setTask('deliver'); focusOn([sec.el, taskSel.el]); }
-    else { setSecMode('vel'); setTask('free'); focusOn([tView.el, cv.el]); }
+    else { setSecMode('vel'); setTask('free'); startCruise(); focusOn([tView.el, cv.el]); }
     dirty = true;
     cv.requestRender();
     updatePanel();
@@ -616,7 +657,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     destroy() {
       runner.stop();
       kb.destroy();
+      cv.el.removeEventListener('keydown', stopArrowBubble);
       timers.forEach((t) => clearTimeout(t));
+      focusOn([]);
       cv.destroy();
       sec.destroy();
     },

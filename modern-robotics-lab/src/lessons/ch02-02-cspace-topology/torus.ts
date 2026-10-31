@@ -109,6 +109,38 @@ export function unwrapSeq(wrapped: Th[]): Th[] {
   return out;
 }
 
+/** A trail of wrapped samples; `null` marks a break where the configuration jumped instead of moving. */
+export type Trail = (Th | null)[];
+
+/**
+ * Append a wrapped sample to a trail (in place). An explicit jump, or a step longer than `jumpDist` on the torus,
+ * starts a new piece so no motion is drawn between the two configurations; samples closer than `minStep` to the
+ * previous one are skipped. At most `max` entries are kept and the trail never starts with a break.
+ * Returns true when the trail changed.
+ */
+export function pushTrail(trail: Trail, w: Th, o: { minStep: number; max: number; jump?: boolean; jumpDist?: number }): boolean {
+  const last = trail[trail.length - 1] ?? null;
+  let changed = true;
+  if (last && (o.jump || torusDist(last, w) > (o.jumpDist ?? 1))) trail.push(null, [w[0], w[1]]);
+  else if (!last || torusDist(last, w) > o.minStep) trail.push([w[0], w[1]]);
+  else changed = false;
+  while (trail.length > o.max || (trail.length && trail[0] === null)) trail.shift();
+  return changed;
+}
+
+/** The continuous pieces of a trail (pieces with fewer than two samples are dropped). */
+export function trailPieces(trail: Trail): Th[][] {
+  const out: Th[][] = [];
+  let cur: Th[] = [];
+  for (const p of trail) {
+    if (p) { cur.push(p); continue; }
+    if (cur.length > 1) out.push(cur);
+    cur = [];
+  }
+  if (cur.length > 1) out.push(cur);
+  return out;
+}
+
 /** Append a wrapped sample to an unwrapped path (used while the learner draws). */
 export function appendUnwrapped(path: Th[], wrapped: Th): Th {
   const prev = path[path.length - 1];

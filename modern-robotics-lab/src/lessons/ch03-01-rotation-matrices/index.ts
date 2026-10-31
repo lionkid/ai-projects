@@ -3,7 +3,7 @@ import {
   el, cssVar, fmt, fmtVec, controlPanel, row, slider, angleSlider, toggle, button, select, matrixView, simTitle, note, kv,
   legend, presetChips, mathEl, Canvas2D, Scene3D, Arrow3D, createLoop, type Pt, type MatrixHandle,
 } from '@/ui';
-import { type Mat, type Vec, ProjectToSO3, RotX, RotZ, clamp, dot, eye, matMul, matVec, transpose, vecScale } from '@/mr';
+import { type Mat, type Vec, ProjectToSO3, RotX, RotZ, approxEqual, clamp, dot, eye, matMul, matVec, transpose, vecScale } from '@/mr';
 import { meta } from './meta';
 import {
   type AxisName, type ComposeMode, type ElemRot, type PlanarPose, columns, composeSequence, dropLines, equivalentAxisAngle,
@@ -313,7 +313,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.frame(S.pose, 0.6, { labels: ['x_b', 'y_b'], width: 3 });
     c.text(o, '{b}', { color: cyan, dx: -18, dy: 14 });
     if (S.pinned) drawPinned(c, P);
-    c.overlay.textContent = `p_s = (${fmt(P[0], 2)}, ${fmt(P[1], 2)})${S.pinned ? '  ← 固定不變' : ''}`;
+    c.setOverlayText(`p_s = (${fmt(P[0], 2)}, ${fmt(P[1], 2)})${S.pinned ? '  ← 固定不變' : ''}`);
   };
 
   cvB.draw = (c) => {
@@ -336,7 +336,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.frame({ x: 0, y: 0, theta: 0 }, 0.6, { labels: ['x_b', 'y_b'], width: 3 });
     c.text([0, 0], '{b}', { color: cssVar('--series-6', '#0891b2'), dx: -14, dy: 12 });
     if (S.pinned) drawPinned(c, P);
-    c.overlay.textContent = `p_b = (${fmt(pb[0], 2)}, ${fmt(pb[1], 2)})${S.pinned ? '  ← 隨 {b} 改變' : ''}`;
+    c.setOverlayText(`p_b = (${fmt(pb[0], 2)}, ${fmt(pb[1], 2)})${S.pinned ? '  ← 隨 {b} 改變' : ''}`);
   };
 
   function drawPinned(c: Canvas2D, P: Pt): void {
@@ -381,8 +381,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const triS = new Triad(scene, { radius: 0.009, head: 0.08, opacity: 0.6, names: ['x_s', 'y_s', 'z_s'], labelVar: '--fg-muted', labelScale: 0.65 });
   const triB = new Triad(scene, { radius: 0.026, head: 0.13, names: ['x_b', 'y_b', 'z_b'] });
-  const triGhost = new Triad(scene, { radius: 0.022, head: 0.12, opacity: 0.25 });
-  triGhost.setOpacity(0.25);
+  const triGhost = new Triad(scene, { radius: 0.022, head: 0.12, opacity: 0.38 });
+  triGhost.setOpacity(0.38);
   const triC = new Triad(scene, { radius: 0.017, head: 0.1, names: ['x_c', 'y_c', 'z_c'], labelScale: 0.65 });
   const drops = new DashedSegments(scene, '--fg-muted', 4);
   const cMount = new DashedSegments(scene, '--fg-muted', 1);
@@ -543,9 +543,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function sequenceTex(): string {
     const rot = (r: ElemRot) => `\\mathrm{Rot}(${AXIS_TEX[r.axis]}, ${Math.round(r.angle / DEG)}^\\circ)`;
+    // R₀ only appears in the formula when it is not the identity (it is introduced in the pre/post step)
+    const r0 = approxEqual(S.R0, eye(3), 1e-12) ? '' : 'R_0';
     return S.mode === 'body'
-      ? `R_{sb} = R_0\\,${rot(S.rotA)}\\,${rot(S.rotB)}`
-      : `R_{sb} = ${rot(S.rotB)}\\,${rot(S.rotA)}\\,R_0`;
+      ? `R_{sb} = ${r0}\\,${rot(S.rotA)}\\,${rot(S.rotB)}`
+      : `R_{sb} = ${rot(S.rotB)}\\,${rot(S.rotA)}\\,${r0}`;
   }
 
   function setEdit(M: Mat): void {

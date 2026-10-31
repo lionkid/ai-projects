@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  HIT_LINK1, armPoints, checkPath, computeCobsCodes, componentAt, exactClearance, linkCollisions, pathAt, torusComponents,
+  HIT_LINK1, armPoints, blockedFraction, checkPath, computeCobsCodes, componentAt, coverClearance, exactClearance, linkCollisions, pathAt,
+  torusComponents,
 } from './cspace';
 import { LINKS, LINK_HALF_WIDTH as W, SCENARIOS } from './scenarios';
 
@@ -54,6 +55,29 @@ describe('lesson scenarios', () => {
     const comp = torusComponents(computeCobsCodes(N, 'exact', LINKS, W, s.obstacles), N);
     expect(comp.count).toBe(2);
     expect(componentAt(comp, N, s.S)).not.toBe(componentAt(comp, N, s.G));
+  });
+});
+
+describe('quiz claims', () => {
+  it("lengthening L2 in 'single' leaves the link-1 band untouched and only grows the C-obstacle (13.6% → 14.5%)", () => {
+    const s = byKey('single');
+    const a = computeCobsCodes(N, 'exact', LINKS, W, s.obstacles);
+    const b = computeCobsCodes(N, 'exact', [1, 1.3], W, s.obstacles);
+    for (let k = 0; k < a.length; k++) {
+      expect(a[k] & HIT_LINK1).toBe(b[k] & HIT_LINK1);
+      if (a[k]) expect(b[k]).not.toBe(0); // the longer forearm sweeps a superset of the shorter one
+    }
+    const fa = blockedFraction(a), fb = blockedFraction(b);
+    expect(fa).toBeGreaterThan(0.131); expect(fa).toBeLessThan(0.141);
+    expect(fb).toBeGreaterThan(0.140); expect(fb).toBeLessThan(0.150);
+  });
+  it('a positive cover clearance is a lower bound on the true clearance', () => {
+    const s = byKey('near');
+    for (let k = 0; k < 400; k++) {
+      const q: [number, number] = [-Math.PI + (2 * Math.PI * k) / 400, Math.cos(3 * k) * Math.PI];
+      const cv = coverClearance(LINKS, W, q, s.obstacles).d;
+      if (cv > 0) expect(exactClearance(LINKS, W, q, s.obstacles).d).toBeGreaterThanOrEqual(cv - 1e-12);
+    }
   });
 });
 

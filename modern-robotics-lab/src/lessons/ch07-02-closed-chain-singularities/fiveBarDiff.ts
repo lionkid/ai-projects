@@ -243,6 +243,15 @@ export function det2(M: Mat): number {
   return M[0][0] * M[1][1] - M[0][1] * M[1][0];
 }
 
+/** Passive-rate map −Hp^{-1} Ha (θ̇p = −Hp^{-1} Ha θ̇a, two motors). Null when Hp is singular. */
+export function passiveRateMap(g: FiveBarGeom, c: Config, tol = 1e-12): Mat | null {
+  const { Ha, Hp } = constraintJacobians(g, c);
+  if (Math.abs(det2(Hp)) < tol) return null;
+  const X0 = solve(Hp, [Ha[0][0], Ha[1][0]]);
+  const X1 = solve(Hp, [Ha[0][1], Ha[1][1]]);
+  return [[-X0[0], -X1[0]], [-X0[1], -X1[1]]];
+}
+
 /** End-effector Jacobian J = Ja - Jp Hp^{-1} Ha (two motors). Null when Hp is singular. */
 export function eeJacobian(g: FiveBarGeom, c: Config, tol = 1e-12): Mat | null {
   const { Ha, Hp, Ja, Jp } = constraintJacobians(g, c);

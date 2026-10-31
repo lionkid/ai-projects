@@ -3,13 +3,15 @@ import * as THREE from 'three';
 import {
   el, cssVar, fmt, controlPanel, row, slider, angleSlider, button, select, kv, note, simTitle, legend, split,
   Canvas2D, Scene3D, Plot2D, createLoop, presetChips, drawPlanarArm, makeTextSprite, mdElement, rafThrottle,
+  setThemedColor, themedStandardMaterial,
   type KVHandle, type Loop, type Pt,
 } from '@/ui';
 import { planarFK, wrapToPi } from '@/mr';
 import { meta } from './meta';
 import {
   PATH_PRESETS, PI, TWO_PI, appendUnwrapped, densify, glueStages, ikNearest, implicitCoords, morphNormal, morphPoint,
-  otherElbow, pathLength, samplePath, torusDist, unwrapSeq, wrapPolylines, wrapTh, type Th, type V3,
+  otherElbow, pathLength, pushTrail, samplePath, torusDist, trailPieces, unwrapSeq, wrapPolylines, wrapTh,
+  type Th, type Trail, type V3,
 } from './torus';
 
 const steps: LessonStep[] = [
@@ -27,7 +29,7 @@ $$\\theta \\in \\mathcal{C} \\;\\xrightarrow{\\;\\text{FK}\\;}\\; p_{\\text{tip}
     md: `最直接的畫法是把兩個角度當成平面座標：各取 $[-\\pi, \\pi)$，C-space 就成了邊長 $2\\pi$ 的方格。這種用最少數字（2 個）描述 2 個自由度的方式，叫做**顯式座標（explicit coordinates）**。
 
 方格中每一點都是一個姿勢；拖曳組態點時會留下軌跡。但請注意邊緣：$\\theta_1$ 從 $179°$ 再轉 $2°$，讀數會跳成 $-179°$，點從右緣瞬間移到左緣——手臂本身卻只動了一點點。外圍淡色區是方格的「週期複製」，提示右緣之外其實接著左緣。`,
-    simHint: '在「① 方格」中拖曳組態點越過右邊界（或把 θ₁ 滑桿拉到底），看點、軌跡與手臂各發生什麼事。',
+    simHint: '示範中 θ₁ 越過 180°：青色軌跡在右緣斷開、從左緣接上，手臂卻只是平順地轉了一點。換你在「① 方格」中拖曳組態點越過邊界試試看。',
   },
   {
     title: '黏合邊界：環面',
@@ -35,8 +37,8 @@ $$\\theta \\in \\mathcal{C} \\;\\xrightarrow{\\;\\text{FK}\\;}\\; p_{\\text{tip}
 
 $$\\mathcal{C}_{2R} = S^1 \\times S^1 = T^2$$
 
-環面沒有邊界，手臂的任何連續運動都是一條不斷的曲線。**拓撲（topology）**描述的正是這個形狀本身，與我們用哪一套座標去畫它無關。`,
-    simHint: '按「▶ 黏合動畫」或拖曳「黏合」滑桿：橘色邊（θ₁ = ±π）與紫色邊（θ₂ = ±π）各自黏成環面上的哪一圈？',
+環面沒有邊界，手臂的任何連續運動都是一條不斷的曲線。**拓撲**（topology）描述的正是這個形狀本身，與我們用哪一套座標去畫它無關。`,
+    simHint: '看黏合動畫（或拖曳「黏合」滑桿）：橘色邊（θ₁ = ±π）與紫色邊（θ₂ = ±π）各自黏成環面上的哪一圈？上一步在方格裡斷成兩段的青色軌跡，黏好後變成什麼樣子？',
   },
   {
     title: '拓撲 vs 表示法',
@@ -48,7 +50,7 @@ $$\\mathcal{C}_{2R} = S^1 \\times S^1 = T^2$$
 $$c_i^2 + s_i^2 = 1, \\qquad i = 1, 2$$
 
 隱式表示在整個環面上都平滑、不跳變，但數字比自由度多，運算時必須一直維持約束成立。第 3 章用 9 個數表示 3 自由度的旋轉矩陣，就是同一種取捨。`,
-    simHint: '把「④ 表示法」切換成隱式，再讓 θ₁ 越過 ±180°：比較圖中 θ₁ 的跳變與 cos θ₁、sin θ₁ 的平滑曲線。',
+    simHint: '示範讓 θ₁ 轉一整圈：圖中 θ₁（藍）在 ±180° 跳了一下，cos θ₁（紅）與 sin θ₁（綠）卻一路平滑。「④ 表示法」已切到隱式，看兩條約束的殘差是否一直是 0；再切回顯式比較。',
   },
   {
     title: '路徑在三個視圖中長什麼樣',
@@ -121,9 +123,14 @@ const R_T = 1;      // torus major radius (3D view units)
 const r_T = 0.42;   // torus minor radius
 const NU = 72;      // θ1 segments of the torus mesh
 const NV = 36;      // θ2 segments
-const TRAIL_MAX = 240;
+const TRAIL_MAX = 400;
+const TRAIL_STEP = 0.025; // min. spacing (rad, on the torus) between stored trail samples
 const PATH_DOTS_MAX = 700;
 const MAP_PX = 512;
+const LABEL_FONT = 44;
+const LABEL_SCALE = 0.0036;
+/** Step-2 demo: a short move that crosses the θ1 = ±π seam near the top of the tube (θ2 ≈ π/2), unwrapped. */
+const SEAM_SWEEP: Th[] = [[2.4, 1.85], [4.1, 1.3]];
 
 interface Card { title: string; space: string; md: string }
 const CARDS: Card[] = [
@@ -152,10 +159,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let L2 = 1;
   let glue = 2;                                   // 0 flat square → 1 cylinder → 2 torus
   let glueAnim: { t: number; dur: number; camMoved: boolean } | null = null;
-  let trail: Th[] = [];                           // wrapped samples
+  let trail: Trail = [];                          // wrapped samples; null = break (the configuration jumped)
   let path: Th[] | null = null;                   // densified, unwrapped
   let pathDots: Th[] = [];                        // evenly spaced samples of `path` for the 3D view
   let playS: number | null = null;                // playback progress ∈ [0, 1] or null
+  let sweep: { pts: Th[]; s: number; dur: number } | null = null; // step demos (moves θ without showing a path)
+  let destroyed = false;
   let drawing: Th[] | null = null;                // unwrapped raw points while drawing
   let drawMode = false;
   let rep: 'explicit' | 'implicit' = 'explicit';
@@ -177,18 +186,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const [sqHost, torusHost] = split(host);
   const [armHost, infoHost] = split(host);
 
-  // shared "map" texture: checkerboard + θ = 0 lines + coloured seams (also drawn in the square view)
+  // "map" of the square: checkerboard + θ = 0 lines + coloured seams. The 2D square and the 3D surface use the
+  // same map; the 3D copy gets lighter tiles in the dark theme because the lit surface would otherwise vanish.
   const mapCanvas = document.createElement('canvas');
-  mapCanvas.width = MAP_PX; mapCanvas.height = MAP_PX;
-  const paintMap = () => {
-    const g = mapCanvas.getContext('2d');
+  const texCanvas = document.createElement('canvas');
+  mapCanvas.width = mapCanvas.height = texCanvas.width = texCanvas.height = MAP_PX;
+  const paintMap = (cv: HTMLCanvasElement, forScene: boolean) => {
+    const g = cv.getContext('2d');
     if (!g) return;
     const dark = document.documentElement.dataset.theme === 'dark';
+    const [tileA, tileB] = !dark ? ['#f4f7fb', '#d9e1ee'] : forScene ? ['#8492ae', '#68748f'] : ['#2b3547', '#1f2735'];
     const N = MAP_PX;
     const cell = N / 8;
-    g.fillStyle = dark ? '#2b3547' : '#f4f7fb';
+    g.fillStyle = tileA;
     g.fillRect(0, 0, N, N);
-    g.fillStyle = dark ? '#1f2735' : '#d9e1ee';
+    g.fillStyle = tileB;
     for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) if ((i + j) % 2) g.fillRect(i * cell, j * cell, cell, cell);
     g.strokeStyle = cssVar('--fg-muted', '#5d6676');
     g.globalAlpha = 0.6; g.lineWidth = 3;
@@ -200,7 +212,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     g.fillStyle = cssVar('--series-5', '#7c3aed');
     g.fillRect(0, 0, N, band); g.fillRect(0, N - band, N, band);
   };
-  paintMap();
+  const paintMaps = () => { paintMap(mapCanvas, false); paintMap(texCanvas, true); };
+  paintMaps();
 
   const W = 1.3 * PI;
   const sq = new Canvas2D(sqHost, { aspect: 1, world: { xmin: -W, xmax: W, ymin: -W, ymax: W }, overlay: true, margin: 0.02 });
@@ -228,12 +241,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const kvBox = el('div', { style: { margin: '0.35rem 0 0.2rem' } });
   infoBox.appendChild(kvBox);
   let numKV: KVHandle = kv(kvBox, []);
-  const plotSeries = () => [
-    { name: 'θ₁ (rad)', color: cssVar('--accent'), width: 2.2 },
-    { name: 'cos θ₁', color: cssVar('--series-4') },
-    { name: 'sin θ₁', color: cssVar('--series-5') },
-  ];
-  const plot = new Plot2D(infoBox, { title: 'θ₁ 的兩種記錄（隨時間）', series: plotSeries(), xWindow: 10, height: 128, yRange: [-3.5, 3.5] });
+  // cos θ1 / sin θ1 are the x / y components of link 1's direction, hence the x-red / y-green axis colours
+  const plot = new Plot2D(infoBox, {
+    title: 'θ₁ 的兩種記錄（隨時間）',
+    series: [
+      { name: 'θ₁ (rad)', color: '--accent', width: 2.2 },
+      { name: 'cos θ₁', color: '--axis-x' },
+      { name: 'sin θ₁', color: '--axis-y' },
+    ],
+    xWindow: 10, height: 128, yRange: [-3.5, 3.5],
+  });
 
   // ---------------- controls
   const panel = controlPanel(host, { compact: true });
@@ -248,7 +265,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const btnRow = row(panel);
   const glueBtn = button(btnRow, { label: '▶ 黏合動畫', small: true, variant: 'primary', title: '從方格開始：先黏上下邊成圓柱，再黏左右邊成環面', onClick: () => startGlueAnim() });
-  button(btnRow, { label: '⇄ 換另一組解', small: true, title: '末端位置不變，換到另一個肘部方向的關節角', onClick: () => { stopPlay(); setTheta(otherElbow(L1, L2, th).th, 'button'); } });
+  button(btnRow, { label: '⇄ 換另一組解', small: true, title: '末端位置不變，換到另一個肘部方向的關節角', onClick: () => { stopPlay(); setTheta(otherElbow(L1, L2, th).th, 'button', true); } });
   button(btnRow, { label: '清除軌跡', small: true, onClick: () => { trail = []; trailDirty = true; refresh(); } });
   const drawBtn = button(btnRow, { label: '✎ 畫路徑', small: true, title: '在方格上按住拖曳，畫出一條路徑', onClick: () => setDrawMode(!drawMode) });
   const playBtn = button(btnRow, { label: '▶ 播放路徑', small: true, onClick: () => togglePlay() });
@@ -258,20 +275,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const pathInfo = el('span', { class: 'mr-note', style: { margin: '0' } });
   chipRow.appendChild(pathInfo);
 
+  // var(...) swatches follow theme switches without any bookkeeping
   legend(host, [
-    { color: cssVar('--accent'), label: '目前組態' },
-    { color: cssVar('--fg-muted'), label: '同一末端的另一組解' },
-    { color: cssVar('--series-4'), label: 'θ₁ = ±π 接縫' },
-    { color: cssVar('--series-5'), label: 'θ₂ = ±π 接縫' },
-    { color: cssVar('--series-6'), label: '軌跡' },
-    { color: cssVar('--series-7'), label: '路徑' },
+    { color: 'var(--accent)', label: '目前組態' },
+    { color: 'var(--fg-muted)', label: '同一末端的另一組解' },
+    { color: 'var(--series-4)', label: 'θ₁ = ±π 接縫' },
+    { color: 'var(--series-5)', label: 'θ₂ = ±π 接縫' },
+    { color: 'var(--series-6)', label: '軌跡' },
+    { color: 'var(--series-7)', label: '路徑' },
   ]);
   note(host, '可拖曳：方格中的點、環面上的藍球、手臂末端。點一下環面可直接跳到該組態；拖曳環面空白處可旋轉視角。');
 
   // ---------------- three.js torus
   const torusGroup = new THREE.Group();
   scene.scene.add(torusGroup);
-  const texture = new THREE.CanvasTexture(mapCanvas);
+  const texture = new THREE.CanvasTexture(texCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const nVert = (NU + 1) * (NV + 1);
   const posArr = new Float32Array(nVert * 3);
@@ -297,16 +315,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const torusMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 }));
   torusGroup.add(torusMesh);
 
-  // markers: a solid, depth-tested sphere plus a faint "x-ray" copy that stays visible behind the surface
+  // markers: a solid, depth-tested sphere plus a faint "x-ray" copy that stays visible behind the surface.
+  // Colours are CSS variable names, so Scene3D re-resolves them when the theme changes.
   const markerPair = (radius: number, color: string, xrayOpacity: number) => {
-    const solid = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 14), new THREE.MeshStandardMaterial({ color, roughness: 0.35 }));
-    const xray = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: xrayOpacity, depthTest: false, depthWrite: false }));
+    const solid = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 14), themedStandardMaterial(color, { roughness: 0.35 }));
+    const xrayMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: xrayOpacity, depthTest: false, depthWrite: false });
+    setThemedColor(xrayMat, color);
+    const xray = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), xrayMat);
     xray.renderOrder = 10;
     torusGroup.add(solid, xray);
     return { solid, xray };
   };
-  const cur = markerPair(0.075, cssVar('--accent'), 0.45);
-  const ghost = markerPair(0.062, cssVar('--fg-muted'), 0.4);
+  const cur = markerPair(0.075, '--accent', 0.45);
+  const ghost = markerPair(0.062, '--fg-muted', 0.4);
   // trail / path dots: one round point sprite per sample (cheap even for software WebGL)
   const dotCanvas = document.createElement('canvas');
   dotCanvas.width = dotCanvas.height = 32;
@@ -317,20 +338,23 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(max * 3), 3));
     g.setDrawRange(0, 0);
-    const m = new THREE.Points(g, new THREE.PointsMaterial({ color, size, map: dotTex, alphaTest: 0.5, sizeAttenuation: true }));
+    const mat = new THREE.PointsMaterial({ size, map: dotTex, alphaTest: 0.5, sizeAttenuation: true });
+    setThemedColor(mat, color);
+    const m = new THREE.Points(g, mat);
     m.frustumCulled = false;
     torusGroup.add(m);
     return m;
   };
-  const trailDots = makeDots(TRAIL_MAX, cssVar('--series-6'), 0.045);
-  const pathDotsMesh = makeDots(PATH_DOTS_MAX, cssVar('--series-7'), 0.06);
-  let seamLabels: THREE.Sprite[] = [];
-  const makeSeamLabels = () => {
-    for (const s of seamLabels) { torusGroup.remove(s); s.material.map?.dispose(); s.material.dispose(); }
-    seamLabels = [makeTextSprite('θ₁ = ±π', cssVar('--series-4'), 40), makeTextSprite('θ₂ = ±π', cssVar('--series-5'), 40)];
-    seamLabels.forEach((s) => torusGroup.add(s));
-  };
-  makeSeamLabels();
+  const trailDots = makeDots(TRAIL_MAX, '--series-6', 0.045);
+  const pathDotsMesh = makeDots(PATH_DOTS_MAX, '--series-7', 0.06);
+  // seam labels: theme-bound text sprites; their scale is divided by the group scale (see rebuildSurface) so they
+  // keep a readable size while the long flat sheet is shown shrunk
+  const seamLabels = [
+    makeTextSprite('θ₁ = ±π', '--series-4', LABEL_FONT, LABEL_SCALE),
+    makeTextSprite('θ₂ = ±π', '--series-5', LABEL_FONT, LABEL_SCALE),
+  ];
+  const labelBase = seamLabels.map((s) => s.scale.clone());
+  seamLabels.forEach((s) => torusGroup.add(s));
 
   let ab = glueStages(glue);
   let groupScale = 1;
@@ -363,13 +387,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     geo.computeBoundingSphere();
     // keep the shape centred and scale the long flat sheet / cylinder down so it fits the view
     const extent = Math.max(xmax - xmin, ymax - ymin, zmax - zmin);
-    groupScale = Math.min(1, 3.0 / extent);
+    groupScale = Math.min(1, 2.7 / extent);
     torusGroup.scale.setScalar(groupScale);
     torusGroup.position.set(-((xmin + xmax) / 2) * groupScale, -((ymin + ymax) / 2) * groupScale, -((zmin + zmax) / 2) * groupScale);
-    const lbl1 = surf([PI, 0.5 * PI], 0.32);
-    const lbl2 = surf([0.5 * PI, PI], 0.22);
-    seamLabels[0]?.position.set(lbl1[0], lbl1[1], lbl1[2]);
-    seamLabels[1]?.position.set(lbl2[0], lbl2[1], lbl2[2]);
+    // θ1 label: pulled inward from the sheet's end while the ring is open (it would be clipped at the view edge);
+    // θ2 label: moves from the top edge of the sheet into the hole of the torus (off its own purple band)
+    const lbl1 = surf([PI - 0.6 * (1 - ab.b), 0.5 * PI], 0.32);
+    const lbl2 = surf([0.5 * PI, PI], 0.22 + 0.3 * ab.b);
+    seamLabels[0].position.set(lbl1[0], lbl1[1], lbl1[2]);
+    seamLabels[1].position.set(lbl2[0], lbl2[1], lbl2[2]);
+    seamLabels.forEach((s, k) => s.scale.copy(labelBase[k]).multiplyScalar(1 / groupScale));
     pathDotsDirty = true;
     trailDirty = true;
     torusOverlay.textContent = `② 環面　${glueLong(glue)}`;
@@ -391,9 +418,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let last3D = 0;
   let pending3D = 0;
   const render3D = () => {
+    if (destroyed) return;
     const now = performance.now();
     if (now - last3D >= 33) { last3D = now; scene.requestRender(); return; }
-    if (!pending3D) pending3D = window.setTimeout(() => { pending3D = 0; last3D = performance.now(); scene.requestRender(); }, 34 - (now - last3D));
+    if (!pending3D) pending3D = window.setTimeout(() => { pending3D = 0; if (destroyed) return; last3D = performance.now(); scene.requestRender(); }, 34 - (now - last3D));
   };
   const placeMarkers = () => {
     const p = surf(th, 0.04);
@@ -406,7 +434,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const showGhost = !o.atOrigin && torusDist(o.th, th) > 1e-6;
     ghost.solid.visible = showGhost;
     ghost.xray.visible = showGhost;
-    if (trailDirty) { setDots(trailDots, trail, TRAIL_MAX); trailDirty = false; }
+    if (trailDirty) { setDots(trailDots, trail.filter((p): p is Th => p !== null), TRAIL_MAX); trailDirty = false; }
     if (pathDotsDirty) { setDots(pathDotsMesh, pathDots, PATH_DOTS_MAX); pathDotsDirty = false; }
     render3D();
   };
@@ -494,24 +522,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     if (downAt && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) < 5 && performance.now() - downAt.t < 450) {
       const t = pickTheta(ev);
-      if (t) { stopPlay(); setTheta(t, 'torus'); }
+      if (t) { stopPlay(); setTheta(t, 'torus', true); }
     }
     downAt = null;
   };
   scene.el.addEventListener('pointerdown', onDown3D, true);
   scene.el.addEventListener('pointermove', onMove3D, true);
   scene.el.addEventListener('pointerup', onUp3D, true);
-  (window as unknown as Record<string, unknown>).__ch02bObjs = { torusMesh, trailDots, pathDotsMesh, cur, ghost, labels: () => seamLabels, scene }; // TEMP-DEBUG
 
   // ---------------- state updates
-  function setTheta(t: Th, source: 'slider' | 'square' | 'torus' | 'arm' | 'button' | 'path'): void {
+  /** `jump`: the configuration is set, not moved (preset start, other elbow, click on the torus): break the trail. */
+  function setTheta(t: Th, source: 'slider' | 'square' | 'torus' | 'arm' | 'button' | 'path', jump = false): void {
     const w = wrapTh(t);
-    const last = trail[trail.length - 1];
-    if (!last || torusDist(last, w) > 0.02) {
-      trail.push(w);
-      if (trail.length > TRAIL_MAX) trail.shift();
-      trailDirty = true;
-    }
+    if (pushTrail(trail, w, { jump, minStep: TRAIL_STEP, max: TRAIL_MAX })) trailDirty = true;
     th = w;
     if (source !== 'slider') { sT1.set(th[0], { silent: true }); sT2.set(th[1], { silent: true }); }
     refresh();
@@ -550,7 +573,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     stopPlay();
     setPath(PATH_PRESETS[i].pts);
     if (path) {
-      setTheta(path[0], 'path');
+      setTheta(path[0], 'path', true);
       // turn the view so the interesting part of the path faces the camera (e.g. the θ1 = ±π crossing)
       const cam = PATH_PRESETS[i].cam;
       aimCamera(cam ? cam.az : wrapToPi(samplePath(path, 0.5)[0]), cam ? cam.el : 0.5);
@@ -560,13 +583,32 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function startPlay(): void {
     if (!path) { chips.activate(0); return; } // activating a preset loads it and calls startPlay again
-    if (playS == null || playS >= 1) { playS = 0; setTheta(path[0], 'path'); }
+    if (playS == null || playS >= 1) { playS = 0; setTheta(path[0], 'path', true); }
     playBtn.textContent = '⏸ 暫停路徑';
     kick();
   }
   function stopPlay(): void {
     if (playS != null && playS < 1) playS = null;
+    sweep = null;
     playBtn.textContent = '▶ 播放路徑';
+  }
+
+  /** Step demo: move the configuration along an (unwrapped) polyline; it leaves a trail but no path. */
+  function startSweep(pts: Th[], dur: number): void {
+    stopPlay();
+    const dense = densify(pts, 0.02);
+    setTheta(dense[0], 'path', true);
+    sweep = { pts: dense, s: 0, dur };
+    kick();
+  }
+
+  /** Put the seam-crossing demo trail in place at once (used when a step needs it but step 2 was skipped). */
+  function seedSeamTrail(): void {
+    stopPlay();
+    const pts = densify(SEAM_SWEEP, TRAIL_STEP * 1.5);
+    trail = pts.map((p) => wrapTh(p));
+    trailDirty = true;
+    setTheta(pts[pts.length - 1], 'path');
   }
   function togglePlay(): void {
     if (playS != null && playS < 1) stopPlay(); else startPlay();
@@ -588,7 +630,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     set: (p) => setTheta([p[0], p[1]], 'square'),
     onStart: () => stopPlay(),
     radius: 8,
-    color: cssVar('--accent'),
+    color: '--accent',
   });
   sq.onPointer({
     down: (p) => {
@@ -609,7 +651,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       setDrawMode(false);
       if (pts.length > 2 && pathLength(pts) > 0.2) {
         setPath(pts);
-        setTheta(pts[0], 'path');
+        setTheta(pts[0], 'path', true);
         if (path) aimCamera(wrapToPi(samplePath(path, 0.5)[0]), 0.5);
         startPlay();
       }
@@ -650,7 +692,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.text([1.6, -PI], 'θ₁ →', { ...lbl, dy: 13 });
     c.text([-PI, PI], 'π', { ...lbl, dx: -14 });
     c.text([-PI, -1.6], 'θ₂ ↑', { ...lbl, dx: -19 });
-    if (trail.length > 1) drawWrapped(c, wrapPolylines(unwrapSeq(trail)), cssVar('--series-6'), 2, 0.9);
+    for (const piece of trailPieces(trail)) drawWrapped(c, wrapPolylines(unwrapSeq(piece)), cssVar('--series-6'), 2, 0.9);
     if (path) drawWrapped(c, wrapPolylines(path), cssVar('--series-7'), 2.6);
     if (drawing && drawing.length > 1) drawWrapped(c, wrapPolylines(drawing), cssVar('--series-7'), 2.6);
     const o = otherElbow(L1, L2, th);
@@ -677,7 +719,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onStart: () => stopPlay(),
     onEnd: () => { armNote = ''; arm.requestRender(); },
     radius: 9,
-    color: cssVar('--accent'),
+    color: '--accent',
   });
   arm.draw = (c) => {
     const accent = cssVar('--accent');
@@ -689,9 +731,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.text([ro * 0.7, -ro * 0.72], 'workspace', { color: accent, dy: 10, font: `11px ${cssVar('--font')}` });
     c.frame({ x: 0, y: 0, theta: 0 }, 0.45, { labels: 's', width: 1.6 });
     if (path) c.polyline(path.map((q) => planarFK([L1, L2], q).tip as Pt), { color: cssVar('--series-7'), width: 2.4 });
-    if (trail.length > 1) c.polyline(trail.map((q) => planarFK([L1, L2], q).tip as Pt), { color: cssVar('--series-6'), width: 1.8, alpha: 0.85 });
+    for (const piece of trailPieces(trail)) c.polyline(piece.map((q) => planarFK([L1, L2], q).tip as Pt), { color: cssVar('--series-6'), width: 1.8, alpha: 0.85 });
     const o = otherElbow(L1, L2, th);
-    if (!o.atOrigin && torusDist(o.th, th) > 1e-6) drawPlanarArm(c, [L1, L2], o.th, { alpha: 0.32, eeRadius: 4, linkWidth: 7 });
+    if (!o.atOrigin && torusDist(o.th, th) > 1e-6) drawPlanarArm(c, [L1, L2], o.th, { alpha: 0.42, eeRadius: 4, linkWidth: 7 });
     drawPlanarArm(c, [L1, L2], th, { angleArcs: true, linkWidth: 8 });
     const tip = planarFK([L1, L2], th).tip;
     let msg = `③ 手臂／workspace\np = (${fmt(tip[0], 2)}, ${fmt(tip[1], 2)})  |p| = ${fmt(Math.hypot(tip[0], tip[1]), 2)}`;
@@ -734,12 +776,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.disk(bob, 0.04, { fill: accent });
       c.point(piv, 3, { color: fg });
     } else if (i === 2) {
-      c.line([x0 + 0.1, cy], [x0 + 0.9, cy], { color: muted, width: 3 });
-      c.polygon([[cx - 0.08, cy - 0.15], [cx + 0.08, cy - 0.15], [cx + 0.08, cy + 0.15], [cx - 0.08, cy + 0.15]], { fill: cssVar('--grid-strong'), color: fg, width: 1.5 });
-      c.arrow([cx + 0.13, cy + 0.22], [cx + 0.33, cy + 0.22], { color: cssVar('--warn'), width: 2, head: 8 });
-      c.arrow([cx - 0.13, cy + 0.22], [cx - 0.33, cy + 0.22], { color: cssVar('--warn'), width: 2, head: 8 });
-      c.ellipse([cx, cy], 0.05, 0.22, 0, { color: cssVar('--series-5'), width: 1.5, dash: [3, 2] });
-      c.text([cx, cy - 0.24], '滑動 ℝ ＋ 旋轉 S¹', { color: muted, font: `11px ${font}` });
+      const ky = cy + 0.04;
+      c.line([x0 + 0.1, ky], [x0 + 0.9, ky], { color: muted, width: 3 });
+      c.polygon([[cx - 0.07, ky - 0.12], [cx + 0.07, ky - 0.12], [cx + 0.07, ky + 0.12], [cx - 0.07, ky + 0.12]], { fill: cssVar('--grid-strong'), color: fg, width: 1.5 });
+      c.arrow([cx + 0.13, ky + 0.2], [cx + 0.33, ky + 0.2], { color: cssVar('--warn'), width: 2, head: 8 });
+      c.arrow([cx - 0.13, ky + 0.2], [cx - 0.33, ky + 0.2], { color: cssVar('--warn'), width: 2, head: 8 });
+      c.ellipse([cx, ky], 0.045, 0.17, 0, { color: cssVar('--series-5'), width: 1.5, dash: [3, 2] });
+      c.text([cx, ky - 0.27], '滑動 ℝ ＋ 旋轉 S¹', { color: muted, font: `11px ${font}` });
     } else {
       // teacup ride driven by the current (θ1, θ2)
       c.circle([cx, cy], 0.27, { color: muted, width: 1.5, fill: cssVar('--bg-sunken') });
@@ -779,6 +822,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       : kv(kvBox, ['(c₁, s₁)', '(c₂, s₂)', 'c₁²+s₁²−1', 'c₂²+s₂²−1', '數 / 約束', '代價']);
   }
   buildKV();
+  const setRep = (v: 'explicit' | 'implicit') => {
+    if (v === rep) return;
+    rep = v;
+    repSel.set(v, { silent: true });
+    buildKV();
+    refresh();
+  };
   const updateNumbers = () => {
     if (rep === 'explicit') {
       numKV.set('θ₁', `${fmt(th[0], 3)} rad（${fmt((th[0] * 180) / PI, 0)}°）`);
@@ -797,6 +847,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
 
   const refresh = rafThrottle(() => {
+    if (destroyed) return;
     sq.requestRender();
     if (showGallery) gal.requestRender(); else arm.requestRender();
     placeMarkers();
@@ -834,30 +885,28 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       setTheta(samplePath(path, playS), 'path');
       if (playS >= 1) playBtn.textContent = '▶ 播放路徑';
     }
+    if (sweep) {
+      sweep.s = Math.min(1, sweep.s + dt / sweep.dur);
+      setTheta(samplePath(sweep.pts, sweep.s), 'path');
+      if (sweep.s >= 1) sweep = null;
+    }
     if (tNow - lastPush >= 1 / 30) {
       plot.push(tNow, [th[0], Math.cos(th[0]), Math.sin(th[0])]);
       lastPush = tNow;
     }
-    const busy = !!glueAnim || !!camTween || (path != null && playS != null && playS < 1);
+    const busy = !!glueAnim || !!camTween || !!sweep || (path != null && playS != null && playS < 1);
     if (busy) lastActive = performance.now();
     else if (performance.now() - lastActive > 1500) loop.stop();
   });
   loopRef = loop;
 
+  // Materials, sprites, handles, plot series and legend are theme-bound already (CSS variable names);
+  // only the painted checkerboard map has to be redrawn.
   const unsubTheme = ctx.onThemeChange(() => {
-    paintMap();
+    paintMaps();
     texture.needsUpdate = true;
-    (cur.solid.material as THREE.MeshStandardMaterial).color.set(cssVar('--accent'));
-    (cur.xray.material as THREE.MeshBasicMaterial).color.set(cssVar('--accent'));
-    (ghost.solid.material as THREE.MeshStandardMaterial).color.set(cssVar('--fg-muted'));
-    (ghost.xray.material as THREE.MeshBasicMaterial).color.set(cssVar('--fg-muted'));
-    (trailDots.material as THREE.PointsMaterial).color.set(cssVar('--series-6'));
-    (pathDotsMesh.material as THREE.PointsMaterial).color.set(cssVar('--series-7'));
-    makeSeamLabels();
-    rebuildSurface();
-    cfgHandle.color = cssVar('--accent');
-    plot.setOptions({ series: plotSeries() });
     refresh();
+    render3D();
   });
 
   rebuildSurface();
@@ -883,14 +932,24 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       aimCamera(circMean(th[0], o.th[0]), 0.5, dur);
       focusOn([arm.el, sq.el, scene.el]);
     } else if (i === 1) {
+      // explicit coordinates: replay a short move across the θ1 = ±π seam so the split trail is visible at once
       setGlue(0);
       aimCamera(0, 0.22, dur);
+      setRep('explicit');
+      trail = [];
+      trailDirty = true;
+      startSweep(SEAM_SWEEP, 1.5);
       focusOn([sq.el]);
     } else if (i === 2) {
+      // gluing: the seam-crossing trail from the previous step becomes one unbroken curve
+      if (trail.length < 5) seedSeamTrail();
       startGlueAnim();
       focusOn([scene.el, sGlue.el, glueBtn]);
     } else if (i === 3) {
+      // representations: one full turn of joint 1 makes θ1 jump once while cos θ1, sin θ1 stay smooth
       setGlue(2);
+      setRep('implicit');
+      startSweep([[th[0], th[1]], [th[0] + TWO_PI, th[1]]], 4.5);
       focusOn([repSel.el, plot.el]);
     } else if (i === 4) {
       setGlue(2);
@@ -909,12 +968,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   return {
     onStep,
     destroy() {
+      destroyed = true;
       loop.stop();
       unsubTheme();
       scene.el.removeEventListener('pointerdown', onDown3D, true);
       scene.el.removeEventListener('pointermove', onMove3D, true);
       scene.el.removeEventListener('pointerup', onUp3D, true);
       clearTimeout(pending3D);
+      focusOn([]);
       dotTex.dispose();
       for (const s of seamLabels) s.material.map?.dispose();
       texture.dispose();

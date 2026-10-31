@@ -168,6 +168,38 @@ export class Trail {
   setVisible(v: boolean): void { this.line.visible = v; }
 }
 
+/**
+ * A thick path (Scene3D.addTube) for arcs that must stay visible: WebGL lines are 1 px wide. Building a
+ * TubeGeometry is too costly to repeat every animation frame, so the tube is rebuilt only when the caller's
+ * `key` (a fingerprint of the inputs) changes.
+ */
+export class TubePath {
+  private tube: { mesh: THREE.Mesh; update(pts: Vec[]): void };
+  private key: string | null = null;
+  private on = false;
+  private empty = true;
+
+  constructor(scene: Scene3D, colorVar: string, radius: number, opacity = 1) {
+    this.tube = scene.addTube([], { radius, color: colorVar, opacity });
+    this.tube.mesh.visible = false;
+  }
+
+  /** Rebuild from `pts()` only when `key` differs from the previous call. */
+  set(key: string, pts: () => Vec[]): void {
+    if (key === this.key) return;
+    this.key = key;
+    this.tube.update(pts());
+    // addTube.update shows the mesh when the path has at least one segment
+    this.empty = !this.tube.mesh.visible;
+    this.tube.mesh.visible = this.on && !this.empty;
+  }
+
+  setVisible(v: boolean): void {
+    this.on = v;
+    this.tube.mesh.visible = v && !this.empty;
+  }
+}
+
 /** A text sprite at a fixed position; returns it so the caller can move or hide it. */
 export function label3D(scene: Scene3D, text: string, colorVar: string, scale = 0.8): THREE.Sprite {
   const s = makeTextSprite(text, colorVar, 40);

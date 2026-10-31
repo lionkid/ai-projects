@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { FKinBody, IKinBody, JacobianBody, dot, matVec, norm, pinv, wrapToPi } from '@/mr';
 import {
-  MODEL, REACH, converged, evaluate, isStalled, iterate, nullSpaceDirection, poseReachable, reducedJacobian, residual,
-  runNewton, screwArc, solveStep, targetTransform, trackingRates, type StepOptions, type Task,
+  MODEL, REACH, TRACK_PATHS, advanceTracking, circleTarget, converged, evaluate, isStalled, iterate, nullSpaceDirection,
+  poseReachable, reducedJacobian, residual, runNewton, screwArc, solveStep, targetTransform, trackingRates, trackingStart,
+  type StepOptions, type Task,
 } from './newton';
 
 const D = Math.PI / 180;
@@ -153,5 +154,64 @@ describe('inverse velocity kinematics', () => {
   it('reports wrist-centre reachability for pose tasks', () => {
     expect(poseReachable(TASK).reachable).toBe(true);
     expect(poseReachable({ x: 2.0, y: 0.6, phi: Math.PI, positionOnly: false }).reachable).toBe(false);
+  });
+});
+
+describe('moving targets and the tracking demo', () => {
+  it('circle paths report analytic derivatives that match finite differences', () => {
+    for (const P of TRACK_PATHS) {
+      for (const t of [0, 0.7, 2.3, 5.1]) {
+        const h = 1e-6;
+        const a = circleTarget(P, t - h), b = circleTarget(P, t + h), m = circleTarget(P, t);
+        expect(m.dx).toBeCloseTo((b.x - a.x) / (2 * h), 6);
+        expect(m.dy).toBeCloseTo((b.y - a.y) / (2 * h), 6);
+        expect(m.dphi).toBeCloseTo(wrapToPi(b.phi - a.phi) / (2 * h), 6);
+      }
+    }
+    const r = circleTarget(TRACK_PATHS[1], 1.234);
+    expect(r.phi).toBeCloseTo(Math.atan2(r.y, r.x), 12);
+  });
+
+  const simulate = (P: (typeof TRACK_PATHS)[number], o: StepOptions, T: number) => {
+    const path = (t: number) => circleTarget(P, t);
+    const s = trackingStart(path, th([0, 90, 0]));
+    const start = s.err;
+    let maxRate = 0, maxErr = 0, unreachable = 0;
+    while (s.t < T) {
+      advanceTracking(s, path, 1 / 60, 5, o);
+      maxRate = Math.max(maxRate, norm(s.rates));
+      maxErr = Math.max(maxErr, s.err);
+      if (!s.reachable) unreachable += 1 / 60;
+    }
+    return { start, maxRate, maxErr, unreachable, endErr: s.err };
+  };
+  const period = (P: (typeof TRACK_PATHS)[number]) => (2 * Math.PI) / P.omega;
+
+  it('the inner circle is tracked closely with modest joint rates', () => {
+    const P = TRACK_PATHS[0];
+    const r = simulate(P, PINV, period(P));
+    expect(r.start).toBeLessThan(1e-6);
+    expect(r.unreachable).toBe(0);
+    expect(r.maxRate).toBeLessThan(2);
+    expect(r.maxErr).toBeLessThan(1e-2);
+  });
+
+  it('leaving the workspace: J⁺ demands huge rates, DLS stays bounded and waits at the boundary', () => {
+    const P = TRACK_PATHS[1];
+    const overshoot = Math.hypot(P.cx, P.cy) + P.rho - REACH;
+    const pinvRun = simulate(P, PINV, period(P));
+    const dlsRun = simulate(P, dls(0.1), period(P));
+    expect(pinvRun.start).toBeLessThan(1e-6);
+    // about 2 s of the period is out of reach
+    expect(dlsRun.unreachable).toBeGreaterThan(1.5);
+    expect(dlsRun.unreachable).toBeLessThan(2.5);
+    expect(pinvRun.maxRate).toBeGreaterThan(50);
+    expect(dlsRun.maxRate).toBeLessThan(5);
+    // DLS's worst error is the overshoot itself: the arm stretches towards the target and waits
+    expect(dlsRun.maxErr).toBeGreaterThan(0.9 * overshoot);
+    expect(dlsRun.maxErr).toBeLessThan(1.2 * overshoot);
+    // both recover once the target is reachable again
+    expect(pinvRun.endErr).toBeLessThan(1e-2);
+    expect(dlsRun.endErr).toBeLessThan(2e-2);
   });
 });
