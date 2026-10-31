@@ -37,6 +37,8 @@ const ZOOM = (c: Pt, hw = 1.35) => ({ xmin: c[0] - hw, xmax: c[0] + hw, ymin: c[
 const BR_LABEL_MIN_A = 0.35;
 const BR_LABEL_OFF: [number, number][] = [[0, -16], [36, 0], [0, 18], [46, 20]];
 const R2D = 180 / Math.PI;
+const KEY_HINT = '點一下地圖啟用鍵盤：W/S 前後、A/D 轉向（車型＝打方向盤）、空白鍵停';
+const KEY_HINT_SHORT = '點地圖用鍵盤：W/S、A/D、空白停';
 
 interface PlanRun { segs: Segment[]; i: number; tSeg: number; loop: boolean; kind: 'bracket' | 'park' | 'auto' }
 interface BracketShow { start: Pose; path: Pt[]; labels: { p: Pt; text: string }[]; pred: Pt; final: Pose; model: ModelKey; a: number }
@@ -75,6 +77,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   // otherwise the plots would show the sampling lag instead of the odometry error
   let truthAtUpd: Pose = { ...q };
   let wallUntil = 0;
+  /** True while the robot has only driven straight since the last reset (δs²/(4d) applies). */
+  let straightRun = false;
   let bracket: BracketShow | null = null;
   let brA = 0.6, brB = 0.7;
   const park = { active: false, reversals: 0, lastSign: 0, doneAt: null as number | null, t0: 0 };
@@ -91,7 +95,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     whiteSpace: 'pre', background: 'color-mix(in srgb, var(--sim-bg) 82%, transparent)', padding: '0.05rem 0.3rem', borderRadius: '4px',
   });
   const kb = keyboardDrive(cv.el, {
-    hint: '點一下地圖啟用鍵盤：W/S 前後、A/D 轉向（車型＝打方向盤）、空白鍵停',
+    hint: KEY_HINT,
     onChange: (pressed) => {
       if (pressed.size === 0) return;
       plan = null;
@@ -167,8 +171,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const plotBox = el('div', { style: { display: 'none' } });
   leftCol.appendChild(plotBox);
   const plotPos = new Plot2D(plotBox, {
-    title: '位置誤差 |p̂ − p|', xLabel: '行駛距離 s (m)', yLabel: 'm', height: 135, legend: false, yMinSpan: 0.02,
-    series: [{ name: '位置誤差', color: '--danger' }],
+    title: '位置誤差 |p̂ − p|', xLabel: '行駛距離 s (m)', yLabel: 'm', height: 135, yMinSpan: 0.02,
+    // the second series only gets data on the straight-line run (the legend hides empty series)
+    series: [{ name: '量測', color: '--danger' }, { name: '直線預測 δs²/(4d)', color: '--fg-muted', dash: [5, 4] }],
   });
   const plotAng = new Plot2D(plotBox, {
     title: '車頭誤差 φ̂ − φ', xLabel: '行駛距離 s (m)', yLabel: '度', height: 135, yMinSpan: 0.5,
@@ -238,7 +243,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     let rest = h;
     let guard = 0;
     while (rest > 1e-12 && guard++ < 16) {
-      let v: number, w: number, dt = rest;
+      // never integrate past the next encoder instant, so the samples come exactly every 1/rate s
+      // (any whole-number rate, not just divisors of the 120 Hz physics rate) and the estimate is
+      // compared with the truth at that very instant; a sample that is already due (the rate was
+      // raised mid-sample) is closed right away
+      if (odo.timeToSample() <= 1e-12) { odo.update(); onOdoUpdate(); }
+      let v: number, w: number, dt = Math.min(rest, odo.timeToSample());
       if (plan) {
         const g = plan.segs[plan.i];
         const left = g.T - plan.tSeg;
@@ -248,7 +258,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
           if (plan.i >= plan.segs.length) { if (plan.loop) plan.i = 0; else plan = null; }
           continue;
         }
-        dt = Math.min(rest, left);
+        dt = Math.min(dt, left);
         v = g.v; w = g.w;
         plan.tSeg += dt;
       } else {
@@ -295,7 +305,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     lastPlotS = dist;
     const e = poseError(odo.est, truthAtUpd);
     const pred = odoCfg.delta !== 0 ? headingDriftPrediction(odoCfg.delta, sdist, P.d) * R2D : undefined;
-    plotPos.push(dist, [e.dist]);
+    // straight line: lateral error ≈ ∫ δs/(2d) ds = δs²/(4d) (only meaningful while nothing turned)
+    if (straightRun && Math.abs(cmdW) > 1e-9) straightRun = false;
+    const predPos = straightRun && odoCfg.delta !== 0 ? (Math.abs(odoCfg.delta) * sdist * sdist) / (4 * P.d) : undefined;
+    plotPos.push(dist, predPos === undefined ? [e.dist] : [e.dist, predPos]);
     plotAng.push(dist, pred === undefined ? [e.dphi * R2D] : [e.dphi * R2D, pred]);
   }
 
@@ -341,6 +354,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   function placeRobot(p: Pose): void {
     q = { ...p };
     plan = null;
+    straightRun = false;
     trueTrail = [[q.x, q.y]];
     park.active = false;
     resetOdometry();
@@ -402,6 +416,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     sDelta.set(odoCfg.delta * 100, { silent: true });
   }
 
+  /** Step 6: drive straight across the map, where the radius-mismatch drift is easiest to read. */
+  function straightLine(pre: number): void {
+    setModel('diff');
+    // low enough that the estimate (which bends to the right) stays clear of the keyboard hint
+    placeRobot({ phi: 0, x: -2.6, y: -0.4 });
+    straightRun = true;
+    startPlan('auto', [{ v: 0.4, w: 0, T: 13, label: '直線 5.2 m' }], false);
+    if (pre > 0) prerun(pre);
+    refresh();
+  }
+
   function autopilot8(pre: number): void {
     setModel('diff');
     placeRobot({ phi: 0, x: 0, y: 0 });
@@ -449,7 +474,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         Pz('自己開', () => { setOdo({ rule: 'exp', rate: 20, slip: 0, delta: 0 }); setModel('diff'); cruise(0, 0, { phi: 0, x: -2.6, y: -1.0 }); }),
       ];
       default: return [
-        Pz('輪徑差 1%', () => { setOdo({ rule: 'exp', rate: 20, slip: 0, delta: 0.01 }); autopilot8(45); }),
+        Pz('輪徑差 1%：直線', () => { setOdo({ rule: 'exp', rate: 20, slip: 0, delta: 0.01 }); straightLine(9); }, '直線開 5.2 m：側向誤差 ≈ δs²/(4d)'),
+        Pz('輪徑差 1%：8 字', () => { setOdo({ rule: 'exp', rate: 20, slip: 0, delta: 0.01 }); autopilot8(45); }, '繞圈時估計的整個 8 字慢慢轉開'),
         Pz('打滑雜訊 3%', () => { setOdo({ rule: 'exp', rate: 20, slip: 0.03, delta: 0 }); autopilot8(45); }),
         Pz('兩者', () => { setOdo({ rule: 'exp', rate: 20, slip: 0.03, delta: 0.01 }); autopilot8(45); }),
       ];
@@ -489,7 +515,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       if (w !== 0 && Math.abs(w) <= 2) c.text([-0.7, KW * w], String(w), { color: '--fg-muted', font: '10px monospace' });
     }
     c.text([0.66, 0.05], 'v', { color: '--fg-muted' });
-    c.text([0.06, 0.66], 'ω', { color: '--fg-muted' });
+    c.text([0.04, 0.52], 'ω', { color: '--fg-muted', align: 'left' }); // below the overlay title
     for (const poly of inputSetPolys(model, lim, P)) {
       const pts = poly.map((p) => [p[0], KW * p[1]] as Pt);
       c.polygon(pts, { color: '--accent', fill: '--accent', alpha: 0.13, width: 0 });
@@ -626,7 +652,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (curStep <= 1) drawConstraintCues(c);
     const wall = performance.now() < wallUntil ? '   ⚠ 撞到牆了：倒車或轉向' : '';
     const clampMsg = reqClamped && !plan ? '   ⚠ 輸入超出可行集合，已夾制' : '';
-    c.setOverlayText(`${NAMES[model]}   q = (φ, x, y) = (${fmtDeg(q.phi, 0)}, ${fmt(q.x, 2)}, ${fmt(q.y, 2)})\nv = ${fmt(cmdV, 2)} m/s   ω = ${fmt(cmdW, 2)} rad/s${wall}${clampMsg}`);
+    c.setOverlayText(`${NAMES[model]}   q = (φ, x, y) = (${fmtDeg(wrapToPi(q.phi), 0)}, ${fmt(q.x, 2)}, ${fmt(q.y, 2)})\nv = ${fmt(cmdV, 2)} m/s   ω = ${fmt(cmdW, 2)} rad/s${wall}${clampMsg}`);
   };
 
   // ------------------------------------------------------------------ readouts
@@ -698,7 +724,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (destroyed) return;
     const w = cv.el.clientWidth;
     const a = w > 0 && w < 520 ? 1.55 : 2;
-    if (a !== mapAspect) { mapAspect = a; cv.setSize({ aspect: a }); }
+    if (a !== mapAspect) {
+      mapAspect = a;
+      cv.setSize({ aspect: a });
+      // the keyboard hint pill wraps to two lines on a phone and hides the bottom of the map
+      const hint = cv.el.querySelector<HTMLElement>('.mr-key-hint');
+      if (hint) hint.textContent = a < 1.8 ? KEY_HINT_SHORT : KEY_HINT;
+    }
   };
   const ro = new ResizeObserver(() => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(fitMap); } });
   ro.observe(host);

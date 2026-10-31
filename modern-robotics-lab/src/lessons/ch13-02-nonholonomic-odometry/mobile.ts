@@ -313,6 +313,16 @@ export class WheelOdometry {
     return [r * (1 - dl / 2), r * (1 + dl / 2)];
   }
 
+  /**
+   * Time left until the current encoder sample closes (s). A caller that never steps past it (by
+   * splitting its integration step there) gets samples exactly every 1/rate seconds; otherwise a
+   * sample closes at the first step that reaches the period, so the effective rate is quantised to
+   * the step size (e.g. 50 Hz with 1/120 s steps would really be 40 Hz).
+   */
+  timeToSample(): number {
+    return Math.max(0, 1 / this.cfg.rate - this.tAcc);
+  }
+
   /** Feed the true motion (v, ω) for h seconds. Returns true when an odometry update happened. */
   step(v: number, w: number, h: number): boolean {
     const [rL, rR] = this.radii();

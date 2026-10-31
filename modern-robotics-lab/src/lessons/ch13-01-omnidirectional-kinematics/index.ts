@@ -30,9 +30,13 @@ const MEC_L = 0.25, MEC_W = 0.22; // mecanum wheel centres at (±l, ±w) (m)
 // wrap-around is seamless
 const MAP_WIDE: World = { xmin: -2.0, xmax: 2.0, ymin: -1.0, ymax: 1.0 };
 const MAP_TALL: World = { xmin: -2.0, xmax: 2.0, ymin: -1.5, ymax: 1.5 };
-const CLOSE: World = { xmin: -0.95, xmax: 0.95, ymin: -0.45, ymax: 0.55 };
+const CLOSE: World = { xmin: -1.04, xmax: 1.04, ymin: -0.5, ymax: 0.54 };
 const VBOX = 1.0;                 // half-range of the velocity plot (m/s)
 const KEY_V = 0.35, KEY_W = 0.9;  // keyboard speeds
+/** Close-up (step 2): metres drawn per m/s, shared by the wheel's r·u arrow and the contact-velocity split. */
+const K_CLOSE = 1.1;
+const KEY_HINT = '點一下地圖啟用鍵盤：W/S 前後、A/D 側移、Q/E 自轉、空白鍵停';
+const KEY_HINT_SHORT = '點地圖用鍵盤：WASD、Q/E、空白停';
 const H_STEP = 1 / 120;
 const SUB = '₀₁₂₃₄₅₆₇₈₉';
 const WHEEL_NAMES: Record<ModelKey, string[]> = {
@@ -88,7 +92,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     whiteSpace: 'pre', background: 'color-mix(in srgb, var(--sim-bg) 82%, transparent)', padding: '0.05rem 0.3rem', borderRadius: '4px',
   });
   const kb = keyboardDrive(cv.el, {
-    hint: '點一下地圖啟用鍵盤：W/S 前後、A/D 側移、Q/E 自轉、空白鍵停',
+    hint: KEY_HINT,
     onChange: (pressed) => {
       if (pressed.size === 0) return;
       // manual driving takes over: drop scripted motion and the set-point, so releasing the keys stops the base
@@ -200,8 +204,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   ]);
   const legendRow = legend(host, [
     { color: 'var(--fg)', label: '著地點速度' },
-    { color: 'var(--warn)', label: '要靠輪子滾出（沿 d̂ᵢ）' },
-    { color: 'var(--series-5)', label: '由滾子滑掉' },
+    { color: 'var(--accent)', label: '輪子滾動 r·uᵢ（沿驅動方向）' },
+    { color: 'var(--series-5)', label: '滾子滑動（沿滑動方向）' },
+    { color: 'var(--warn)', label: '沿 d̂ᵢ 的分量：只能靠輪子' },
     { color: 'var(--series-7)', label: '力臂 (pᵢ × d̂ᵢ)_z' },
   ]);
   legendRow.style.display = 'none';
@@ -573,9 +578,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     // free-sliding direction of the contact roller
     if (showSlide || hl) c.line(b2v(add(P0, g.slide, -0.11)), b2v(add(P0, g.slide, 0.11)), { color: '--series-5', width: 1.6, dash: [4, 3] });
-    // driving speed arrow, length ∝ r·u
+    // driving speed arrow, length ∝ r·u (in the close-up on the same scale as the contact velocity,
+    // so the rolling arrow, the roller slide and the contact velocity close a triangle)
     const ui = u[i] ?? 0;
-    const k = view === 'map' ? 0.8 : 0.45;
+    const k = view === 'map' ? 0.8 : K_CLOSE;
     if (Math.abs(ui) > 0.05) {
       const sat = Math.abs(ui) > U * (1 + 1e-6);
       c.arrow(b2v(P0), b2v(add(P0, along, k * w.r * ui)), { color: sat ? '--danger' : '--accent', width: 2.5, head: 8 });
@@ -597,24 +603,36 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const P0: Pt = [w.x, w.y];
     // position vector p_i
     c.line(b2v([0, 0]), b2v(P0), { color: '--fg-muted', width: 1.4, dash: [5, 4] });
-    c.text(b2v([P0[0] * 0.55, P0[1] * 0.55]), 'pᵢ', { color: '--fg-muted', dx: 9, dy: -9 });
     // line through the wheel along d̂_i and the moment arm from the chassis centre
     const pd = dot2(P0, g.dir);
     const foot: Pt = [P0[0] - pd * g.dir[0], P0[1] - pd * g.dir[1]];
+    {
+      // p_i label on the side of the p_i line away from the moment arm (they are almost parallel)
+      const pn = Math.hypot(P0[0], P0[1]) || 1;
+      const nrm: Pt = [-P0[1] / pn, P0[0] / pn];
+      const side = dot2(foot, nrm) > 0 ? -1 : 1;
+      c.text(b2v([P0[0] * 0.55, P0[1] * 0.55]), 'pᵢ', { color: '--fg-muted', bg: '--sim-bg', dx: 13 * side * nrm[0], dy: -13 * side * nrm[1] });
+    }
     c.line(b2v(add(foot, g.dir, -0.2)), b2v(add(P0, g.dir, 0.35)), { color: '--warn', width: 1, dash: [2, 4], alpha: 0.8 });
-    // contact-point velocity split into "rolled by the wheel" + "slid by the roller"
+    // contact-point velocity = wheel rolling r·u along the driving direction (the accent arrow that
+    // drawWheel already drew, same scale) + roller sliding along ŝ. Both pieces have the same
+    // component along d̂ ⟂ ŝ (orange): the only part the wheel has to supply. The three tips lie on
+    // one line parallel to ŝ.
     const vc = contactVelocity(w, actV);
-    const k = 0.9;
+    const k = K_CLOSE;
     const alongD = dot2(vc, g.dir);
     const tipD = add(P0, g.dir, k * alongD);
     const tipV: Pt = [P0[0] + k * vc[0], P0[1] + k * vc[1]];
+    const tipR = add(P0, g.drive, k * w.r * (u[i] ?? 0));
     const fl = Math.hypot(foot[0], foot[1]);
+    const sc = c.scale || 300; // px per metre
+    let armLabel: Pt | null = null;
     if (fl > 0.01) {
       c.line(b2v([0, 0]), b2v(foot), { color: '--series-7', width: 3 });
       // short label beside the arm, at the candidate spot farthest from the other annotations
       // (wheel, velocity arrows, {b} axis labels); the value itself is in the row readout
       const off: Pt = [foot[1] / fl, -foot[0] / fl]; // arm rotated by −90°
-      const avoid: Pt[] = [P0, tipV, tipD, [0, 0.14], [0.14, 0], [0, 0]];
+      const avoid: Pt[] = [P0, tipV, tipD, tipR, [0, 0.14], [0.14, 0], [0, 0]];
       let best: { p: Pt; s: number; d: number } = { p: [foot[0] * 0.5, foot[1] * 0.5], s: 1, d: -1 };
       for (const t of [0.35, 0.5, 0.7]) {
         for (const s of [1, -1]) {
@@ -624,15 +642,37 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         }
       }
       c.text(b2v(best.p), '力臂', { color: '--series-7', bg: '--sim-bg', dx: 26 * best.s * off[0], dy: -26 * best.s * off[1] });
+      armLabel = [best.p[0] + (26 * best.s * off[0]) / sc, best.p[1] + (26 * best.s * off[1]) / sc];
     }
     const vn = Math.hypot(vc[0], vc[1]);
     if (vn > 0.01) {
+      // projection line through the three tips (along ŝ)
+      const sR = dot2([tipR[0] - tipD[0], tipR[1] - tipD[1]], g.slide);
+      const sV = dot2([tipV[0] - tipD[0], tipV[1] - tipD[1]], g.slide);
+      const s0 = Math.min(0, sR, sV), s1 = Math.max(0, sR, sV);
+      if (s1 - s0 > 0.005) c.line(b2v(add(tipD, g.slide, s0)), b2v(add(tipD, g.slide, s1)), { color: '--warn', width: 1, dash: [1, 3] });
       c.arrow(b2v(P0), b2v(tipV), { color: '--fg', width: 2, head: 8 });
       c.arrow(b2v(P0), b2v(tipD), { color: '--warn', width: 3.2, head: 9 });
-      c.arrow(b2v(tipD), b2v(tipV), { color: '--series-5', width: 2, dash: [4, 3], head: 7 });
-      // label just beyond the arrow head, on the side the arrow points to
+      if (Math.hypot(tipV[0] - tipR[0], tipV[1] - tipR[1]) > 0.008) c.arrow(b2v(tipR), b2v(tipV), { color: '--series-5', width: 2.2, dash: [4, 3], head: 7 });
+      // label next to the arrow head: try right / left / above / below of the tip and keep the spot
+      // farthest from the other annotations ({b} axis labels, wheel, arrow tips, the arm label) and
+      // inside the view; ties favour the side the arrow points to
       const ux = vc[0] / vn, uy = vc[1] / vn;
-      c.text(b2v(tipV), '著地點速度', { color: '--fg', bg: '--sim-bg', align: ux >= 0 ? 'left' : 'right', dx: 8 * Math.sign(ux || 1), dy: -12 * uy - 2 });
+      const hw = 36 / sc, gap = 10 / sc, vy = 15 / sc;
+      const avoidL: Pt[] = [[0, 0.15], [0.15, 0], [0, 0], P0, tipD, tipR, ...(armLabel ? [armLabel] : [])];
+      const W = cv.world;
+      let bestL: { p: Pt; score: number } | null = null;
+      for (const cand of [
+        [hw + gap, 0], [-(hw + gap), 0], [0, vy], [0, -vy], [hw + gap, vy], [-(hw + gap), vy], [hw + gap, -vy], [-(hw + gap), -vy],
+      ] as Pt[]) {
+        const ctrL: Pt = [tipV[0] + cand[0], tipV[1] + cand[1]];
+        const pts: Pt[] = [ctrL, [ctrL[0] - hw, ctrL[1]], [ctrL[0] + hw, ctrL[1]]];
+        let score = Math.min(...avoidL.flatMap((a) => pts.map((p2) => Math.hypot(p2[0] - a[0], p2[1] - a[1]))));
+        if (ctrL[0] - hw < W.xmin || ctrL[0] + hw > W.xmax || ctrL[1] - vy < W.ymin || ctrL[1] + vy > W.ymax) score -= 1;
+        score += 0.02 * (cand[0] * ux + cand[1] * uy) / (hw + gap);
+        if (!bestL || score > bestL.score) bestL = { p: ctrL, score };
+      }
+      if (bestL) c.text(b2v(bestL.p), '著地點速度', { color: '--fg', bg: '--sim-bg', align: 'center' });
     }
     // γ: angle between the wheel axle (β + 90°) and the free-sliding direction
     if (Math.abs(w.gamma) > 1e-3) {
@@ -721,7 +761,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     } else if (clampInfo.clamped) {
       st = `⚠ 要求的速度在多面體外，已沿原方向縮回邊界（× ${fmt(clampInfo.scale, 2)}）。`;
     } else {
-      st = frame === 'world' ? '世界座標命令：圓圈是目前的 V_b，會隨車頭轉動在切片裡繞。' : '✓ 要求的 V_b 在多面體內：每顆輪子都在上限以內。';
+      st = frame === 'world'
+        ? '世界座標命令：圓圈是目前的 V_b，會隨車頭轉動在切片裡繞（搖桿點只在「機身 {b}」模式能拖曳；世界模式用鍵盤或預設動作）。'
+        : '✓ 要求的 V_b 在多面體內：每顆輪子都在上限以內。';
     }
     if (rank < 3) st += ' 目前 H 只有秩 2：輪子推不出側向速度。';
     if (vStatus.textContent !== st) vStatus.textContent = st;
@@ -753,6 +795,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       mapAspect = a;
       mapWorld = a < 1.8 ? MAP_TALL : MAP_WIDE;
       cv.setSize({ aspect: a });
+      // the keyboard hint pill wraps to two lines on a phone and hides the bottom of the map
+      const hint = cv.el.querySelector<HTMLElement>('.mr-key-hint');
+      if (hint) hint.textContent = a < 1.8 ? KEY_HINT_SHORT : KEY_HINT;
       applyView(view);
     }
   };

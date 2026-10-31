@@ -186,6 +186,27 @@ describe('odometry', () => {
     expect(Math.abs(varc - 1)).toBeLessThan(0.08);
   });
 
+  it('splitting the integration step at timeToSample() gives exactly `rate` samples per second', () => {
+    const q0: Pose = { phi: 0, x: 0, y: 0 };
+    for (const rate of [7, 25, 45, 50]) {
+      const odo = new WheelOdometry(q0, { p: P, rate, rule: 'exp', slip: 0, delta: 0, seed: 1 });
+      // same sub-stepping as the lesson: never step past the next sample instant
+      for (let k = 0; k < 1200; k++) {
+        let rest = 1 / 120;
+        while (rest > 1e-12) {
+          const dt = Math.min(rest, odo.timeToSample());
+          odo.step(0.3, 0.4, dt);
+          rest -= dt;
+        }
+      }
+      expect(odo.updates).toBe(10 * rate);
+    }
+    // without splitting, a sample closes at the first whole step past the period (quantised rate)
+    const coarse = new WheelOdometry(q0, { p: P, rate: 50, rule: 'exp', slip: 0, delta: 0, seed: 1 });
+    for (let k = 0; k < 1200; k++) coarse.step(0.3, 0.4, 1 / 120);
+    expect(coarse.updates).toBe(400);
+  });
+
   it('exp and Euler agree for straight motion, and expTwist2 handles ω = 0', () => {
     const q: Pose = { phi: 0.4, x: 1, y: 2 };
     const a = stepPose(q, [0, 0.5, 0], 2);
