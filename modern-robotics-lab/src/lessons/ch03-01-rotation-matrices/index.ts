@@ -26,7 +26,7 @@ const steps: LessonStep[] = [
 
 $$p_s = R_{sb}\\,p_b + p_{sb}$$
 
-右邊用的是 $\\{b\\}$ 的量尺，左邊用的是 $\\{s\\}$ 的量尺。`,
+$p_b$ 是拿 $\\{b\\}$ 的量尺量出來的數字，$p_s$ 是拿 $\\{s\\}$ 的量尺量出來的數字；$R_{sb}$ 與 $p_{sb}$ 負責把前者翻譯成後者。`,
     simHint: '拖曳 {b} 的中心或方向把手（青色），也可以用滑桿 θ、x、y；再拖曳點 P。核對下方算式：R_sb p_b + p_sb 是否永遠等於 p_s？',
   },
   {
@@ -134,6 +134,8 @@ const KNOB = 0.95;
 const P_BC: Vec = [1.25, 0, 0];
 /** Degrees per second for the sequence playback. */
 const PLAY_SPEED = 75 * DEG;
+/** Largest magnitude accepted for a typed matrix entry (step 4). */
+const EDIT_MAX = 3;
 
 type UseMode = 'pose' | 'coords' | 'operator';
 
@@ -245,7 +247,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   button(pRow, { label: '重設位置', small: true, onClick: () => resetPlanar() });
 
   const knobPos = (): Pt => [S.pose.x + KNOB * Math.cos(S.pose.theta), S.pose.y + KNOB * Math.sin(S.pose.theta)];
-  const clampP = (p: ArrayLike<number>): Vec => [clamp(p[0], -0.45, 2.85), clamp(p[1], -0.45, 2.85)];
+  // P stays below y = 2.4 so that its label never slides under the readout overlay at the top of the canvas
+  const clampP = (p: ArrayLike<number>): Vec => [clamp(p[0], -0.45, 2.85), clamp(p[1], -0.45, 2.4)];
   // handles: P (accent) and the pose of {b} (cyan centre + heading knob); colours are read at draw time
   cvS.addHandle({
     get: () => [S.P[0], S.P[1]],
@@ -441,7 +444,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     colTones: ['x', 'y', 'z'],
     onHoverCol: (j) => { S.hoverCol = j; update3D(); },
     onClickCol: (j) => { S.stickyCol = S.stickyCol === j ? null : j; update3D(); },
-    onEdit: (i, j, v) => { S.Redit = S.Redit.map((r) => r.slice()); S.Redit[i][j] = v; editChips.clear(); update3D(); },
+    // entries are kept within ±EDIT_MAX so a typo cannot throw the frame out of view (the cell shows the clamped value on blur)
+    onEdit: (i, j, v) => { S.Redit = S.Redit.map((r) => r.slice()); S.Redit[i][j] = clamp(v, -EDIT_MAX, EDIT_MAX); editChips.clear(); update3D(); },
   });
   const chainSpan = el('span', { class: 'c301-inline' });
   matRow.appendChild(chainSpan);
@@ -450,7 +454,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const mvMid = labelled(chainSpan, 'R_{bc}');
   chainSpan.appendChild(mathEl('='));
   const mvOut = labelled(chainSpan, 'R_{sc}');
+  // KaTeX labels are re-typeset only when the reference frame of the display changes (not every frame)
   let chainFromB = false;
+  let rwFromB = false;
   const colNote = note(spatialBox, '提示：滑鼠移到某一欄（或點一下固定）會高亮對應的 {b} 軸，虛線把它投影到 {s} 的三個軸上。');
 
   // ---- edit mode panel (step 4) ----
@@ -648,8 +654,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       cube.set(parallelepipedEdges(Rb));
       cube.setColor(rep.isRotation ? '--fg-muted' : '--danger');
     }
-    statusEl.className = `c301-pill c301-status ${rep.isRotation ? 'ok' : 'bad'}`;
-    statusEl.textContent = statusText(rep);
+    setPill(statusEl, `c301-pill c301-status ${rep.isRotation ? 'ok' : 'bad'}`, statusText(rep));
 
     // animation axis
     if (anim) {
@@ -661,7 +666,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       axisArrow.visible = true;
       const r = rots()[k];
       animEl.style.display = '';
-      animEl.textContent = `${k === 0 ? 'A' : 'B'}：繞 ${S.mode === 'body' ? `${r.axis}_b（{b} 的軸）` : `${r.axis}_s（{s} 的軸）`} 轉 ${Math.round(r.angle / DEG)}°`;
+      setPill(animEl, animEl.className, `${k === 0 ? 'A' : 'B'}：繞 ${S.mode === 'body' ? `${r.axis}_b（{b} 的軸）` : `${r.axis}_s（{s} 的軸）`} 轉 ${Math.round(r.angle / DEG)}°`);
     } else {
       axisLine.setVisible(false);
       axisArrow.visible = false;
@@ -674,7 +679,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     // matrices
     if (S.editMode) Rw.set(Rb);
     else Rw.set(fromB ? transpose(Rb) : Rb);
-    Rw.setLabel(mathEl(fromB ? 'R_{bs} = R_{sb}^{\\T} =' : 'R_{sb} ='));
+    if (fromB !== rwFromB) {
+      rwFromB = fromB;
+      Rw.setLabel(mathEl(fromB ? 'R_{bs} = R_{sb}^{\\T} =' : 'R_{sb} ='));
+    }
     if (cOn) {
       const Rsc = matMul(Rb, Rbc());
       if (fromB !== chainFromB) {
@@ -858,6 +866,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       root.remove();
     },
   };
+}
+
+/** Write a status pill only when its class or text actually changes (update3D runs every animation frame). */
+function setPill(pill: HTMLElement, cls: string, text: string): void {
+  if (pill.className !== cls) pill.className = cls;
+  if (pill.textContent !== text) pill.textContent = text;
 }
 
 /** A toolkit matrixView whose label is typeset with KaTeX. */

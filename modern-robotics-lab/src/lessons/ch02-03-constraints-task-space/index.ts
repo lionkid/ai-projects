@@ -118,6 +118,8 @@ const PRE_DRIVE: Segment[] = [
   { v: 0.6, w: 0.35, T: 1.0, label: '' },
 ];
 const VIEW_POSE: Pose = poseAlongPlan(PRE_START, PRE_DRIVE, Infinity).pose;
+// step 3 starts the random rollouts here, in the middle of the arena, so the whole cloud of end poses is visible
+const CLOUD_POSE: Pose = { x: 0.9, y: -0.05, phi: 0.35 };
 const PARK_START: Pose = { x: -1.5, y: -1.2, phi: 0 };
 const PARK_GOAL: Pose = { x: -1.5, y: -0.2, phi: 0 };
 const DELIVER_GOAL: [number, number] = [2.3, 1.0];
@@ -168,12 +170,27 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   Object.assign(cv.overlay.style, { whiteSpace: 'pre', background: 'color-mix(in srgb, var(--sim-bg) 82%, transparent)', padding: '0.05rem 0.3rem', borderRadius: '4px' });
   const kb = keyboardDrive(cv.el, {
     hint: '點一下畫布啟用鍵盤：W/S 前後、A/D 轉向、空白鍵煞車',
-    onChange: () => { if (kb.pressed.size) { autoCruise = false; if (demo) stopDemo(); } dirty = true; },
+    onChange: () => { if (kb.pressed.size) { autoCruise = false; flashUntil = 0; if (demo) stopDemo(); } dirty = true; },
   });
   // keyboardDrive consumes the arrow keys but lets them bubble up; the lesson view also listens for ← / → on window
   // to change steps, so stop them here or driving with the arrow keys would flip the lesson step.
   const stopArrowBubble = (ev: KeyboardEvent) => { if (ev.key.startsWith('Arrow')) ev.stopPropagation(); };
   cv.el.addEventListener('keydown', stopArrowBubble);
+  // On a phone the 2:1 arena would be ~190 px tall, a third of it under the overlay and the key hint: use a taller
+  // canvas there (the world is fitted by width, the extra rows hold the overlays). Deferred to the next frame so the
+  // height change never happens inside the ResizeObserver callback.
+  let arenaAspect = 2;
+  let fitQueued = false;
+  let destroyed = false;
+  const fitArena = () => {
+    fitQueued = false;
+    if (destroyed) return;
+    const w = cv.el.clientWidth;
+    const a = w > 0 && w < 520 ? 1.45 : 2;
+    if (a !== arenaAspect) { arenaAspect = a; cv.setSize({ aspect: a }); }
+  };
+  const arenaRO = new ResizeObserver(() => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(fitArena); } });
+  arenaRO.observe(host);
 
   const panel = controlPanel(host, { compact: true });
   const r1 = row(panel);
@@ -195,7 +212,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     value: 'free',
     onChange: (t) => setTask(t),
   });
-  const own = () => { autoCruise = false; dirty = true; };
+  // the learner takes over: stop the step's auto circle and drop a pending side-slip display (the readouts would
+  // otherwise show the hypothetical sideways velocity while the vehicle really drives)
+  const own = () => { autoCruise = false; flashUntil = 0; dirty = true; };
   const sV = slider(panel, { label: '前進速度 v', min: -1, max: 1, step: 0.05, value: 0, unit: 'm/s', onInput: own });
   const sW = slider(panel, { label: '轉向率 ω', min: -1.5, max: 1.5, step: 0.05, value: 0, unit: 'rad/s', onInput: own });
   const sVS = slider(panel, { label: '側向速度 v⊥', min: -0.8, max: 0.8, step: 0.05, value: 0, unit: 'm/s', onInput: own });
@@ -283,6 +302,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     sW.set(0, { silent: true });
     sVS.set(0, { silent: true });
     autoCruise = false;
+    flashUntil = 0;
     stopDemo();
     dirty = true;
   }
@@ -302,6 +322,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     };
     let sg = fits(1) ? 1 : fits(-1) ? -1 : 0;
     if (!sg) { q = { ...VIEW_POSE }; trail = [[q.x, q.y]]; sg = -1; }
+    flashUntil = 0;
     sV.set(v, { silent: true });
     sW.set(sg * w, { silent: true });
     autoCruise = true;
@@ -317,11 +338,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   function trySlip(): void {
+    // the attempt replaces the current command with a pure sideways velocity (v = ω = 0, v⊥ = 0.5)
+    brake();
     if (model === 'omni') {
       // an omnidirectional base simply slides
-      brake();
       demo = { start: { ...q }, plan: slidePlan(0.5), t: 0, seg: 0 };
     } else {
+      // the unicycle cannot: the rolling constraint blocks it, so it stands still while the attempt is shown
       flashUntil = performance.now() + 2600;
       timers.push(window.setTimeout(() => { dirty = true; cv.requestRender(); sec.requestRender(); updatePanel(); }, 2650));
     }
@@ -356,6 +379,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     cloud = [];
     doneAt = null;
     simT = 0;
+    dirty = true;
+  }
+
+  /** Stop and put the vehicle at `p` with a fresh trail (used by step presets). */
+  function placeCar(p: Pose): void {
+    stopDemo();
+    brake();
+    q = { ...p };
+    trail = [[q.x, q.y]];
     dirty = true;
   }
 
@@ -464,7 +496,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const d = Math.hypot(q.x - DELIVER_GOAL[0], q.y - DELIVER_GOAL[1]);
       line2 = doneAt != null ? '✓ 送達！（不在乎朝向）' : `離送貨點 ${fmt(d, 2)} m`;
     }
-    c.overlay.textContent = `q = (φ, x, y) = (${fmt((q.phi * 180) / Math.PI, 0)}°, ${fmt(q.x, 2)}, ${fmt(q.y, 2)})${line2 ? `\n${line2}` : ''}`;
+    c.setOverlayText(`q = (φ, x, y) = (${fmt((q.phi * 180) / Math.PI, 0)}°, ${fmt(q.x, 2)}, ${fmt(q.y, 2)})${line2 ? `\n${line2}` : ''}`);
   };
 
   // ---------------- secondary canvas: velocity space / holonomic comparison / task vs workspace
@@ -533,7 +565,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (secMode === 'vel') {
       c.grid(0.25);
       c.text([1.2, 0], 'ẋ', { color: muted, dy: -9 });
-      c.text([0, 1.05], 'ẏ', { color: muted, dx: 9 });
+      c.text([0, 0.6], 'ẏ', { color: muted, dx: 9 }); // below the two-line overlay at the top left
       c.circle([0, 0], 1, { color: cssVar('--grid-strong'), width: 1, dash: [3, 3] });
       const cs = Math.cos(q.phi), sn = Math.sin(q.phi);
       if (model === 'omni') {
@@ -554,11 +586,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         c.arrow([0, 0], a, { color: danger, width: 3.5, head: 11 });
         c.text(a, '嘗試的速度', { color: danger, dx: 34, dy: -8, bg, font: `12px ${font}` });
       }
-      c.overlay.textContent = '速度空間 (ẋ, ẏ)\n轉向 ω = dφ/dt 不受限制';
+      c.setOverlayText('速度空間 (ẋ, ẏ)\n轉向 ω = dφ/dt 不受限制');
     } else if (secMode === 'pend') {
       c.grid(0.5);
       c.circle([0, 0], PEND_L, { color: accent, width: 3.5, alpha: 0.85 });
-      c.text([-PEND_L * 0.71, PEND_L * 0.71], '可到達：一個圓（1 維）', { color: accent, dy: -14, bg, font: `12px ${font}` });
+      // lower left: the upper left is covered by the overlay text, the bob starts lower right
+      c.text([-PEND_L * 0.72, -PEND_L * 0.72], '可到達：一個圓（1 維）', { color: accent, dy: 16, bg, font: `12px ${font}` });
       for (const p of pendCloud) c.point(p, 2.5, { color: cssVar('--series-5'), alpha: 0.8 });
       c.polygon([[-0.12, 0.1], [0.12, 0.1], [0, 0]], { fill: cssVar('--grid-strong'), color: muted, width: 1 });
       c.line([-0.18, 0.1], [0.18, 0.1], { color: muted, width: 2 });
@@ -569,7 +602,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         c.point(pendPointer, 4, { color: danger });
         c.text(pendPointer, '想拉到這裡', { color: danger, dy: -12, bg, font: `11px ${font}` });
       }
-      c.overlay.textContent = '對照：桿上質點（完整約束）\nx² + y² = L²，A(q) = [2x  2y]';
+      c.setOverlayText('對照：桿上質點（完整約束）\nx² + y² = L²，A(q) = [2x  2y]');
     } else {
       c.grid(0.5);
       const ro = ARM_L1 + L2, ri = Math.abs(ARM_L1 - L2);
@@ -579,15 +612,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       raster.draw(c, 1, false);
       const x0 = paper.cx - paper.w / 2, x1 = paper.cx + paper.w / 2;
       const y0 = paper.cy - paper.h / 2, y1 = paper.cy + paper.h / 2;
+      // the sheet is named in the overlay, not on the canvas: wherever a label sits, the moving arm crosses it
       c.polygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], { color: fg, width: 1.5 });
-      c.text([x1, y1], '紙＝task space', { color: fg, dx: -5, dy: 10, align: 'right', bg, font: `11px ${font}` });
       drawPlanarArm(c, [ARM_L1, L2], penTh, { linkWidth: 7, eeRadius: 5 });
       const tip = planarFK([ARM_L1, L2], penTh).tip as Pt;
       if (!penReach) {
         c.line(tip, penTarget, { color: danger, width: 1.5, dash: [4, 3] });
         c.text(penTarget, '✕ 到不了', { color: danger, dy: 18, bg, font: `11px ${font}` });
       }
-      c.overlay.textContent = 'Task space vs workspace\n紅：任務要求、手臂卻到不了';
+      c.setOverlayText('紙＝task space，環帶＝workspace\n紅：任務要求、手臂卻到不了');
     }
   };
 
@@ -641,7 +674,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (i !== 1 && i !== 5 && autoCruise) brake();
     if (i === 0) { setSecMode('vel'); setTask('free'); focusOn([slipBtn, cv.el]); }
     else if (i === 1) { setSecMode('vel'); setTask('free'); startCruise(); focusOn([aView.el, sec.el]); }
-    else if (i === 2) { setSecMode('pend'); setTask('free'); if (!cloud.length) sampleClouds(); focusOn([cloudBtn, sec.el]); }
+    else if (i === 2) {
+      setSecMode('pend');
+      setTask('free');
+      if (!cloud.length) { placeCar(CLOUD_POSE); sampleClouds(); }
+      focusOn([cloudBtn, sec.el]);
+    }
     else if (i === 3) { setSecMode('vel'); setTask('park'); focusOn([taskSel.el, demoBtn, cv.el]); }
     else if (i === 4) { setSecMode('task'); setTask('deliver'); focusOn([sec.el, taskSel.el]); }
     else { setSecMode('vel'); setTask('free'); startCruise(); focusOn([tView.el, cv.el]); }
@@ -655,6 +693,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   return {
     onStep,
     destroy() {
+      destroyed = true;
+      arenaRO.disconnect();
       runner.stop();
       kb.destroy();
       cv.el.removeEventListener('keydown', stopArrowBubble);

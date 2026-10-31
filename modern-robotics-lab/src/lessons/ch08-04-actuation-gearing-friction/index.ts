@@ -1,7 +1,7 @@
 import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } from '@/types';
 import {
   el, cssVar, fmt, controlPanel, row, slider, select, readout, matrixView, playback, simTitle, note, split, button,
-  Canvas2D, Plot2D, createLoop, substep, presetChips, torqueBars, drawPlanarArm, type Pt, type ReadoutHandle,
+  Canvas2D, Plot2D, createLoop, substep, presetChips, torqueBars, drawPlanarArm, mathEl, type Pt, type ReadoutHandle,
 } from '@/ui';
 import { meta } from './meta';
 import {
@@ -44,7 +44,7 @@ $$M_{\\text{eff}}(\\theta) \\approx M(\\theta) + \\diag(G_1^2J_1,\\ G_2^2J_2)$$
   },
   {
     title: '背驅動性與安全',
-    md: `**背驅動性（backdrivability）**指從連桿端反推馬達的難易。外力推動高減速比的關節時，得把轉子加速到 $G$ 倍轉速（慣量 $\\times G^2$），還要克服馬達端的摩擦（在關節端看是 $\\times G$）——關節變得又「重」又「黏」。
+    md: `**背驅動性**（backdrivability）指從連桿端反推馬達的難易。外力推動高減速比的關節時，得把轉子加速到 $G$ 倍轉速（慣量 $\\times G^2$），還要克服馬達端的摩擦（在關節端看是 $\\times G$）——關節變得又「重」又「黏」。
 
 這也牽涉安全：撞到人時，轉子儲存的動能 $\\tfrac12G^2J_m\\dot\\theta^2$ 會一起撞上去，馬達又來不及被推開。所以協作機器人偏好低減速比、低轉子慣量，或在關節裝力矩感測器偵測碰撞。`,
     simHint: '實驗④：同樣 3 N·m 的外力推 0.5 秒。比較 G = 1、20、100、200 的最大偏轉、「起動所需外力矩」與轉子動能占比。',
@@ -55,8 +55,8 @@ $$M_{\\text{eff}}(\\theta) \\approx M(\\theta) + \\diag(G_1^2J_1,\\ G_2^2J_2)$$
 
 $$\\tau_f = b\\,\\dot\\theta + \\tau_c\\,\\sgn(\\dot\\theta)$$
 
-**黏滯**項與速度成正比，讓自由擺動按比例（指數）衰減；**庫侖**項大小固定、方向隨速度翻轉，讓振幅每擺一次少掉固定量，最後停在偏離平衡處。靜止時還得先超過**靜摩擦** $\\tau_s>\\tau_c$ 才動得起來，於是低速拖動時會「卡住→突然滑一段→又卡住」，稱為**黏滑（stick–slip）**。數值上 $\\sgn(0)$ 沒有定義，要用死區判斷「卡住」，或用 $\\tanh$ 平滑。`,
-    simHint: '實驗⑤：彈簧以 0.15 rad/s 慢慢拉動連桿，看 θ̇ 走走停停、τ_f 在卡住時跟著彈簧力矩爬升。再把「摩擦實作」切成 sgn（起步時 τ_f 每步正負亂跳，之後也不再黏滑）與 tanh（平滑，但不會真正卡住）比較。',
+**黏滯**項與速度成正比，讓自由擺動按比例（指數）衰減；**庫侖**項大小固定、方向隨速度翻轉，讓振幅每擺一次少掉固定量，最後停在偏離平衡處。靜止時還得先超過**靜摩擦** $\\tau_s>\\tau_c$ 才動得起來，於是低速拖動時會「卡住→突然滑一段→又卡住」，稱為**黏滑（stick–slip）**。靜止時摩擦可以是 $\\pm\\tau_s$ 之間的任何值（剛好抵住外力），$\\sgn(\\dot\\theta)$ 表達不出這一點：數值上要用死區判斷「卡住」，或用 $\\tanh$ 平滑。`,
+    simHint: '實驗⑤：彈簧以 0.15 rad/s 慢慢拉動連桿，看 $\\dot\\theta$ 走走停停、τ_f 在卡住時跟著彈簧力矩爬升。再把「摩擦實作」切成 sgn（起步時 τ_f 每步正負亂跳，之後也不再黏滑）與 tanh（平滑，但不會真正卡住）比較。',
   },
   {
     title: '修正後的逆動力學與下一章',
@@ -64,7 +64,7 @@ $$\\tau_f = b\\,\\dot\\theta + \\tau_c\\,\\sgn(\\dot\\theta)$$
 
 $$\\tau = \\underbrace{M(\\theta)\\ddot\\theta + c + g}_{\\text{連桿}} + \\underbrace{\\Delta M\\,\\ddot\\theta}_{\\text{轉子}} + \\underbrace{\\tau_f(\\dot\\theta)}_{\\text{摩擦}}$$
 
-連桿部分照舊由 Newton–Euler 算出，$\\Delta M$ 是轉子貢獻的常數矩陣（§8.9.3 說明如何把它直接併入遞迴），馬達只需輸出 $\\tau_m=\\tau/G$。$G$ 大時 $\\tau_m$ 很小，但急加減速時轉子項可能比重力還大。
+連桿部分照舊由 Newton–Euler 算出，$\\Delta M$ 是轉子貢獻的常數矩陣（§8.9.3 說明如何把它直接併入遞迴），馬達只需輸出 $\\tau_m=\\tau/G$。$G$ 大時 $\\tau_m$ 比關節力矩小得多，但轉子項隨 $G^2$ 成長：急加減速時它可能比重力還大，$G$ 太大反而讓馬達更吃力。
 
 下一章的問題：這條 $\\theta(t)$ 要怎麼規劃，才能又平順、又不超出馬達的力矩與轉速？`,
     simHint: '實驗⑥：2R 手臂（有重力）沿五次多項式軌跡來回擺動。調 G：到 100 以上時，「轉子」長條在加減速時壓過重力；下方小圖是下一章的時間縮放 s(t)。',
@@ -155,6 +155,15 @@ function drawGear(c: Canvas2D, center: Pt, r: number, teeth: number, angle: numb
   c.line(center, [center[0] + r * Math.cos(angle), center[1] + r * Math.sin(angle)], { color, width: 2 });
 }
 
+/**
+ * KaTeX label scaled to the surrounding UI text. Plain-text combining dots (θ̇, θ̈) render badly in the
+ * UI fonts (the dot drifts onto the next glyph or disappears), so DOM labels use KaTeX and canvas text
+ * (plots, overlays) uses dθ/dt.
+ */
+function texLabel(tex: string, prefix = ''): HTMLSpanElement {
+  return el('span', {}, prefix, el('span', { style: { fontSize: '0.92em', lineHeight: '1' } }, mathEl(tex)));
+}
+
 /** Zig-zag torsional spring drawn along an arc between two world angles. */
 function drawArcSpring(c: Canvas2D, center: Pt, r: number, a0: number, a1: number, color: string): void {
   const n = 14;
@@ -240,7 +249,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       if (exp === 'spring') { restart(); play(); } else onParamsChanged(false);
     },
   });
-  selMode.el.title = 'sgn(θ̇) 在零速附近的數值處理方式';
+  selMode.el.title = 'sgn(dθ/dt) 在零速附近的數值處理方式';
 
   // single-joint panel
   const panelJ = el('div');
@@ -251,11 +260,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const sTc = slider(ctlJ, { label: 'τ_c（庫侖）', min: 0, max: 2, step: 0.01, value: fr.tc, unit: 'N·m', onInput: (v) => { fr.tc = v; onParamsChanged(false); } });
   const sTs = slider(ctlJ, { label: 'τ_s（靜摩擦）', min: 0, max: 3, step: 0.01, value: fr.ts, unit: 'N·m', onInput: (v) => { fr.ts = v; onParamsChanged(false); } });
   const [plotLHost, plotRHost] = split(panelJ);
-  const plotL = new Plot2D(plotLHost, { title: 'θ(t)', yLabel: 'θ (°)', xLabel: 't (s)', series: [{ name: 'θ (°)' }], xWindow: 10, height: 135, yMinSpan: 2, legend: false });
+  const J_WINDOW = 10;
+  const plotL = new Plot2D(plotLHost, { title: 'θ(t)', yLabel: 'θ (°)', xLabel: 't (s)', series: [{ name: 'θ (°)' }], xWindow: J_WINDOW, height: 135, yMinSpan: 2, legend: false });
   const plotR = new Plot2D(plotRHost, {
-    title: '關節端力矩 (N·m)', yLabel: 'N·m', xLabel: 't (s)', xWindow: 10, height: 135, yMinSpan: 0.2,
+    title: '關節端力矩 (N·m)', yLabel: 'N·m', xLabel: 't (s)', xWindow: J_WINDOW, height: 135, yMinSpan: 0.2,
     series: [{ name: '驅動' }, { name: '摩擦' }, { name: '重力' }],
   });
+  /** Growing window [0, t] (then the last 10 s), at least 1 s wide: a lone sample at t = 0 gives a zero-width axis. */
+  const setJointWindow = (t: number) => {
+    const xr: [number, number] = [Math.max(0, t - J_WINDOW), Math.max(1, t)];
+    plotL.setRanges(xr);
+    plotR.setRanges(xr);
+  };
   const infoJ = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.15rem 1rem', marginTop: '0.25rem' } });
   panelJ.appendChild(infoJ);
   const noteJ = note(panelJ, '');
@@ -282,6 +298,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const barColors = () => ['var(--series-1)', 'var(--series-3)', 'var(--series-5)', 'var(--series-4)', 'var(--fg)'];
   const bars1 = torqueBars(barsL, { labels: BAR_LABELS, max: 20, unit: 'N·m', digits: 1, title: '關節 1 所需力矩', colors: barColors() });
   const bars2 = torqueBars(barsR, { labels: BAR_LABELS, max: 20, unit: 'N·m', digits: 1, title: '關節 2 所需力矩', colors: barColors() });
+  // KaTeX for the labels that carry θ̈ (see texLabel)
+  for (const b of [bars1, bars2]) {
+    const labels = b.el.querySelectorAll<HTMLElement>('.mr-bar-label');
+    labels[0]?.replaceChildren(texLabel('M\\ddot\\theta + c'));
+    labels[2]?.replaceChildren(texLabel('\\Delta M\\ddot\\theta', '轉子 '));
+  }
   const infoD = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.15rem 1rem' } });
   panelDec.appendChild(infoD);
   const preview = new Plot2D(panelDec, {
@@ -295,6 +317,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let info: Record<string, ReadoutHandle> = {};
   /** Values get a fixed minimum width so the row does not re-wrap (and the pane does not jump) every frame. */
   const WIDE: Record<string, number> = { wm: 12, pw: 9.5, eq: 13, st: 10, pg: 10.5, req: 6 };
+  /** Labels with a time derivative are typeset with KaTeX (see texLabel). */
+  const TEX_LABELS: Record<string, () => Node> = {
+    wj: () => texLabel('\\dot\\theta'),
+    pw: () => texLabel('\\tau_m\\omega_m = \\tau\\dot\\theta', '功率 '),
+  };
   const buildInfo = (parent: HTMLElement, items: [string, string, string?][]) => {
     parent.replaceChildren();
     info = {};
@@ -302,6 +329,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       info[key] = readout(parent, { label, unit });
       const v = info[key].el.querySelector<HTMLElement>('.mr-value');
       if (v) Object.assign(v.style, { display: 'inline-block', minWidth: `${WIDE[key] ?? 6}em` });
+      const tex = TEX_LABELS[key];
+      if (tex) info[key].el.querySelector('.mr-label')?.replaceChildren(tex());
     }
   };
   const setInfo = (key: string, v: string | number, d = 2) => info[key]?.set(v, d);
@@ -390,7 +419,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.text([tip[0] - 0.55 * tdir[0], tip[1] - 0.55 * tdir[1] + 0.12], `外力 ${PUSH.tau} N·m`, { color: cssVar('--danger') });
     }
     if (jsim.stuck) c.text([tip[0], tip[1] - 0.2], '卡住（靜摩擦）', { color: cssVar('--warn'), bg: cssVar('--sim-bg') });
-    c.overlay.textContent = `θ = ${fmt(th * DEG, 1)}°  θ̇ = ${fmt(jsim.omega, 2)} rad/s  ω_m = ${fmt(wm, 0)} rad/s`;
+    c.setOverlayText(`θ = ${fmt(th * DEG, 1)}°  dθ/dt = ${fmt(jsim.omega, 2)} rad/s  ω_m = ${fmt(wm, 0)} rad/s`);
   };
 
   // ---------- drawing: 2R views
@@ -414,7 +443,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       drawMotors(c, pg, cGear);
       c.text(pb2[2], '直驅（無減速機）', { color: cBare, dy: -16, bg: cssVar('--sim-bg') });
       c.text(pg[2], `G = ${G()}`, { color: cGear, dy: 16, bg: cssVar('--sim-bg') });
-      c.overlay.textContent = `t = ${fmt(geared.t, 2)} s  關節 1：照五次多項式轉 ${fmt(COUP.delta * DEG, 0)}°（${COUP.T} s）`;
+      c.setOverlayText(`t = ${fmt(geared.t, 2)} s  關節 1：照五次多項式轉 ${fmt(COUP.delta * DEG, 0)}°（${COUP.T} s）`);
     } else {
       c.arrow([v.xmax - 0.3, v.ymax - 0.15], [v.xmax - 0.3, v.ymax - 0.6], { color: muted, width: 2 });
       c.text([v.xmax - 0.15, v.ymax - 0.38], 'g', { color: muted, font: 'italic 14px serif' });
@@ -425,7 +454,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       drawMotors(c, pts, cssVar('--accent'));
       c.disk(pts[1], 0.07, { fill: cssVar('--fg') });
       c.disk(pts[2], 0.07, { fill: cssVar('--fg') });
-      c.overlay.textContent = `t = ${fmt(tArm, 2)} s  s = ${fmt(s.s, 3)}  θ = (${fmt(s.theta[0] * DEG, 0)}°, ${fmt(s.theta[1] * DEG, 0)}°)`;
+      c.setOverlayText(`t = ${fmt(tArm, 2)} s  s = ${fmt(s.s, 3)}  θ = (${fmt(s.theta[0] * DEG, 0)}°, ${fmt(s.theta[1] * DEG, 0)}°)`);
     }
   };
 
@@ -439,7 +468,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         stuckRun = jsim.stuck ? stuckRun + h : 0;
       });
       plotL.push(jsim.t, [exp === 'spring' ? jsim.omega : jsim.theta * DEG]);
-      plotR.push(jsim.t, [jsim.tauDrive, jsim.tauF, jsim.p.gravity ? jsim.tauGrav : Number.NaN]);
+      // no gravity series without gravity (keeps it out of the legend)
+      plotR.push(jsim.t, jsim.p.gravity ? [jsim.tauDrive, jsim.tauF, jsim.tauGrav] : [jsim.tauDrive, jsim.tauF]);
+      setJointWindow(jsim.t);
       pb.setTime(jsim.t);
       cvJ.requestRender();
       // nothing more can happen: the joint is held by static friction and no push is pending
@@ -493,6 +524,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       plotL.clear();
       plotR.clear();
       plotL.push(0, [exp === 'spring' ? 0 : startAngle * DEG]);
+      setJointWindow(0);
       pb.setTime(0);
       cvJ.requestRender();
     } else if (exp === 'coupling') {
@@ -569,12 +601,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     pushBtn.style.display = e === 'push' ? '' : 'none';
     setFriction(e === 'spring' ? FRICTION_STICKSLIP : FRICTION_DEFAULT);
     startAngle = e === 'free' ? Math.PI / 3 : 0;
+    // canvas text: dθ/dt instead of a combining dot (which renders detached or not at all)
     plotL.setOptions(e === 'spring'
-      ? { title: 'θ̇(t)：卡住時為 0', yLabel: 'θ̇ (rad/s)', series: [{ name: 'θ̇ (rad/s)' }], yMinSpan: 0.05 }
+      ? { title: '關節速度 dθ/dt：卡住時為 0', yLabel: 'dθ/dt (rad/s)', series: [{ name: 'dθ/dt (rad/s)' }], yMinSpan: 0.05 }
       : { title: 'θ(t)', yLabel: 'θ (°)', series: [{ name: 'θ (°)' }], yMinSpan: 2 });
     plotR.setOptions({ series: [{ name: e === 'spring' ? '彈簧' : e === 'push' ? '外力' : '驅動 Gτ_m' }, { name: '摩擦' }, { name: '重力' }] });
     noteJ.textContent = {
-      motor: `馬達：失速力矩 ${MOTOR.stallTorque} N·m，轉速達 ${MOTOR.noLoadSpeed} rad/s（${fmt(rpm(MOTOR.noLoadSpeed), 0)} rpm）時力矩降為 0。可拖曳連桿末端改變起始角。`,
+      motor: `馬達：失速力矩 ${MOTOR.stallTorque} N·m，轉速達 ${MOTOR.noLoadSpeed} rad/s（${fmt(rpm(MOTOR.noLoadSpeed), 0)} rpm）時力矩降為 0。θ* 不計摩擦：靜摩擦會讓連桿停在 θ* 前後幾度內。可拖曳連桿末端改變起始角。`,
       free: `拖曳連桿末端可改變放開角度。關節端庫侖摩擦 = τ_c + G × ${TC_MOTOR} N·m（馬達端摩擦被放大）。`,
       push: '馬達斷電；外力在 t = 0.3 s 起作用 0.5 秒，「再推一次」可重複。',
       spring: `輸出端以 ${SPRING.omegaOut} rad/s 在 ±${fmt(SPRING.amp * DEG, 0)}° 間來回轉，經扭簧（k = ${SPRING.k} N·m/rad）拉動連桿；轉子在彈簧另一側。`,

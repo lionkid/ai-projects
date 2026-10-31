@@ -7,8 +7,8 @@ import {
 import { planar2RIK, planarFK } from '@/mr';
 import { meta } from './meta';
 import {
-  DEFAULT_PLANT, charPoly, pdGainsFromPole, pdPrediction, pdSag2R, pidKiBound, polyRoots, simulateJoint, stepMetrics,
-  tailAmplitude, type Complex, type InputMode, type RefKind, type Reference, type Trial, type TrialOptions,
+  DEFAULT_PLANT, charPoly, dominantRoot, pdGainsFromPole, pdPrediction, pdSag2R, pidKiBound, polyRoots, simulateJoint,
+  stepMetrics, tailAmplitude, type Complex, type InputMode, type RefKind, type Reference, type Trial, type TrialOptions,
 } from './pidSim';
 
 const steps: LessonStep[] = [
@@ -21,7 +21,7 @@ $$\\theta_e(t) = \\theta_d(t) - \\theta(t).$$
 把閉迴路寫成 $\\theta_e$ 的微分方程，就是**誤差動態（error dynamics）**；好的控制器讓這個方程穩定而且收斂得快。評估一次階躍響應，常看三個數字：
 
 - **穩態誤差** $e_{ss}$：等得夠久之後還剩多少誤差；
-- **超調（overshoot）** $M_p$：誤差衝過終值多少，以起始誤差的百分比表示；
+- **超調（overshoot）** $M_p$：誤差衝過終值多少，以起始差距 $|\\theta_e(0) - e_{ss}|$ 的百分比表示；
 - **2% 安定時間** $t_s$：從這一刻起，誤差與終值的差距一直小於起始差距的 2%。
 
 這個範例故意加了一點固定負載，所以 $e_{ss}$ 不是零，第 4 步會解釋原因。`,
@@ -46,7 +46,7 @@ $$M\\ddot\\theta_e + (b+K_d)\\,\\dot\\theta_e + K_p\\,\\theta_e = 0,$$
 
 $$\\omega_n = \\sqrt{K_p/M}, \\qquad \\zeta = \\frac{b+K_d}{2\\sqrt{K_p M}} .$$
 
-$K_p$ 像彈簧、$K_d$ 像阻尼（本頁關節 $M = 0.5$ kg·m²、$b = 0.1$ N·m·s/rad）。$\\zeta<1$ 時兩個共軛根讓響應振盪，超調 $M_p = e^{-\\pi\\zeta/\\sqrt{1-\\zeta^2}}$、$t_s \\approx 4/(\\zeta\\omega_n)$；$K_p$ 固定時，$\\zeta = 1$（臨界阻尼）是所有不超調的設定裡最快的。`,
+$K_p$ 像彈簧、$K_d$ 像阻尼（本頁關節 $M = 0.5$ kg·m²、$b = 0.1$ N·m·s/rad）。$\\zeta<1$ 時兩個共軛根讓響應振盪，超調 $M_p = e^{-\\pi\\zeta/\\sqrt{1-\\zeta^2}}$；安定時間可用包絡線粗估為 $t_s \\approx 4/(\\zeta\\omega_n)$，但 $\\zeta$ 接近 1 時這個估計明顯偏短（表格的「線性預測」是直接解線性方程得到的值）。$K_p$ 固定時，$\\zeta = 1$（臨界阻尼）是所有不超調的設定裡最快的。`,
     simHint: '目前 ζ ≈ 0.17，超調很大。把 Kd 往上拉，或直接把 s 平面上的根往左下拖，讓 ζ 接近 1；比較表格中的「線性預測」與「模擬量測」。',
   },
   {
@@ -295,30 +295,50 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     return pts;
   }
 
+  /**
+   * Frame the s-plane around the current roots, the Kp = 0 roots and the near part of the Kp
+   * locus (the far part may leave the view). The box matches the canvas aspect and the extra
+   * width goes to the stable (left) side, so the unstable half-plane stays a narrow strip
+   * instead of filling half the canvas.
+   */
   function fitRootView(): void {
-    let xmin = -2, xmax = 0.5, ymax = 1.5;
-    for (const z of [...locus, ...roots]) {
+    const g = gains();
+    const kpCap = st.mode === 'velocity' ? KP_MAX.velocity : Math.max(1.5 * g.kp, 40);
+    const pts = [
+      ...roots,
+      ...polyRoots(charPoly(st.mode, PLANT, { ...g, kp: 0 })),
+      ...polyRoots(charPoly(st.mode, PLANT, { ...g, kp: kpCap })),
+    ];
+    let xL = -1, xR = 0, Y = 1.5;
+    for (const z of pts) {
       if (!Number.isFinite(z.re) || !Number.isFinite(z.im)) continue;
-      xmin = Math.min(xmin, z.re); xmax = Math.max(xmax, z.re); ymax = Math.max(ymax, Math.abs(z.im));
+      xL = Math.min(xL, z.re); xR = Math.max(xR, z.re); Y = Math.max(Y, Math.abs(z.im));
     }
-    xmin = Math.max(xmin, -60); xmax = Math.min(xmax, 15); ymax = Math.min(ymax, 40);
-    const pad = 0.1 * Math.max(xmax - xmin, 2 * ymax);
-    rootCv.setWorld({ xmin: xmin - pad, xmax: Math.max(xmax, 0) + pad, ymin: -ymax - pad, ymax: ymax + pad });
+    xL = Math.max(xL, -80); xR = Math.min(xR, 20); Y = Math.min(Y, 60);
+    const aspect = rootCv.width > 0 && rootCv.height > 0 ? rootCv.width / rootCv.height : 1.45;
+    const W = Math.max((xR - xL) / 0.72, 2.3 * Y * aspect);
+    const x1 = xR + 0.18 * W;
+    const H = W / aspect;
+    rootCv.setWorld({ xmin: x1 - W, xmax: x1, ymin: -H / 2, ymax: H / 2 });
   }
 
   /** Steady-state error predicted by the linear model, or null when it does not apply. */
   function predictedEss(): number | null {
     const g = gains();
     if (st.ref === 'sine') return null;
+    // Along a ramp the gravity load keeps changing, so no constant steady state exists (even with I).
+    if (st.mode === 'torque' && st.gravity && st.ref !== 'step') return null;
     if (g.ki > 0) return 0;
     if (st.mode === 'velocity') return st.ref === 'ramp' && !st.velFF ? (g.kp > 0 ? RAMP_C / g.kp : null) : 0;
     if (!(g.kp > 0)) return null;
-    if (st.ref === 'ramp') return st.gravity ? null : (PLANT.b * RAMP_C + st.tauDist) / g.kp;
-    // Step: solve K_p e = τ_dist + mgr cos(θ_d − e) by a short fixed-point iteration.
+    if (st.ref === 'ramp') return (PLANT.b * RAMP_C + st.tauDist) / g.kp;
+    // Step: solve K_p e = τ_dist + mgr cos(θ_d − e) by a fixed-point iteration (a contraction when
+    // K_p > mgr); report nothing if it has not converged.
     const thd = st.stepAmp;
+    const rhs = (e: number) => (st.tauDist + (st.gravity ? PLANT.mgr * Math.cos(thd - e) : 0)) / g.kp;
     let e = 0;
-    for (let k = 0; k < 30; k++) e = (st.tauDist + (st.gravity ? PLANT.mgr * Math.cos(thd - e) : 0)) / g.kp;
-    return e;
+    for (let k = 0; k < 60; k++) e = rhs(e);
+    return Math.abs(rhs(e) - e) < 1e-6 ? e : null;
   }
 
   // ---- recompute (one full trial is cheap: 3000 RK4 steps) ----------------
@@ -419,9 +439,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     let mEss = dash;
     let essHead = '穩態誤差 e_ss';
     if (st.ref === 'step') {
+      // "Linear prediction" = the exact solution of the linear error equation (no gravity
+      // stiffness, no saturation); the 4/(ζωn) rule of thumb is shown in the caption instead.
       if (g.ki === 0) {
-        if (st.mode === 'torque' && pred) { pMp = `${fmt(pred.overshootPct, 1)} %`; pTs = Number.isFinite(pred.ts) ? `${fmt(pred.ts, 2)} s` : '∞'; }
-        if (st.mode === 'velocity' && g.kp > 0) { pMp = '0 %'; pTs = `${fmt(4 / g.kp, 2)} s`; }
+        if (st.mode === 'torque' && pred) { pMp = `${fmt(pred.overshootPct, 1)} %`; pTs = Number.isFinite(pred.tsExact) ? `${fmt(pred.tsExact, 2)} s` : '∞'; }
+        if (st.mode === 'velocity' && g.kp > 0) { pMp = '0 %'; pTs = `${fmt(Math.log(50) / g.kp, 2)} s`; }
       }
       if (!trial.diverged) {
         const m = stepMetrics(trial.t, trial.err);
@@ -446,8 +468,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     );
     if (st.mode === 'torque') {
       const parts: string[] = [];
-      if (pred) parts.push(`ζ = ${fmt(pred.zeta, 3)}，ωn = ${fmt(pred.wn, 2)} rad/s`);
-      else parts.push('Kp = 0：沒有恢復力');
+      if (!pred) parts.push('Kp = 0：沒有恢復力');
+      else if (g.ki === 0) {
+        parts.push(`ζ = ${fmt(pred.zeta, 3)}，ωn = ${fmt(pred.wn, 2)} rad/s`);
+        if (st.ref === 'step' && Number.isFinite(pred.ts)) parts.push(`粗估 ${pred.zeta < 1 ? '4/(ζωn)' : '4/|慢根|'} = ${fmt(pred.ts, 2)} s`);
+        // The root plot and the M_p / t_s predictions use the linear model without gravity.
+        if (st.gravity) parts.push('重力使等效剛性變為 Kp − mgr·sinθ');
+      } else {
+        // With an I term the loop is third order: ζ, ωn of the PD part no longer describe it.
+        parts.push(`PD 部分 ζ = ${fmt(pred.zeta, 2)}、ωn = ${fmt(pred.wn, 2)}`);
+        const dom = dominantRoot(roots);
+        if (dom && dom.re < 0) parts.push(Math.abs(dom.im) > 1e-9 ? `主導根 ζ ≈ ${fmt(-dom.re / Math.hypot(dom.re, dom.im), 2)}` : `主導根 s = ${fmt(dom.re, 2)}（實根）`);
+      }
       if (g.ki > 0) parts.push(`穩定需 Ki < (b+Kd)Kp/M = ${fmt(pidKiBound(PLANT, g.kp, g.kd), 1)}`);
       caption.textContent = parts.join('；');
     } else {
@@ -474,7 +506,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const s = sampleAt(tCur);
     c.grid(0.5);
     c.line([0, 0], [1.2, 0], { color: muted, width: 1, dash: [4, 4] });
-    c.text([1.2, -0.08], 'θ = 0', { color: muted, align: 'right' });
+    c.text([1.22, -0.15], 'θ = 0', { color: muted, align: 'right' });
     // mount
     c.polygon([[-0.11, -0.14], [0.11, -0.14], [0, 0]], { fill: cssVar('--grid-strong'), color: cssVar('--grid-strong'), width: 1 });
     c.line([-0.17, -0.14], [0.17, -0.14], { color: muted, width: 2 });
@@ -507,7 +539,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.text([0.72 * Math.cos(mid), 0.72 * Math.sin(mid)], 'θ_e', { color: warn, bg: cssVar('--sim-bg') });
     }
     const deg = (x: number) => `${fmt((x * 180) / Math.PI, 1)}°`;
-    c.overlay.textContent = `t = ${fmt(Math.min(tCur, T_END), 2)} s\nθ_e = ${deg(s.err)}`;
+    c.setOverlayText(`t = ${fmt(Math.min(tCur, T_END), 2)} s\nθ_e = ${deg(s.err)}`);
   };
 
   function cross(c: Canvas2D, z: Complex, color: string): void {
@@ -524,7 +556,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.grid(stp);
     const small = `10px ${cssVar('--font') || 'sans-serif'}`;
     for (let x = Math.ceil(v.xmin / stp) * stp; x <= v.xmax; x += stp) if (Math.abs(x) > 1e-9) c.text([x, 0], fmt(x, stp < 1 ? 1 : 0), { color: muted, dy: 9, font: small });
-    for (let y = Math.ceil(v.ymin / stp) * stp; y <= v.ymax; y += stp) if (Math.abs(y) > 1e-9) c.text([0, y], fmt(y, stp < 1 ? 1 : 0), { color: muted, dx: 4, align: 'left', font: small });
+    for (let y = Math.ceil(v.ymin / stp) * stp; y <= v.ymax; y += stp) {
+      // skip labels at the top/bottom edge, where the 'Im' and '不穩定區' labels sit
+      const sy = c.toScreen([0, y])[1];
+      if (Math.abs(y) > 1e-9 && sy > 18 && sy < c.height - 18) c.text([0, y], fmt(y, stp < 1 ? 1 : 0), { color: muted, dx: 4, align: 'left', font: small });
+    }
     c.text([v.xmax, 0], 'Re', { color: muted, dx: -12, dy: -9 });
     c.text([0, v.ymax], 'Im', { color: muted, dx: 12, dy: 10 });
     c.text([v.xmax, v.ymin], '不穩定區', { color: danger, dx: -6, dy: -10, align: 'right', font: small });
@@ -542,7 +578,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     for (const z of roots) cross(c, z, z.re > 1e-9 ? danger : accent);
     const g = gains();
     const pred = st.mode === 'torque' ? pdPrediction(PLANT, g.kp, g.kd) : null;
-    c.overlay.textContent = `s 平面　× 特徵根　· Kp 由 0 增大的軌跡` + (pred ? `\nζ = ${fmt(pred.zeta, 2)}  ωn = ${fmt(pred.wn, 2)}` : st.mode === 'velocity' ? `\ns = −Kp = ${fmt(-g.kp, 2)}` : '');
+    // With an I term the PD-part ζ, ωn no longer describe the loop: report the dominant root.
+    const dom = g.ki > 0 ? dominantRoot(roots) : null;
+    const line2 = dom ? (Math.abs(dom.im) > 1e-9 && dom.re < 0 ? `主導根 ζ ≈ ${fmt(-dom.re / Math.hypot(dom.re, dom.im), 2)}` : `主導根 s = ${fmt(dom.re, 2)}`)
+      : pred ? `ζ = ${fmt(pred.zeta, 2)}  ωn = ${fmt(pred.wn, 2)}`
+        : st.mode === 'velocity' ? `s = −Kp = ${fmt(-g.kp, 2)}` : '';
+    c.setOverlayText(`× 特徵根　· Kp↑ 的軌跡${line2 ? `\n${line2}` : ''}`);
   };
 
   // Draggable dominant root (PD or P only): moving it solves for the gains.
@@ -612,7 +653,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const v = c.visible();
     c.arrow([v.xmin + 0.25, v.ymin + 0.75], [v.xmin + 0.25, v.ymin + 0.3], { color: muted, width: 2, head: 9 });
     c.text([v.xmin + 0.25, v.ymin + 0.85], 'g', { color: muted });
-    c.overlay.textContent = `獨立 PD，Kp = (${PREVIEW_KP[0]}, ${PREVIEW_KP[1]})\n淡色＝目標　橘色弧＝下垂角`;
+    c.setOverlayText(`獨立 PD，Kp = (${PREVIEW_KP[0]}, ${PREVIEW_KP[1]})\n淡色＝目標　橘色弧＝下垂角`);
   }
   function ensurePreview(): void {
     if (previewCv) return;

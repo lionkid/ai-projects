@@ -191,6 +191,21 @@ export function branchOf(cfg: Config): Branch {
   return [elbowSideOf(0, cfg.phi1), elbowSideOf(1, cfg.phi2)];
 }
 
+/**
+ * Geometrically distinct elbow choices per leg for a tip: 2, or 1 when the two elbows coincide within
+ * `tol` (the leg is fully stretched or folded, i.e. the tip lies on that leg's workspace boundary), or 0 when
+ * the tip is out of reach. The number of distinct IK branches is the product of the two counts.
+ */
+export function legBranchCounts(g: FiveBarGeom, P: Pt, tol = 1e-3): [number, number] {
+  const count = (side: Side): number => {
+    const leg = legIK(g, side, P);
+    if (!leg.reachable) return 0;
+    const [a, b] = leg.sols;
+    return Math.hypot(a.elbow[0] - b.elbow[0], a.elbow[1] - b.elbow[1]) < tol ? 1 : 2;
+  };
+  return [count(0), count(1)];
+}
+
 // ---------------------------------------------------------------------------
 // Forward kinematics: intersection of two circles
 // ---------------------------------------------------------------------------

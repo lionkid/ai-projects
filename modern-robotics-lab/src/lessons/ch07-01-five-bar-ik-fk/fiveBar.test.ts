@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { planarFK } from '@/mr';
 import {
   DEFAULT_GEOM, DEFAULT_RPR, RPR_PRESETS, BRANCHES, assembleConfig, basePoint, branchOf, circleIntersections, driveMotors,
-  driveTip, elbowPoint, fkAll, fkJacobianFD, fkNearest, grubler, ikAll, ikConfig, legIK, loopResidual, motorSweep,
+  driveTip, elbowPoint, fkAll, fkJacobianFD, fkNearest, grubler, ikAll, ikConfig, legBranchCounts, legIK, loopResidual, motorSweep,
   rprFKAll, rprIK, sigmaMax, symmetricMarginAngle, tipShift, type FiveBarGeom, type Pt,
 } from './fiveBar';
 
@@ -82,6 +82,16 @@ describe('five-bar IK (two 2R legs) and FK (two circles)', () => {
     const leg = legIK(g, 0, edge);
     expect(leg.reachable).toBe(true);
     expect(near(leg.sols[0].elbow, leg.sols[1].elbow, 1e-6)).toBe(true);
+  });
+
+  it('distinct branches: 2 × 2 inside, 1 × 2 with the left leg stretched (as driveTip leaves it), 0 out of reach', () => {
+    expect(legBranchCounts(g, [0.2, 1.6])).toEqual([2, 2]);
+    const c = ikConfig(g, [0, 1.6], [1, 1])!;
+    const edge = driveTip(g, c, [2, 3.5], [1, 1]); // moving up-right, the left leg runs out of length first
+    expect(edge.blocked).toBe(true);
+    expect(legBranchCounts(g, edge.cfg.P)).toEqual([1, 2]);
+    expect(ikAll(g, edge.cfg.P).length).toBe(4); // four entries, but only two distinct poses
+    expect(legBranchCounts(g, [2.4, 0.5])).toEqual([0, 2]); // 2.94 m from A1 (out of reach), 1.96 m from A2
   });
 
   it('IK motor angles depend only on the own leg (decoupling)', () => {

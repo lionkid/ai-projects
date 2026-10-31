@@ -8,7 +8,7 @@ import { planarFK, type Mat } from '@/mr';
 import { meta } from './meta';
 import {
   L2R, L3R, sigmaInfo, tipJacobian, solveTip, elbowBranch, virtualLink, reachAnnulus, sweepTheta2,
-  sigmaMinProfile, sampleProfile, radialRates, radialPathConfig, tipVelocity, wrapAngle, type SigmaInfo,
+  sigmaMinProfile, sampleProfile, radialRates, radialPathConfig, radialWarp, tipVelocity, wrapAngle, type SigmaInfo,
 } from './manip';
 
 const D = Math.PI / 180;
@@ -18,7 +18,14 @@ const VEL_SCALE = 0.4;
 const FORCE_SCALE = 0.3;
 const FORCE_CAP = 3.5;
 const RADIAL_SPEED = 0.1; // m/s
-const RADIAL_PLAYBACK = 0.5; // the radial run is shown in slow motion
+/** Slow-motion factor of the radial run while the arm is still far from the singularity. */
+const RADIAL_PLAYBACK = 0.7;
+/**
+ * Closer in, the run is slowed further so that θ2 shrinks by a fixed factor per real second
+ * (e^-1.2 ≈ 0.3). At constant tip speed the joint rates blow up in the last few millimetres; in
+ * plain slow motion that whole phase would flash by in about 0.1 s.
+ */
+const RADIAL_LOG_RATE = 1.2;
 const QDOT_LIMIT = 2; // rad/s, nominal joint speed limit drawn on the bars
 const HEAT_RANGE: [number, number] = [0, 0.9];
 
@@ -48,7 +55,7 @@ $$\\operatorname{rank} J_v(\\theta) = 1 \\iff \\theta_2,\\ \\theta_3 \\in \\{0, 
 $$v^{\\mathsf T}\\,(J_vJ_v^{\\mathsf T})^{-1}\\,v \\le 1 .$$
 
 主軸方向是 $J_vJ_v^{\\mathsf T}$ 的特徵向量，半軸長是特徵值的平方根 $\\sqrt{\\lambda_i}$，也就是 $J_v$ 的奇異值 $\\sigma_i$：長軸方向好動、短軸方向難動。這裡只用線速度的 $2\\times n$ 子 Jacobian，避免把 m/s 與 rad/s 混進同一個橢圓。`,
-    simHint: '「掃描單位 θ̇」已開啟：右下角圓上的點是 θ̇，末端的紫色箭頭 Jθ̇ 沿橢圓繞圈。也可以拖那個點；打開「J 欄向量」會發現 J₁、J₂ 的尖端正好在橢圓上。',
+    simHint: '「掃描單位關節速度」已開啟：右下角單位圓上的紫點是 $\\dot\\theta$，末端的紫色箭頭 $J_v\\dot\\theta$ 沿橢圓繞圈。也可以拖那個點；打開「J 欄向量」會發現 J₁、J₂ 的尖端正好在橢圓上。',
   },
   {
     title: '量化：σ 與條件數',
@@ -61,10 +68,10 @@ $\\mu_1$ 越接近 1 越各向同性（$J_vJ_v^{\\mathsf T}$ 的條件數 $\\mu_
   },
   {
     title: '整個工作空間的地圖',
-    md: `把每個末端位置的 $\\sigma_{\\min}$ 塗成顏色（亮＝好動，暗＝接近奇異），就得到工作空間的可操作度地圖。2R 的地圖是同心圓：$\\sigma$ 只和 $\\theta_2$ 有關，而 $\\theta_2$ 由末端到基座的距離決定，兩個肘部分支的值也相同，所以暗環就落在工作空間的內、外邊界。
+    md: `把每個末端位置的 $\\sigma_{\\min}$ 塗成顏色（亮＝好動，暗＝接近奇異），就得到工作空間的可操作度地圖。2R 的地圖是同心圓：$\\sigma$ 只和 $\\theta_2$ 有關，而 $\\theta_2$ 由末端到基座的距離決定，兩個肘部分支的值也相同，所以最暗的地方是外邊界（伸直，$\\theta_2 = 0$）與基座附近（折回，$\\theta_2 = \\pm180^\\circ$）。
 
-3R 有冗餘，必須先選一個構型族：這裡固定 $\\theta_3$ 與分支，再解另外兩軸。改變 $\\theta_3$，暗環會移動、跑進工作空間內部，甚至完全消失——地圖的明暗跟著構型走，不只跟著位置走。`,
-    simHint: '熱圖已開啟。切換「3R：θ₃ = 180°／90°／0°」看暗環的位置；拖曳末端穿過暗環，同時注意 μ₁ 讀數與紅色虛線。',
+3R 有冗餘，必須先選一個構型族：這裡固定 $\\theta_3$ 與分支，再解另外兩軸。改變 $\\theta_3$，暗環會移到 3R 工作空間的內部（$\\theta_3 = 180^\\circ$ 時在 $r = 0.8$ 與 $1.2$ m），甚至完全消失——地圖的明暗跟著構型走，不只跟著位置走。`,
+    simHint: '熱圖已開啟。切換「3R：θ₃ = 180°／90°／0°」看暗環的位置；把末端拖向暗環（它就在虛線圓上，也就是這個構型族到得了的邊緣），同時注意 μ₁ 讀數與紅色虛線。',
   },
   {
     title: '接近奇異的代價與下一課',
@@ -75,7 +82,7 @@ $$\\dot\\theta = J_v^{+}\\,v \\qquad (\\text{2R 時 } J_v^{+} = J_v^{-1}),$$
 若 $v$ 沿短軸方向，$\\|\\dot\\theta\\| = \\|v\\|/\\sigma_{\\min}$。2R 越接近伸直，$\\dot\\theta_2$ 就越大：0.1 m/s 的徑向速度在 $\\theta_2 = 3^\\circ$ 時就要將近 4 rad/s，遠超過一般關節的速度上限。
 
 奇異並非一無是處。下一課的靜力學 $\\tau = J^{\\mathsf T}\\mathcal F$ 會說明：同一個伸直姿勢沿連桿方向承受負載時，幾乎不需要關節力矩——先打開力橢圓預覽看看它朝哪裡變長。`,
-    simHint: '按「▶ 2R 徑向伸直」：末端以 0.1 m/s 往外移（慢動作），紅線是 2 rad/s 的速度上限。最後打開「預覽力橢圓」，比較它和速度橢圓的長軸方向。',
+    simHint: '按「▶ 2R 徑向伸直」：末端以 0.1 m/s 往外移（慢動作，越接近伸直放得越慢），看關節速度條何時越過 ±2 rad/s 的紅線。最後打開「預覽力橢圓」，比較它和速度橢圓的長軸方向。',
   },
 ];
 
@@ -101,17 +108,17 @@ const quiz: QuizQuestion[] = [
       '只要把關節速度調大，就能補回失去的方向',
     ],
     answer: 1,
-    explanation: '兩個旋轉軸共線時，它們的螺旋軸（screw axis）完全相同，Jacobian 有兩個一模一樣的欄位，秩至少掉 1。再大的關節速度也只能在剩下的方向上組合，補不回失去的那個轉動方向。這種腕部奇異可以出現在工作空間內部任何地方——和 3R 的例子一樣，它是構型的性質。',
+    explanation: '兩個旋轉軸共線時，它們的螺旋軸（screw axis）相同（軸向相反時只差一個負號），Jacobian 有兩個線性相依的欄位，秩至少掉 1。再大的關節速度也只能在剩下的方向上組合，補不回失去的那個轉動方向。這種腕部奇異可以出現在工作空間內部任何地方——和 3R 的例子一樣，它是構型的性質。',
   },
   {
     question: '某構型的可操作度橢圓長半軸為 1.5、短半軸為 0.15（單位：每 1 rad/s 關節速度範數對應的 m/s）。哪個解讀正確？',
     options: [
-      '$\\mu_1 = 10$；沿短軸方向產生 0.1 m/s 需要約 0.67 rad/s 的 $\\|\\dot\\theta\\|$',
       '$\\mu_1 = 0.1$；此構型幾乎各向同性',
       '$\\mu_3 = 1.65$，代表橢圓的周長',
       '沿長軸方向最難移動',
+      '$\\mu_1 = 10$；沿短軸方向產生 0.1 m/s 需要約 0.67 rad/s 的 $\\|\\dot\\theta\\|$',
     ],
-    answer: 0,
+    answer: 3,
     explanation: '$\\mu_1 = \\sigma_{\\max}/\\sigma_{\\min} = 1.5/0.15 = 10$，離各向同性（$\\mu_1 = 1$）很遠。沿短軸 $\\|\\dot\\theta\\| = \\|v\\|/\\sigma_{\\min} = 0.1/0.15 \\approx 0.67$ rad/s，沿長軸只要約 0.067 rad/s。$\\mu_3 = \\sigma_1\\sigma_2 = 0.225$，正比於面積而不是周長。',
   },
 ];
@@ -132,8 +139,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let lockTarget: Pt | null = null;
   let lockClamped = false;
   let ghost: number[] | null = null;
-  let radial: { tip0: Pt; s: number; sMax: number; th0: number[]; br: 1 | -1; t: number } | null = null;
+  let radial: { tip0: Pt; s: number; sMax: number; th0: number[]; br: 1 | -1; t: number; warp: number } | null = null;
   let radialMsg = '';
+  const labels = new LabelPlacer();
 
   // derived quantities (refreshed by recompute)
   let J: Mat = tipJacobian(L, th);
@@ -155,6 +163,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   ]);
 
   const rp = controlPanel(host, { compact: true });
+  // room for the focus outline of the readout row (the plots below would otherwise paint over its lower edge)
+  rp.style.marginBottom = '0.45rem';
   const rrow = row(rp);
   const rRank = readout(rrow, { label: 'rank J_v' });
   const rSmax = readout(rrow, { label: 'σ_max' });
@@ -169,9 +179,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     title: 'σ 隨 θ₂ 變化（其餘關節固定）', xLabel: 'θ₂ (°)', height: 130, xRange: [-180, 180], yRange: [0, 3],
     series: [{ name: 'σ_max' }, { name: 'σ_min' }, { name: 'μ₃ = σ₁σ₂', dash: [5, 4] }],
   });
+  // The μ₁ = 10 reference line is explained in the title: a label on the line itself collides with
+  // the live marker label whenever the marker sits near the right edge.
   const plotM = new Plot2D(pr, {
-    title: '條件數 μ₁ = σ_max / σ_min', xLabel: 'θ₂ (°)', height: 130, xRange: [-180, 180], yRange: [0, 30],
-    series: [{ name: 'μ₁', color: cssVar('--series-5', '#7c3aed') }],
+    title: '條件數 μ₁ = σ_max/σ_min（虛線 = 10）', xLabel: 'θ₂ (°)', height: 130, xRange: [-180, 180], yRange: [0, 30],
+    series: [{ name: 'μ₁', color: '--series-5' }],
   });
 
   const panel = controlPanel(host, { compact: true });
@@ -180,7 +192,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const selModel = select<ModelKey>(optRow, {
     value: '2R',
     options: [{ value: '2R', label: '平面 2R（1, 1 m）' }, { value: '3R', label: '平面 3R（1, 0.8, 0.6 m）' }],
-    onChange: (v) => { chipGroups[step]?.clear(); stopRadial(); setModel(v); },
+    onChange: (v) => { chipGroups[step]?.clear(); interrupt(); setModel(v); },
   });
   const selBranch = select<'+' | '-'>(optRow, {
     value: '+',
@@ -191,7 +203,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tEllipse = toggle(optRow, { label: '速度橢圓', value: show.ellipse, onChange: (v) => { show.ellipse = v; cv.requestRender(); } });
   const tCols = toggle(optRow, { label: 'J 欄向量', value: show.cols, onChange: (v) => { show.cols = v; cv.requestRender(); } });
   const tHeat = toggle(optRow, { label: 'σ_min 熱圖', value: show.heat, onChange: (v) => { show.heat = v; heatLegend.style.display = v ? '' : 'none'; cv.requestRender(); } });
-  const tSweep = toggle(optRow, { label: '掃描單位 θ̇', value: show.sweep, onChange: (v) => setSweep(v) });
+  const tSweep = toggle(optRow, { label: '掃描單位關節速度', value: show.sweep, onChange: (v) => setSweep(v) });
   const tLock = toggle(optRow, { label: '鎖住末端（自運動）', value: false, onChange: (v) => setLock(v) });
   const tForce = toggle(optRow, { label: '預覽力橢圓', value: show.force, onChange: (v) => { show.force = v; cv.requestRender(); } });
   const s1 = angleSlider(panel, { label: 'θ₁', value: th[0], onInput: (v) => setJoint(0, v) });
@@ -203,12 +215,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const ratePanel = controlPanel(host, { compact: true });
   const rateRow = row(ratePanel);
   const runBtn = button(rateRow, { label: '▶ 2R 徑向伸直 0.1 m/s', small: true, variant: 'primary', onClick: () => (radial ? stopRadial() : startRadial()) });
-  const rNorm = readout(rateRow, { label: '所需 ‖θ̇‖ =' });
+  // Joint rates are written dθ/dt in HTML/canvas text: the combining dot of θ̇ renders as a stray tick there.
+  const rNorm = readout(rateRow, { label: '所需 ‖dθ/dt‖ =' });
   const rRate = readout(rateRow, { label: '' });
-  const bars2 = torqueBars(ratePanel, { labels: ['θ̇₁', 'θ̇₂'], max: 8, limit: QDOT_LIMIT, unit: 'rad/s', title: '徑向 0.1 m/s 所需關節速度 J⁺v（紅線 = ±2 rad/s 上限）' });
-  const bars3 = torqueBars(ratePanel, { labels: ['θ̇₁', 'θ̇₂', 'θ̇₃'], max: 8, limit: QDOT_LIMIT, unit: 'rad/s', title: '徑向 0.1 m/s 所需關節速度：最小範數 J⁺v（紅線 = ±2 rad/s 上限）' });
+  const bars2 = torqueBars(ratePanel, { labels: ['dθ₁/dt', 'dθ₂/dt'], max: 8, limit: QDOT_LIMIT, unit: 'rad/s', title: '徑向 0.1 m/s 所需關節速度 J⁺v（紅線 = ±2 rad/s 上限）' });
+  const bars3 = torqueBars(ratePanel, { labels: ['dθ₁/dt', 'dθ₂/dt', 'dθ₃/dt'], max: 8, limit: QDOT_LIMIT, unit: 'rad/s', title: '徑向 0.1 m/s 所需關節速度：最小範數 J⁺v（紅線 = ±2 rad/s 上限）' });
   bars2.el.style.gridColumn = '1 / -1';
   bars3.el.style.gridColumn = '1 / -1';
+  // wider value column so '-22.36 rad/s ⚠' near the singularity does not wrap (the bars would jump)
+  for (const b of [bars2, bars3]) b.el.querySelectorAll<HTMLElement>('.mr-bar-row').forEach((r) => { r.style.gridTemplateColumns = 'minmax(2.5em, auto) 1fr 9.5em'; });
 
   note(host, '比例：速度 1 m/s ↔ 0.4 m，力橢圓 1 N ↔ 0.3 m（‖τ‖ ≤ 1 N·m）。σ_min/σ_max < 10⁻⁶ 判為降秩。3R 拖曳末端時固定 θ₃。');
 
@@ -257,12 +272,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (step <= 1) mJ.set(J, { digits: 2 });
     ensureSweep();
     const t2d = wrapAngle(th[1]) / D;
-    const c1 = cssVar('--series-1', '#2563eb'), c2 = cssVar('--series-2', '#e11d48'), c5 = cssVar('--series-5', '#7c3aed');
-    plotS.setMarkers([{ x: t2d }, { x: t2d, y: S.smax, color: c1 }, { x: t2d, y: S.smin, color: c2 }]);
+    // colours as CSS variable names so the plots follow a theme switch
+    plotS.setMarkers([{ x: t2d }, { x: t2d, y: S.smax, color: '--series-1' }, { x: t2d, y: S.smin, color: '--series-2' }]);
     plotM.setMarkers([
-      { y: 10, label: 'μ₁ = 10', dash: [2, 4] },
+      { y: 10, dash: [2, 4] },
       { x: t2d },
-      { x: t2d, y: Math.min(S.mu1, 29.4), color: c5, label: Number.isFinite(S.mu1) ? `μ₁ = ${fmt(S.mu1, 1)}` : 'μ₁ = ∞' },
+      { x: t2d, y: Math.min(S.mu1, 29.4), color: '--series-5', label: Number.isFinite(S.mu1) ? `μ₁ = ${fmt(S.mu1, 1)}` : 'μ₁ = ∞' },
     ]);
     s1.set(th[0], { silent: true });
     s2.set(th[1], { silent: true });
@@ -278,7 +293,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       bars.set(rr.qdot);
       rNorm.set(`${fmt(rr.norm, 2)} rad/s`);
       const over = Math.max(...rr.qdot.map(Math.abs)) > QDOT_LIMIT;
-      rRate.set(radialMsg || (radial ? `t = ${fmt(radial.t, 2)} s　` : '') + (over ? '⚠ 超過關節速度上限' : '在上限之內'));
+      const run = radial ? `t = ${fmt(radial.t, 2)} s（慢動作 ×${fmt(radial.warp, radial.warp < 0.1 ? 3 : 2)}）　` : '';
+      rRate.set(radialMsg || run + (over ? '⚠ 超過關節速度上限' : '在上限之內'));
     } else {
       bars.set(new Array(L.length).fill(0));
       rNorm.set('∞');
@@ -310,9 +326,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     update();
   }
 
+  /** The learner changed the configuration by hand: end a radial run and drop its final message. */
+  function interrupt(): void {
+    stopRadial();
+    radialMsg = '';
+  }
+
   function setJoint(i: number, v: number): void {
     if (i >= L.length) return; // hidden θ3 slider while the 2R is shown
-    stopRadial();
+    interrupt();
     chipGroups[step]?.clear();
     const q = th.slice();
     q[i] = v;
@@ -331,7 +353,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   function dragTip(p: Pt): void {
-    stopRadial();
+    interrupt();
     chipGroups[step]?.clear();
     ghost = null;
     th = solveTip(L, th, p, branch).th;
@@ -342,7 +364,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function flipBranch(b: 1 | -1): void {
     if (b === branch) return;
-    stopRadial();
+    interrupt();
     branch = b;
     ghost = null;
     th = solveTip(L, th, tipOf(th), b).th;
@@ -376,7 +398,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       tip0 = tipOf(th);
     }
     const r0 = Math.hypot(tip0[0], tip0[1]);
-    radial = { tip0, s: 0, sMax: 2 - 2e-5 - r0, th0: th.slice(), br: branch, t: 0 };
+    radial = { tip0, s: 0, sMax: 2 - 2e-5 - r0, th0: th.slice(), br: branch, t: 0, warp: RADIAL_PLAYBACK };
     radialMsg = '';
     runBtn.textContent = '⏸ 停止';
     ensureLoop();
@@ -393,14 +415,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const anim = createLoop((dt) => {
     if (show.sweep && !sweepPaused) psi = wrapAngle(psi + 1.3 * dt);
     if (radial) {
-      const h = dt * RADIAL_PLAYBACK;
+      // Slow motion that slows further near θ2 = 0 so the growth of the required rates stays watchable;
+      // radial.t is the physical time of the 0.1 m/s motion.
+      radial.warp = radialWarp(L2R, th, RADIAL_SPEED, RADIAL_PLAYBACK, RADIAL_LOG_RATE);
+      const h = dt * radial.warp;
       radial.t += h;
       radial.s = Math.min(radial.sMax, radial.s + RADIAL_SPEED * h);
       th = radialPathConfig(L2R, radial.tip0, radial.s, radial.br, radial.th0);
       if (radial.s >= radial.sMax) {
         const t = radial.t;
         stopRadial();
-        radialMsg = `停在 θ₂ ≈ ${fmt(Math.abs(wrapAngle(th[1])) / D, 2)}°（t = ${fmt(t, 1)} s）：再往外 θ̇ 會發散`;
+        radialMsg = `停在 θ₂ ≈ ${fmt(Math.abs(wrapAngle(th[1])) / D, 2)}°（實際只過了 t = ${fmt(t, 1)} s）：再往外，所需關節速度會發散`;
       }
       update();
     } else {
@@ -457,7 +482,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       cv.requestRender();
     },
     radius: 7,
-    color: cssVar('--series-5', '#7c3aed'),
+    color: '--series-5', // resolved at draw time, so it follows a theme switch
     enabled: false,
   });
 
@@ -467,6 +492,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const fg = cssVar('--fg', '#222'), muted = cssVar('--fg-muted', '#777'), accent = cssVar('--accent', '#2563eb');
     const danger = cssVar('--danger', '#b91c1c'), purple = cssVar('--series-5', '#7c3aed'), rose = cssVar('--series-2', '#e11d48');
     const bgElev = cssVar('--bg-elev', '#fff');
+    labels.reset();
     c.grid(0.5);
     if (show.heat) {
       ensureHeat();
@@ -479,23 +505,26 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.circle([0, 0], reach, { color: cssVar('--grid-strong', '#ccc'), dash: [4, 4], width: 1 });
     c.frame({ x: 0, y: 0, theta: 0 }, 0.35, { labels: 's', alpha: 0.75 });
 
-    if (ghost) {
+    // reference configuration with the same tip (hidden once the locked self-motion has reached it)
+    if (ghost && !ghost.every((g, i) => Math.abs(wrapAngle(g - th[i])) < 1e-3)) {
       drawPlanarArm(c, L, ghost, { alpha: 0.28 });
       const gS = sigmaInfo(tipJacobian(L, ghost));
       const gj = planarFK(L, ghost).joints;
       const gt = gj[gj.length - 1];
       c.ellipse([gt[0], gt[1]], gS.smax * VEL_SCALE, gS.smin * VEL_SCALE, Math.atan2(gS.u1[1], gS.u1[0]), { color: accent, width: 1.5, dash: [4, 4], alpha: 0.7 });
-      labelInside(c, [gj[1][0], gj[1][1]], '另一個構型（同一末端）', { color: muted, dy: 18, bg: bgElev });
+      labels.inside(c, [gj[1][0], gj[1][1]], '另一個構型（同一末端）', { color: muted, dy: 18, bg: bgElev });
     }
     drawPlanarArm(c, L, th, { eeRadius: 5 });
     const tip = pts[pts.length - 1];
+    labels.reserve(c, tip, 12); // the tip handle
+    if (show.sweep) { const g = insetGeom(); labels.reserve(c, g.c, g.P * c.scale); }
 
     // Rank deficient or badly conditioned: show the hard direction (minor axis) through the tip.
     if (S.rank < 2 || S.mu1 > 12) {
       const u = S.u2, len = 0.9;
       const out = u[0] * tip[0] + u[1] * tip[1] >= 0 ? 1 : -1; // label on the side away from the base
       c.line([tip[0] - u[0] * len, tip[1] - u[1] * len], [tip[0] + u[0] * len, tip[1] + u[1] * len], { color: danger, dash: [6, 5], width: 1.5 });
-      labelInside(c, [tip[0] + out * u[0] * (len + 0.1), tip[1] + out * u[1] * (len + 0.1)], S.rank < 2 ? '✗ 這個方向動不了' : '這個方向很難動', { color: danger, bg: bgElev });
+      labels.inside(c, [tip[0] + out * u[0] * (len + 0.1), tip[1] + out * u[1] * (len + 0.1)], S.rank < 2 ? '✗ 這個方向動不了' : '這個方向很難動', { color: danger, bg: bgElev });
       if (S.rank < 2) c.polyline(pts, { color: danger, width: 1, dash: [2, 3], alpha: 0.8 });
     }
 
@@ -534,7 +563,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.ellipse(tip, fa, fb, ang, { color: rose, width: 2, dash: [7, 4] });
       const out = S.u2[0] * tip[0] + S.u2[1] * tip[1] >= 0 ? 1 : -1;
       const end: Pt = [tip[0] + out * S.u2[0] * Math.min(fb, 1.2), tip[1] + out * S.u2[1] * Math.min(fb, 1.2)];
-      labelInside(c, end, fbRaw > FORCE_CAP ? '力橢圓（此方向 → ∞）' : '力橢圓', { color: rose, bg: bgElev, dy: -12 });
+      labels.inside(c, end, fbRaw > FORCE_CAP ? '力橢圓（此方向 → ∞）' : '力橢圓', { color: rose, bg: bgElev, dy: -12 });
     }
 
     if (show.sweep) {
@@ -548,29 +577,36 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const v = tipVelocity(J, sweepQdot(psi));
       const head: Pt = [tip[0] + v[0] * VEL_SCALE, tip[1] + v[1] * VEL_SCALE];
       c.arrow(tip, head, { color: purple, width: 3 });
-      c.text(head, 'Jθ̇', { color: purple, dx: 14 * Math.sign(v[0] || 1), dy: -10, font: 'bold 12px sans-serif' });
+      // joint rates are written dθ/dt in canvas text (a combining dot renders as a stray tick);
+      // the label sits past the arrow head, i.e. just outside the ellipse, on a background pill
+      const vm = Math.hypot(v[0], v[1]) || 1;
+      labels.beside(c, head, 'J·dθ/dt', { color: purple, bg: bgElev, font: 'bold 12px sans-serif' }, [v[0] / vm, -v[1] / vm], 6);
       // inset: the unit circle of joint velocities
       const g = insetGeom();
       const [x0, y0] = g.c;
       const P = g.P;
+      const Rpx = g.R * c.scale;
       c.polygon([[x0 - P, y0 - P], [x0 + P, y0 - P], [x0 + P, y0 + P], [x0 - P, y0 + P]], { fill: bgElev, color: cssVar('--border', '#ddd'), width: 1, alpha: 0.94 });
       c.line([x0 - g.R * 1.2, y0], [x0 + g.R * 1.2, y0], { color: muted, width: 1 });
       c.line([x0, y0 - g.R * 1.2], [x0, y0 + g.R * 1.2], { color: muted, width: 1 });
       c.circle([x0, y0], g.R, { color: fg, width: 1.5 });
-      const [lx, ly] = L.length === 2 ? ['θ̇₁', 'θ̇₂'] : ['v₁', 'v₂'];
-      c.text([x0 + g.R * 1.2, y0], lx, { color: muted, align: 'right', dy: -9 });
-      c.text([x0, y0 + g.R * 1.2], ly, { color: muted, align: 'left', dx: 4, dy: 2 });
-      c.text([x0, y0 - P], L.length === 2 ? '‖θ̇‖ = 1' : 'J 列空間中的 ‖θ̇‖ = 1', { color: muted, dy: -9, font: '11px sans-serif' });
+      // axis names inside the circle, clear of the moving handle on the rim
+      const [lx, ly] = L.length === 2 ? ['dθ₁/dt', 'dθ₂/dt'] : ['v₁', 'v₂'];
+      const axFont = `${Rpx < 40 ? 9 : 10}px sans-serif`; // the inset shrinks on phones
+      c.text([x0, y0], lx, { color: muted, align: 'right', dx: Rpx - 5, dy: 8, font: axFont });
+      c.text([x0, y0], ly, { color: muted, align: 'left', dx: 4, dy: -0.42 * Rpx, font: axFont });
+      c.text([x0, y0 - P], L.length === 2 ? '‖dθ/dt‖ = 1' : '列空間中 ‖dθ/dt‖ = 1', { color: muted, dy: -9, font: '11px sans-serif' });
     }
 
     if (step === 5) {
       const r = Math.hypot(tip[0], tip[1]);
       if (r > 1e-6) {
         const u: Pt = [tip[0] / r, tip[1] / r];
+        // a direction marker: at the 0.4 m per m/s scale, 0.1 m/s would be only 4 cm long
         const e: Pt = [tip[0] + u[0] * 0.45, tip[1] + u[1] * 0.45];
         const ok = cssVar('--ok', '#15803d');
         c.arrow(tip, e, { color: ok, width: 2.5 });
-        labelInside(c, e, 'v = 0.1 m/s（徑向）', { color: ok, dx: 16 * u[0], dy: -16 * u[1] - 4, bg: bgElev });
+        labels.beside(c, e, 'v 的方向（徑向）', { color: ok, bg: bgElev }, [u[0], -u[1]], 6);
       }
     }
 
@@ -580,10 +616,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.line([lockTarget[0] - 0.14, lockTarget[1]], [lockTarget[0] + 0.14, lockTarget[1]], { color: w, width: 1.5 });
       c.line([lockTarget[0], lockTarget[1] - 0.14], [lockTarget[0], lockTarget[1] + 0.14], { color: w, width: 1.5 });
     }
+    labels.flush();
 
     const degs = th.map((t) => `${fmt(t / D, 0)}°`).join(', ');
     const status = S.rank < 2 ? 'rank J_v = 1：奇異！' : `rank J_v = 2，μ₁ = ${fmt(S.mu1, 1)}${S.mu1 > 12 ? '（接近奇異）' : ''}`;
-    c.overlay.textContent = `${model}  θ = (${degs})  ${status}${lockClamped ? '  ⚠ 此 θ₃ 下鎖住的點到不了' : ''}`;
+    c.setOverlayText(`${model}  θ = (${degs})  ${status}${lockClamped ? '  ⚠ 此 θ₃ 下鎖住的點到不了' : ''}`);
   };
 
   // ---------------------------------------------------------------- per-step presets
@@ -591,9 +628,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tipA = (() => { const t = planarFK(L3R, A3).tip; return [t[0], t[1]] as Pt; })();
   const B3 = solveTip(L3R, [0, 0, 90 * D], tipA, 1).th;
   const B3b = solveTip(L3R, [0, 0, 90 * D], tipA, -1).th;
-  const use2R = (q: number[]) => () => { setModel('2R'); ghost = null; setConfig(q); };
+  // presets end a running radial run first (otherwise its next frame would overwrite the preset)
+  const use2R = (q: number[]) => () => { interrupt(); setModel('2R'); ghost = null; setConfig(q); };
   const use3R = (q: number[], g: number[] | null = null, lock = false) => () => {
-    setModel('3R'); setLock(false); setConfig(q); ghost = g; if (lock) setLock(true); update();
+    interrupt(); setModel('3R'); setLock(false); setConfig(q); ghost = g; if (lock) setLock(true); update();
   };
   const chipSpecs: { label: string; apply: () => void }[][] = [
     [
@@ -693,14 +731,52 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
 }
 
-/** Centered text whose anchor is pulled back inside the visible canvas so long labels never get clipped. */
-function labelInside(c: Canvas2D, p: Pt, str: string, style: TextStyle): void {
-  c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
-  const half = c.ctx.measureText(str).width / 2 + 8;
-  const [sx, sy] = c.toScreen(p);
-  const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
-  const y = Math.min(c.height - 12, Math.max(12, sy + (style.dy ?? 0)));
-  c.text(c.toWorld(x, y), str, { ...style, dx: 0, dy: 0 });
+/**
+ * Places the canvas labels of one frame: each label is centred on its anchor, pulled back inside the
+ * canvas so it is never clipped, and nudged vertically when it would cover a label placed earlier in
+ * the same frame (near a singularity several labels point the same way). The labels are drawn by
+ * flush() at the end of the frame, on top of every line and ellipse. Call reset() first.
+ */
+class LabelPlacer {
+  private rects: [number, number, number, number][] = [];
+  private queue: (() => void)[] = [];
+
+  reset(): void { this.rects = []; this.queue = []; }
+
+  flush(): void { for (const draw of this.queue) draw(); this.queue = []; }
+
+  /** Keep labels off a screen square around world point p (e.g. a drag handle Canvas2D draws last). */
+  reserve(c: Canvas2D, p: Pt, halfPx: number): void {
+    const [sx, sy] = c.toScreen(p);
+    this.rects.push([sx - halfPx, sy - halfPx, sx + halfPx, sy + halfPx]);
+  }
+
+  inside(c: Canvas2D, p: Pt, str: string, style: TextStyle): void {
+    c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
+    const w = c.ctx.measureText(str).width;
+    const half = w / 2 + 8, hw = w / 2 + 5, hh = 9;
+    const [sx, sy] = c.toScreen(p);
+    const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
+    const clampY = (y: number) => Math.min(c.height - 12, Math.max(12, y));
+    const y0 = clampY(sy + (style.dy ?? 0));
+    const free = (y: number) => this.rects.every(([a, b, cc, d]) => x + hw <= a || x - hw >= cc || y + hh <= b || y - hh >= d);
+    let y = y0;
+    for (const k of [0, 1, -1, 2, -2, 3, -3]) {
+      const cand = clampY(y0 + k * 2 * hh);
+      if (free(cand)) { y = cand; break; }
+    }
+    this.rects.push([x - hw, y - hh, x + hw, y + hh]);
+    const at = c.toWorld(x, y);
+    this.queue.push(() => c.text(at, str, { ...style, dx: 0, dy: 0 }));
+  }
+
+  /** Label just beyond an anchor along a screen-space direction (e.g. past an arrow head). */
+  beside(c: Canvas2D, p: Pt, str: string, style: TextStyle, dir: Pt, gap = 8): void {
+    c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
+    const halfW = c.ctx.measureText(str).width / 2 + 4;
+    const off = Math.abs(dir[0]) * halfW + Math.abs(dir[1]) * 9 + gap;
+    this.inside(c, p, str, { ...style, dx: dir[0] * off, dy: dir[1] * off });
+  }
 }
 
 function rgbCss(c: [number, number, number, number]): string {

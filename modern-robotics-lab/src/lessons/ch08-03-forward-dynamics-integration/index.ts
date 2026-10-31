@@ -22,7 +22,7 @@ const steps: LessonStep[] = [
 $$\\ddot\\theta = M(\\theta)^{-1}\\big(\\tau - c(\\theta,\\dot\\theta) - g(\\theta)\\big)$$
 
 這一步永遠有解：任何非零的 $\\dot\\theta$ 都帶來正的動能 $\\tfrac12\\dot\\theta^{\\T}M\\dot\\theta$，所以 $M$ 對稱正定、必定可逆。實作上是解線性方程組，而不是真的去算反矩陣。`,
-    simHint: '拉動 τ₁、τ₂，看橘色 θ̈ 弧形箭頭與「≈0.3 s 後」的淡影怎麼變；按「τ = c + g」讓加速度歸零。拖曳手肘或末端換個姿勢：M 的特徵值永遠是正的嗎？',
+    simHint: '拉動 τ₁、τ₂，看橘色 $\\ddot\\theta$ 弧形箭頭與「≈0.3 s 後」的淡影怎麼變；按「τ = c + g」讓加速度歸零。拖曳手肘或末端換個姿勢：M 的特徵值永遠是正的嗎？',
   },
   {
     title: '用逆動力學湊出正動力學',
@@ -32,8 +32,8 @@ $$\\ddot\\theta = M(\\theta)^{-1}\\big(\\tau - c(\\theta,\\dot\\theta) - g(\\the
 2. $\\mathrm{ID}(\\theta,0,e_j,0)$：關掉速度與重力、只給第 $j$ 軸單位加速度，輸出就是 $M$ 的第 $j$ 欄；
 3. 解 $M\\ddot\\theta=\\tau-(c+g)$。
 
-$n$ 軸共需 $n+1$ 次呼叫加一次線性求解。§8.4 的閉式 $M,c,g$ 只是同一組方程的展開寫法，兩條路算出的 $\\ddot\\theta$ 應該一模一樣。`,
-    simHint: '按「▸ 單步」逐次呼叫 ID：c + g 與 M 的兩個欄位會依序被填上，最後與閉式公式的 θ̈ 比較差多少。',
+$n$ 軸共需 $n+1$ 次呼叫加一次線性求解。閉式的 $M,c,g$（§8.1 的 2R 例子、§8.4 的一般式）只是同一組方程的展開寫法，兩條路算出的 $\\ddot\\theta$ 應該一模一樣。`,
+    simHint: '按「▸ 單步」逐次呼叫 ID：c + g 與 M 的兩個欄位會依序被填上，最後與閉式公式的 $\\ddot\\theta$ 比較差多少。',
   },
   {
     title: 'Euler 積分',
@@ -46,7 +46,7 @@ $$\\theta_{k+1}=\\theta_k+\\Delta t\\,\\dot\\theta_k,\\qquad \\dot\\theta_{k+1}=
   },
   {
     title: 'RK4 積分',
-    md: `**四階 Runge–Kutta（RK4）**在一步裡取四個斜率：起點 $k_1$、兩次中點 $k_2,k_3$、終點 $k_4$，再加權平均：
+    md: `**四階 Runge–Kutta 法**（RK4）在一步裡取四個斜率：起點 $k_1$、兩次中點 $k_2,k_3$、終點 $k_4$，再加權平均：
 
 $$x_{k+1}=x_k+\\tfrac{\\Delta t}{6}\\,(k_1+2k_2+2k_3+k_4)$$
 
@@ -57,8 +57,8 @@ $$x_{k+1}=x_k+\\tfrac{\\Delta t}{6}\\,(k_1+2k_2+2k_3+k_4)$$
     title: '步長的代價',
     md: `把同一段 1 秒的運動用不同 $\\Delta t$ 各跑一次，與極細步長的參考解比較終點誤差，畫在 log–log 座標上：Euler 落在斜率約 1 的直線，RK4 約為 4。也就是說，**$\\Delta t$ 減半，Euler 誤差約減半，RK4 約剩 1/16**。
 
-但 $\\Delta t$ 不能無限放大：當它接近系統最快動態的時間尺度（例如擺動週期的一小部分），兩種顯式方法都會失準甚至發散，誤差圖右端就偏離了直線。實用的檢查法：把 $\\Delta t$ 減半重跑，答案沒有明顯改變才算可信。`,
-    simHint: '讀出兩條折線的擬合斜率；在畫布上拖曳手臂換個初始姿勢（放開後自動重算），斜率是否仍約為 1 與 4？最右邊 Δt = 0.2 s 的點偏離直線了嗎？',
+不過這兩條直線只在 $\\Delta t$ 夠小時成立。$\\Delta t$ 一旦接近系統最快動態的時間尺度（擺動週期的一小部分），誤差就不再照斜率縮放：擺得越劇烈，圖的右端越早彎離虛線；模擬拉長，Euler 甚至會發散（面板③把 $\\Delta t$ 設成 0.15 s 就看得到）。實用的檢查法：把 $\\Delta t$ 減半重跑，答案沒有明顯改變才算可信。`,
+    simHint: '讀出兩條折線的擬合斜率；再把手臂拖到接近水平伸直（放開後自動重算）：斜率仍約為 1 與 4 嗎？右端大 Δt 的點還貼著虛線嗎？',
   },
   {
     title: '開迴路力矩與下一課',
@@ -176,8 +176,22 @@ function canvasLegend(c: Canvas2D, items: LegendItem[]): void {
   g.restore();
 }
 
+/**
+ * KaTeX label scaled to the surrounding UI text. Plain-text combining dots (θ̇, θ̈) render badly in the
+ * UI fonts (the dot drifts onto the next glyph or disappears), so DOM labels use KaTeX and canvas text
+ * uses dθ/dt, d²θ/dt².
+ */
+function texLabel(tex: string, prefix = '', suffix = ''): HTMLSpanElement {
+  return el('span', {}, prefix, el('span', { style: { fontSize: '0.92em', lineHeight: '1' } }, mathEl(tex)), suffix);
+}
+
+/** Replace the text label of a toolkit control (slider, readout, matrix) with a node. */
+function relabel(root: HTMLElement, selector: string, node: Node): void {
+  root.querySelector(selector)?.replaceChildren(node);
+}
+
 /** A matrix display whose entries may still be unknown ("?"), styled like matrixView. */
-function miniMatrix(parent: HTMLElement, label: string): { el: HTMLElement; set(rows: (number | null)[][], hlCol?: number): void } {
+function miniMatrix(parent: HTMLElement, label: string | Node): { el: HTMLElement; set(rows: (number | null)[][], hlCol?: number): void } {
   const grid = el('div', { class: 'mr-grid' });
   const wrap = el('div', { class: 'mr-matrix' }, el('span', { class: 'mr-mlabel' }, label), grid);
   parent.appendChild(wrap);
@@ -216,7 +230,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // ---------- layout
   const modeChips = presetChips(host, [
-    { label: '① 求加速度', title: '由 τ 解出 θ̈ = M⁻¹(τ − c − g)', apply: () => setMode(0) },
+    { label: '① 求加速度', title: '由 τ 解出加速度 d²θ/dt² = M⁻¹(τ − c − g)', apply: () => setMode(0) },
     { label: '② ID 組裝', title: '用 n + 1 次逆動力學呼叫拼出正動力學', apply: () => setMode(1) },
     { label: '③ 積分比較', title: 'Euler 與 RK4 兩個分身並行模擬', apply: () => setMode(2) },
     { label: '④ 誤差 vs Δt', title: '全域誤差與步長的 log–log 關係', apply: () => setMode(3) },
@@ -236,13 +250,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const sTau2 = slider(ctlA, { label: 'τ₂', min: -30, max: 30, step: 0.01, value: 0, unit: 'N·m', onInput: (v) => { tau[1] = v; refreshAnalysis(); } });
   const sW1 = slider(ctlA, { label: 'θ̇₁', min: -4, max: 4, step: 0.01, value: 0, unit: 'rad/s', onInput: (v) => { x0[2] = v; onInitChanged(); } });
   const sW2 = slider(ctlA, { label: 'θ̇₂', min: -4, max: 4, step: 0.01, value: 0, unit: 'rad/s', onInput: (v) => { x0[3] = v; onInitChanged(); } });
+  relabel(sW1.el, '.mr-label > span', texLabel('\\dot\\theta_1'));
+  relabel(sW2.el, '.mr-label > span', texLabel('\\dot\\theta_2'));
   const rowA = row(ctlA);
   button(rowA, {
-    label: 'τ = c + g（抵銷）', small: true, title: '讓 τ 剛好抵銷速度項與重力：θ̈ = 0',
+    label: 'τ = c + g（抵銷）', small: true, title: '讓 τ 剛好抵銷速度項與重力：加速度 = 0',
     onClick: () => { const a = analyzeAccel(P, [x0[0], x0[1]], [x0[2], x0[3]], tau); setTau([a.c[0] + a.g[0], a.c[1] + a.g[1]]); },
   });
   button(rowA, { label: 'τ = 0', small: true, onClick: () => setTau([0, 0]) });
-  button(rowA, { label: 'θ̇ = 0', small: true, onClick: () => { x0[2] = 0; x0[3] = 0; sW1.set(0, { silent: true }); sW2.set(0, { silent: true }); onInitChanged(); } });
+  const zeroRateBtn = button(rowA, { label: 'θ̇ = 0', small: true, title: '關節速度歸零', onClick: () => { x0[2] = 0; x0[3] = 0; sW1.set(0, { silent: true }); sW2.set(0, { silent: true }); onInitChanged(); } });
+  zeroRateBtn.replaceChildren(texLabel('\\dot\\theta = 0'));
 
   const dispA0 = el('div');
   panelA.appendChild(dispA0);
@@ -252,6 +269,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const mvC = matrixView(matRow, { label: 'c =', digits: 2 });
   const mvG = matrixView(matRow, { label: 'g =', digits: 2 });
   const mvAcc = matrixView(matRow, { label: 'θ̈ =', digits: 2 });
+  relabel(mvAcc.el, '.mr-mlabel', texLabel('\\ddot\\theta =', '', ' '));
   const eigNote = note(dispA0, '');
 
   const dispA1 = el('div');
@@ -264,11 +282,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   });
   const callList = el('div', { style: { display: 'grid', gap: '0.25rem', fontSize: '0.85rem', margin: '0.2rem 0 0.4rem' } });
   dispA1.appendChild(callList);
-  const CALLS = [
+  const CALLS: { tex: string; what: string | Node }[] = [
     { tex: '\\mathrm{ID}(\\theta,\\dot\\theta,0,\\mathfrak g)', what: '→ c + g =' },
     { tex: '\\mathrm{ID}(\\theta,0,e_1,0)', what: '→ M 第 1 欄 =' },
     { tex: '\\mathrm{ID}(\\theta,0,e_2,0)', what: '→ M 第 2 欄 =' },
-    { tex: 'M\\ddot\\theta=\\tau-(c+g)', what: '解線性方程 → θ̈ =' },
+    { tex: 'M\\ddot\\theta=\\tau-(c+g)', what: texLabel('\\ddot\\theta', '解線性方程 → ', ' =') },
   ];
   const callRows = CALLS.map((cl, i) => {
     const val = el('span', { style: { fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums' } }, '');
@@ -284,7 +302,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   dispA1.appendChild(asmMats);
   const mmM = miniMatrix(asmMats, 'M =');
   const mmB = miniMatrix(asmMats, 'c + g =');
-  const mmA = miniMatrix(asmMats, 'θ̈ =');
+  const mmA = miniMatrix(asmMats, texLabel('\\ddot\\theta =', '', ' '));
   const asmNote = note(dispA1, '');
 
   // ---------- panel B: Euler / RK4 twins
@@ -309,11 +327,23 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tRK4 = toggle(rowB2, { label: '顯示 RK4', value: true, onChange: (v) => { showRK4 = v; redrawSim(); } });
   const tFair = toggle(rowB2, { label: 'Euler 用 Δt/4（同計算量）', value: false, onChange: (v) => { fairCost = v; resetSim(); } });
   const pulseBtn = button(rowB2, { label: '⚡ 施加 τ 脈衝', small: true, title: `τ = (${PULSE_TAU.join(', ')}) N·m，持續 ${PULSE_DUR} s`, onClick: () => firePulse() });
+  const E_TITLE = '能量漂移 ΔE(t) = E(t) − E(0)';
+  const E_TITLE_PULSE = 'ΔE(t)：⚡ 脈衝期間 τ 做功，E 真的上升';
+  const E_WINDOW = 12;
   const ePlot = new Plot2D(panelB, {
-    title: '能量漂移 ΔE(t) = E(t) − E(0)', xLabel: 't (s)', yLabel: 'ΔE (J)',
-    series: [{ name: 'RK4' }, { name: 'Euler' }], xWindow: 12, height: 140, yMinSpan: 0.02,
+    title: E_TITLE, xLabel: 't (s)', yLabel: 'ΔE (J)',
+    series: [{ name: 'RK4' }, { name: 'Euler' }], xWindow: E_WINDOW, height: 140, yMinSpan: 0.02,
   });
-  const rowB3 = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.2rem 1rem', marginTop: '0.2rem' } });
+  /** Fixed x window [0, 12] until the run is longer than that (a lone sample at t = 0 gives a zero-width axis). */
+  const setEnergyWindow = (t: number) => ePlot.setRanges([Math.max(0, t - E_WINDOW), Math.max(E_WINDOW, t)]);
+  /**
+   * [RK4, Euler] sample for the energy plot. Plot2D.push skips undefined entries, so a hidden twin gets
+   * no data and stays out of the legend; a diverged twin gets NaN (a gap) and keeps its legend entry.
+   */
+  const energySample = (eR: number, eE: number): number[] =>
+    [showRK4 ? eR : undefined, showEuler ? eE : undefined] as unknown as number[];
+  // fixed grid cells: a flex row re-wrapped whenever a value changed width, making the pane jump while running
+  const rowB3 = el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(10.5rem, 1fr))', gap: '0.2rem 1rem', marginTop: '0.2rem' } });
   panelB.appendChild(rowB3);
   const rEe = readout(rowB3, { label: 'ΔE Euler', unit: 'J' });
   const rEr = readout(rowB3, { label: 'ΔE RK4', unit: 'J' });
@@ -325,7 +355,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     style: { border: '1px solid var(--border)', borderLeft: '4px solid var(--accent)', borderRadius: '8px', padding: '0.45rem 0.7rem', margin: '0.4rem 0', background: 'var(--accent-soft)', fontSize: '0.85rem' },
   },
   el('strong', {}, '下一課預告：'),
-  '馬達轉子慣量經減速比放大成 G²J_m 加到 M(θ) 的對角線，τ 裡再多一項摩擦 τ_f(θ̇)。');
+  '馬達轉子慣量經減速比放大成 ', texLabel('G^2J_m'), ' 加到 ', texLabel('M(\\theta)'), ' 的對角線，',
+  texLabel('\\tau'), ' 裡再多一項摩擦 ', texLabel('\\tau_f(\\dot\\theta)'), '。');
   panelB.appendChild(preview);
 
   // ---------- panel C: error versus Δt
@@ -334,9 +365,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   button(rowC, { label: '↻ 重新計算', small: true, onClick: () => computeSweep() });
   const rSlopeE = readout(rowC, { label: 'Euler 斜率 ≈', title: '在最小的 4 個 Δt 上做最小平方擬合' });
   const rSlopeR = readout(rowC, { label: 'RK4 斜率 ≈' });
+  // colours as CSS variable names so the plot follows theme switches
   const errPlot = new Plot2D(panelC, {
     title: '模擬 1 秒後的末端位置誤差（log–log）', xLabel: 'log₁₀ Δt　（Δt 以 s 計）', yLabel: 'log₁₀ 誤差 (m)',
-    series: [{ name: 'RK4' }, { name: 'Euler' }, { name: '斜率 4 參考', dash: [5, 4], width: 1.2 }, { name: '斜率 1 參考', dash: [5, 4], width: 1.2 }],
+    series: [
+      { name: 'RK4', color: '--series-1' }, { name: 'Euler', color: '--series-2' },
+      { name: '斜率 4 參考', color: '--series-1', dash: [5, 4], width: 1.2 }, { name: '斜率 1 參考', color: '--series-2', dash: [5, 4], width: 1.2 },
+    ],
     height: 230,
   });
   const sweepNote = note(panelC, '');
@@ -397,9 +432,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const ang = a0 + sw + (sw >= 0 ? 0.55 : -0.55);
       return [p[0] + r * Math.cos(ang), p[1] + r * Math.sin(ang)];
     };
-    c.text(labelAt(pts[0], 0.62, th[0], s1), `θ̈₁ = ${fmt(a.ddtheta[0], 2)}`, { color: warn, bg: cssVar('--sim-bg') });
-    c.text(labelAt(pts[1], 0.55, th[0] + th[1], s2), `θ̈₂ = ${fmt(a.ddtheta[1], 2)}`, { color: warn, bg: cssVar('--sim-bg') });
-    c.overlay.textContent = `θ = (${fmt((th[0] * 180) / Math.PI, 0)}°, ${fmt((th[1] * 180) / Math.PI, 0)}°)  θ̇ = ${vec2(w)} rad/s`;
+    // canvas text: no combining dots (they render detached from θ), so write d²θ/dt²;
+    // anchor the label on the side facing away from the joint so it does not cover the arc arrow
+    const accLabel = (p: Pt, r: number, a0: number, sw: number, str: string) => {
+      const q = labelAt(p, r, a0, sw);
+      c.text(q, str, { color: warn, bg: cssVar('--sim-bg'), align: q[0] >= p[0] ? 'left' : 'right' });
+    };
+    accLabel(pts[0], 0.5, th[0], s1, `d²θ₁/dt² = ${fmt(a.ddtheta[0], 2)}`);
+    accLabel(pts[1], 0.45, th[0] + th[1], s2, `d²θ₂/dt² = ${fmt(a.ddtheta[1], 2)}`);
+    c.setOverlayText(`θ = (${fmt((th[0] * 180) / Math.PI, 0)}°, ${fmt((th[1] * 180) / Math.PI, 0)}°)  dθ/dt = ${vec2(w)} rad/s`);
   }
 
   function drawTwins(c: Canvas2D): void {
@@ -427,7 +468,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (simT > 0) items.push({ color: cssVar('--fg-muted'), label: '淡影＝初始姿勢', faint: true });
     canvasLegend(c, items);
     const hE = DT_CHOICES[dtIndex] / (fairCost ? 4 : 1);
-    c.overlay.textContent = `t = ${fmt(simT, 2)} s   Δt = ${DT_CHOICES[dtIndex]} s${fairCost ? `（Euler ${fmt(hE, 4)} s）` : ''}`;
+    c.setOverlayText(`t = ${fmt(simT, 2)} s   Δt = ${DT_CHOICES[dtIndex]} s${fairCost ? `（Euler ${fmt(hE, 4)} s）` : ''}`);
   }
 
   function drawSweep(c: Canvas2D): void {
@@ -451,7 +492,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       { color: cssVar('--series-2'), label: `Euler（Δt = ${SWEEP_PATH_DT} s）` },
       { color: cssVar('--series-1'), label: `RK4（Δt = ${SWEEP_PATH_DT} s）`, dash: true },
     ]);
-    c.overlay.textContent = `Δt = ${SWEEP_PATH_DT} s 時 1 秒內的末端軌跡`;
+    c.setOverlayText(`Δt = ${SWEEP_PATH_DT} s 時 1 秒內的末端軌跡`);
   }
 
   cv.draw = (c) => {
@@ -501,9 +542,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (asmStage >= 4) {
       const dC = Math.max(Math.abs(a.ddtheta[0] - a.ddthetaClosed[0]), Math.abs(a.ddtheta[1] - a.ddthetaClosed[1]));
       const dL = Math.max(Math.abs(a.ddtheta[0] - a.ddthetaLibrary[0]), Math.abs(a.ddtheta[1] - a.ddthetaLibrary[1]));
-      asmNote.textContent = `與閉式 Lagrange 公式（§8.4）的 θ̈ 相差 ${sci(dC)} rad/s²，與 mr.ForwardDynamics 相差 ${sci(dL)}：只剩捨入誤差。後面的積分為了速度改用閉式公式（同一個模型）。`;
+      asmNote.textContent = `與閉式 Lagrange 公式（§8.1 的 2R 例子）算出的加速度相差 ${sci(dC)} rad/s²，與 mr.ForwardDynamics 相差 ${sci(dL)}：只剩捨入誤差。後面的積分為了速度改用閉式公式（同一個模型）。`;
     } else {
-      asmNote.textContent = '按「▸ 單步」依序執行；也可以先改 τ、θ̇ 或拖曳手臂，數值會即時重算。';
+      // the τ / joint-rate sliders live in panel ① (hidden here to keep the pane short)
+      asmNote.textContent = '按「▸ 單步」依序執行。τ 與關節速度沿用面板①的設定；拖曳手臂可換姿勢，已填入的數值會即時重算。';
     }
   }
 
@@ -521,7 +563,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     trails.euler = [];
     trails.rk4 = [];
     ePlot.clear();
-    ePlot.push(0, [0, 0]);
+    ePlot.push(0, energySample(0, 0));
+    setEnergyWindow(0);
+    ePlot.setOptions({ title: E_TITLE });
     warnEl.textContent = '';
     updateSimReadouts();
     pb.setTime(0);
@@ -538,6 +582,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function firePulse(): void {
     pulseStart = simT;
+    // the pulse does real work on the arm: say so where the learner reads ΔE
+    ePlot.setOptions({ title: E_TITLE_PULSE });
     if (!loop.running) { pb.setPlaying(true, { silent: true }); startSim(); }
   }
 
@@ -561,16 +607,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const was = tw.diverged;
       tw.advanceTo(simT, hOf(m), P, tauFn);
       if (!was && tw.diverged) {
-        warnEl.textContent = `⚠ ${m === 'euler' ? 'Euler' : 'RK4'} 分身數值發散（|θ̇| > ${OMEGA_LIMIT} rad/s），已凍結在最後一個合理狀態。請縮小 Δt 後按「⟲ 重設」。`;
+        warnEl.textContent = `⚠ ${m === 'euler' ? 'Euler' : 'RK4'} 分身數值發散（|dθ/dt| > ${OMEGA_LIMIT} rad/s），已凍結在最後一個合理狀態。請縮小 Δt 後按「⟲ 重設」。`;
       }
       if (!tw.diverged) {
         trails[m].push(tipOf(tw.x));
         if (trails[m].length > TRAIL_MAX) trails[m].shift();
       }
     }
-    const eE = showEuler && !twins.euler.diverged ? twins.euler.energy(P) - twins.euler.E0 : Number.NaN;
-    const eR = showRK4 && !twins.rk4.diverged ? twins.rk4.energy(P) - twins.rk4.E0 : Number.NaN;
-    ePlot.push(simT, [eR, eE]);
+    const eE = !twins.euler.diverged ? twins.euler.energy(P) - twins.euler.E0 : Number.NaN;
+    const eR = !twins.rk4.diverged ? twins.rk4.energy(P) - twins.rk4.E0 : Number.NaN;
+    ePlot.push(simT, energySample(eR, eE));
+    setEnergyWindow(simT);
     updateSimReadouts();
     pb.setTime(simT);
     cv.requestRender();
@@ -591,12 +638,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   function renderSweep(): void {
-    const c1 = cssVar('--series-1');
-    const c2 = cssVar('--series-2');
-    errPlot.setOptions({
-      series: [{ name: 'RK4', color: c1 }, { name: 'Euler', color: c2 },
-        { name: '斜率 4 參考', color: c1, dash: [5, 4], width: 1.2 }, { name: '斜率 1 參考', color: c2, dash: [5, 4], width: 1.2 }],
-    });
+    // CSS variable names (resolved at draw time) so a theme switch recolours the plot
+    const c1 = '--series-1';
+    const c2 = '--series-2';
     if (!sweep) return;
     const lg = (v: number) => (Number.isFinite(v) && v > 0 ? Math.log10(v) : Number.NaN);
     const xs = sweep.rows.map((r) => Math.log10(r.dt));
@@ -620,6 +664,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     });
     marks.push({ x: Math.log10(0.01) });
     errPlot.setMarkers(marks);
+    // headroom above the data so the legend row never sits on top of the Euler curve
+    const finite = [...yR, ...yE].filter(Number.isFinite);
+    if (finite.length) {
+      const lo = Math.min(...finite);
+      const hi = Math.max(...finite);
+      errPlot.setRanges(undefined, [lo - 0.6, hi + Math.max(1.2, 0.2 * (hi - lo))]);
+    }
     rSlopeE.set(fmt(sweep.slopeEuler, 2));
     rSlopeR.set(fmt(sweep.slopeRK4, 2));
     const rows = sweep.rows;

@@ -2,7 +2,7 @@ import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } fr
 import {
   el, cssVar, fmt, themeColor, controlPanel, row, slider, toggle, button, select, kv, note, simTitle, legend, presetChips,
   algorithmStepper, mdElement, Canvas2D, Plot2D, RasterLayer, createLoop, viridisLike,
-  type Preset, type RGBA, type World,
+  type Preset, type RGBA,
 } from '@/ui';
 import { meta } from './meta';
 import {

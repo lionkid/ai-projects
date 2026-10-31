@@ -141,6 +141,17 @@ export function trailPieces(trail: Trail): Th[][] {
   return out;
 }
 
+/**
+ * Samples for drawing a trail as dots on the 3D surface: each continuous piece is unwrapped, densified so that
+ * neighbouring dots are at most `maxStep` apart (a fast drag must not leave gaps) and wrapped back into [-π, π]²
+ * (the unglued sheet is not periodic). Breaks are never bridged; only the newest `max` samples are kept.
+ */
+export function trailSamples(trail: Trail, maxStep: number, max: number): Th[] {
+  const out: Th[] = [];
+  for (const piece of trailPieces(trail)) for (const p of densify(unwrapSeq(piece), maxStep)) out.push(wrapTh(p));
+  return out.length > max ? out.slice(out.length - max) : out;
+}
+
 /** Append a wrapped sample to an unwrapped path (used while the learner draws). */
 export function appendUnwrapped(path: Th[], wrapped: Th): Th {
   const prev = path[path.length - 1];

@@ -43,7 +43,7 @@ $[\\omega]$ 表示把向量排成 $3\\times 3$ 反對稱矩陣，滿足 $[\\omeg
   },
   {
     title: '繞固定軸轉 θ：Rodrigues 公式',
-    md: `轉軸固定、轉速為 1 時，$\\dot R = [\\hat\\omega] R$ 的解是矩陣指數 $e^{[\\hat\\omega]\\theta}$。因為 $[\\hat\\omega]^3 = -[\\hat\\omega]$，無窮級數收成三項：
+    md: `轉軸固定、轉速為 1、從 $R(0) = I$ 出發時，$\\dot R = [\\hat\\omega] R$ 的解是矩陣指數 $e^{[\\hat\\omega]\\theta}$（此時 $\\theta$ 就是經過的時間）。因為 $[\\hat\\omega]^3 = -[\\hat\\omega]$，無窮級數收成三項：
 
 $$\\mathrm{Rot}(\\hat\\omega,\\theta) = e^{[\\hat\\omega]\\theta} = I + \\sin\\theta\\,[\\hat\\omega] + (1-\\cos\\theta)\\,[\\hat\\omega]^2$$
 
@@ -58,7 +58,7 @@ $$\\mathrm{Rot}(\\hat\\omega,\\theta) = e^{[\\hat\\omega]\\theta} = I + \\sin\\t
 
 $$\\theta = \\cos^{-1}\\!\\Big(\\frac{\\tr R - 1}{2}\\Big), \\qquad [\\hat\\omega] = \\frac{R - R^{\\T}}{2\\sin\\theta}$$
 
-注意 $\\tr R$ 只告訴你轉了多少，對轉軸一無所知；轉軸的資訊全部藏在反對稱部分 $R - R^{\\T} = 2\\sin\\theta\\,[\\hat\\omega]$ 裡（Rodrigues 公式中的 $I$ 與 $[\\hat\\omega]^2$ 項都是對稱的，相減就消掉了）。$\\cos^{-1}$ 只給出 $[0, \\pi]$ 的角度，所以對數永遠挑「較短的轉法」：繞 $\\hat\\omega$ 轉 220° 和繞 $-\\hat\\omega$ 轉 140° 是同一個 $R$，$\\log R$ 回傳的是後者。`,
+注意 $\\tr R$ 只告訴你轉了多少，對轉軸一無所知；一般情況下，轉軸要從反對稱部分 $R - R^{\\T} = 2\\sin\\theta\\,[\\hat\\omega]$ 讀出（Rodrigues 公式中的 $I$ 與 $[\\hat\\omega]^2$ 項都是對稱的，相減就消掉了）。$\\cos^{-1}$ 只給出 $[0, \\pi]$ 的角度，所以對數永遠挑「較短的轉法」：繞 $\\hat\\omega$ 轉 220° 和繞 $-\\hat\\omega$ 轉 140° 是同一個 $R$，$\\log R$ 回傳的是後者。`,
     simHint: '把 θ 從 0 拉到 360°：下方圖中 θ_out 在 180° 折返，紫色的 log 軸同時翻到 −ω̂。紅色粗弧是 x_b 實際轉過的 θ_in，紫色粗弧是 log 描述的「較短的路」。也可以把「輸入」切成「自由旋轉」，直接在 3D 畫面裡拖曳物體。',
   },
   {
@@ -77,7 +77,7 @@ $$\\theta = \\pi: \\qquad \\hat\\omega\\hat\\omega^{\\T} = \\tfrac{1}{2}\\,(R + 
     title: '指數座標不是 Euler 角',
     md: `指數座標 $\\hat\\omega\\theta$ 也是三個數字，但和 ZYX Euler 角 $(\\alpha, \\beta, \\gamma)$ 完全不同：前者是「繞一條軸轉一次」，後者是「依序繞三條座標軸各轉一次」。同一個 $R$，兩組數字不同，經過的姿態也不同。
 
-另一個陷阱：三維中把角速度對時間積分，$\\int \\omega\\,dt$ **不會**得到指數座標，因為轉動不能交換順序；只有轉軸始終不變時兩者才相等。下一課把平移也加進來，轉軸就升級成螺旋軸（screw axis）。`,
+另一個陷阱：三維中把角速度對時間積分，$\\int \\omega\\,dt$ **不會**得到指數座標，因為轉動不能交換順序；只有轉軸始終不變（且總轉角不超過 $\\pi$，否則 $\\log$ 會改走較短的另一邊）時兩者才相等。下一課把平移也加進來，轉軸就升級成螺旋軸（screw axis）。`,
     simHint: '按「▶ 一步：繞 ω̂」與「▶ 三步：ZYX」：終點相同、軌跡不同（青色 vs 灰色）。比較面板裡兩條路徑的 ∫ω_s dt 和 log R。勾選「預告：螺旋運動」看邊轉邊平移。',
   },
 ];
@@ -105,7 +105,7 @@ const quiz: QuizQuestion[] = [
     question: '物體先以 $\\omega_s = (1, 0, 0)$ rad/s 轉 1 秒，再以 $\\omega_s = (0, 1, 0)$ rad/s 轉 1 秒，所以 $\\int \\omega_s\\,dt = (1, 1, 0)$。最終姿態的指數座標 $\\log R$ 是？',
     options: ['正好是 $(1, 1, 0)$', '約 $(0.91, 0.91, -0.50)$，和積分結果不同', '是 $(1, 1, 0)$ 換到 $\\{b\\}$ 座標後的結果', '$\\tfrac{1}{\\sqrt 2}(1, 1, 0)$'],
     answer: 1,
-    explanation: '第二段繞的是固定軸，所以 $R = \\mathrm{Rot}(\\hat y, 1)\\,\\mathrm{Rot}(\\hat x, 1)$。轉動不能交換，$\\log R \\approx (0.913, 0.913, -0.499)$，多出一個 $z$ 分量，總角度約 1.38 rad 而不是 $\\sqrt2 \\approx 1.41$ rad。只有轉軸固定不變時，$\\int \\omega\\,dt$ 才等於 $\\hat\\omega\\theta$。',
+    explanation: '第二段繞的是固定軸，所以 $R = \\mathrm{Rot}(\\hat y, 1)\\,\\mathrm{Rot}(\\hat x, 1)$。轉動不能交換，$\\log R \\approx (0.913, 0.913, -0.499)$，多出一個 $z$ 分量，總角度約 1.38 rad 而不是 $\\sqrt2 \\approx 1.41$ rad。只有轉軸固定不變（且總轉角不超過 $\\pi$）時，$\\int \\omega\\,dt$ 才會等於 $\\log R$。',
   },
 ];
 
@@ -177,6 +177,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     helix: false,
   };
   let playing = false;
+  /** Time shown by the playback control in steps 1–2; reset by ⟲, on a step change and on a motion change. */
+  let playT = 0;
   let pathAnim: { kind: 'exp' | 'euler'; u: number } | null = null;
   let topPts: Vec[][] = [[], [], []];
 
@@ -271,7 +273,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const pb = playback(tRow, {
     onPlay: () => { playing = true; stopPath(); loop.start(); },
     onPause: () => { playing = false; if (!pathAnim) loop.stop(); },
-    onReset: () => { if (S.motion === 'top') { S.t = 0; resetTopTrails(); } else { S.theta = 0; thS.set(0, { silent: true }); } update(); },
+    onReset: () => {
+      resetClock();
+      if (S.motion === 'top') { S.t = 0; resetTopTrails(); } else { S.theta = 0; thS.set(0, { silent: true }); }
+      update();
+    },
     onSpeed: (s) => { loop.speed = s; },
   });
   const rateS = slider(tRow, { label: '轉速 dθ/dt', min: -2, max: 2, step: 0.05, value: S.rate, unit: 'rad/s', onInput: (v) => { S.rate = v; update(); } });
@@ -283,7 +289,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const motionSel = select<Motion>(box2, {
     options: [{ value: 'axis', label: '運動：繞固定軸' }, { value: 'top', label: '運動：陀螺（進動＋自轉）' }],
     value: S.motion,
-    onChange: (m) => { S.motion = m; S.t = 0; resetTopTrails(); syncVisibility(); update(); },
+    onChange: (m) => { S.motion = m; S.t = 0; resetClock(); resetTopTrails(); syncVisibility(); update(); },
   });
   const projSel = select<Proj>(box2, {
     options: [{ value: 'b', label: '投影到 {b} 的軸' }, { value: 's', label: '投影到 {s} 的軸' }],
@@ -420,6 +426,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     topTrails.forEach((t) => t.set([]));
   }
 
+  function resetClock(): void {
+    playT = 0;
+    pb.setTime(0);
+  }
+
   function startPath(kind: 'exp' | 'euler'): void {
     playing = false;
     pb.setPlaying(false, { silent: true });
@@ -464,12 +475,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         const R = topMotion(S.t, TOP).R;
         for (let j = 0; j < 3; j++) { topPts[j].push([R[0][j], R[1][j], R[2][j]]); if (topPts[j].length > 1500) topPts[j].shift(); }
         topTrails.forEach((tr, j) => tr.set(topPts[j]));
-        pb.setTime(S.t);
       } else {
         S.theta = wrapTo2Pi(S.theta + S.rate * dt);
         thS.set(S.theta, { silent: true });
-        pb.setTime(loop.time);
       }
+      playT += dt;
+      pb.setTime(playT);
     } else {
       loop.stop();
     }
@@ -632,6 +643,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       else if (lg.branch === 'pi') { cls = 'warn'; text = 'θ = π：R − Rᵀ = 0，改由 (R + I)/2 取軸；±ω̂ 都對'; }
       else if (lg.branch === 'nearPi') { cls = 'warn'; text = 'θ ≈ π：由對稱部分取軸，正負號由 R − Rᵀ 決定'; }
       else if (lg.theta < 0.01) { cls = 'warn'; text = `一般公式，但 sin θ = ${lg.sinTheta.toExponential(1)}：θ → 0 時軸越來越不確定`; }
+      else if (lg.theta > Math.PI - 0.1) { cls = 'warn'; text = `一般公式，但 sin θ = ${fmt(lg.sinTheta, 3)} 已很小：再靠近 π，程式就改由對稱部分取軸`; }
       else {
         const f = S.input === 'axis' ? foldedAngle(S.theta) : null;
         cls = f?.flipped ? 'warn' : 'ok';
@@ -641,10 +653,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       text = pathAnim ? (pathAnim.kind === 'exp' ? '一步：一直繞同一條軸 ω̂' : 'ZYX：依序繞 ẑ_b、ŷ_b、x̂_b') : '同一個 R，兩條不同的路徑';
       if (S.helix) text = `預告：繞 ω̂ 轉的同時沿 ω̂ 平移 h·θ（h = ${PITCH} m/rad）＝螺旋運動`;
     }
-    pill.className = `c302-pill ${cls}`;
-    pill.textContent = text;
+    // update() runs every animation frame: touch the DOM only when something changed
+    const pillCls = `c302-pill ${cls}`;
+    if (pill.className !== pillCls) pill.className = pillCls;
+    if (pill.textContent !== text) pill.textContent = text;
     pill.style.display = text ? '' : 'none';
-    hint3d.textContent = S.input === 'free' && S.dragObject && sc === 3 ? '拖曳畫面：轉動物體　右鍵拖曳：平移' : (axisVisible() ? '拖曳青色把手：改變 ω̂　拖曳空白處：轉視角' : '拖曳：轉視角　滾輪：縮放');
+    const hint = S.input === 'free' && S.dragObject && sc === 3 ? '拖曳畫面：轉動物體　右鍵拖曳：平移' : (axisVisible() ? '拖曳青色把手：改變 ω̂　拖曳空白處：轉視角' : '拖曳：轉視角　滾輪：縮放');
+    if (hint3d.textContent !== hint) hint3d.textContent = hint;
   }
 
   function updateReadouts(R: Mat, Rt: Mat, lg: LogInfo | null, om: ReturnType<typeof omegaFromDerivative> | null, pr: ReturnType<typeof rotatePointTerms> | null): void {
@@ -719,7 +734,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     azS.el.style.display = axisInput && S.motion === 'axis' ? '' : 'none';
     elS.el.style.display = azS.el.style.display;
     thS.el.style.display = axisInput && S.motion === 'axis' ? '' : 'none';
-    rateS.el.style.display = sc === 0 || sc === 1 ? '' : 'none';
+    // the top has its own precession and spin rates and start pose: hide the controls that would do nothing
+    rateS.el.style.display = (sc === 0 || sc === 1) && S.motion === 'axis' ? '' : 'none';
+    tiltTog.el.style.display = S.motion === 'axis' ? '' : 'none';
     pb.el.style.display = sc <= 1 ? '' : 'none';
     box2.style.display = sc === 1 ? '' : 'none';
     box3.style.display = sc === 2 ? '' : 'none';
@@ -750,6 +767,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     pathAnim = null;
     loop.stop();
     resetTopTrails();
+    resetClock();
     S.input = 'axis';
     S.motion = 'axis';
     S.R0 = eye(3);

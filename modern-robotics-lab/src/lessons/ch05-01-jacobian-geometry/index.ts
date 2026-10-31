@@ -11,6 +11,8 @@ import {
   planarAdjoint, planarRows, planarTwist, singularityMeasure, velocityBreakdown,
 } from './jacobianGeometry';
 import { liveMatrix } from './liveMatrix';
+import { type Box, type Margins, panZoomToFit, sameBox, scaleAbout, zoomToFit } from './viewFit';
+import { type PulsePlan, planPulse, pulseState } from './pulse';
 
 // ---------------------------------------------------------------------------
 // Narrative
@@ -24,7 +26,7 @@ const steps: LessonStep[] = [
 $$\\dot\\theta = e_i \\;\\Longrightarrow\\; \\vV_s = J_{s,i}(\\theta)$$
 
 平面手臂的旋轉軸都垂直紙面（圖中的 ⊙）。若關節位於 $q = (q_x, q_y)$，這一欄就是 $[\\,1,\\; q_y,\\; -q_x\\,]^{\\T}$，列的順序是 $(\\omega_z, v_x, v_y)$。`,
-    simHint: '按「θ̇₂ = 1」做一次脈衝：只有關節 2 擺動。對照藍色速度箭頭、虛線旁的 q₂ 座標，以及矩陣裡亮起的第 2 欄。',
+    simHint: '按「$\\dot\\theta_2 = 1$」：只有關節 2 來回擺動一次，藍色箭頭與 $\\vV_s$ 隨 $\\dot\\theta_2$ 縮放、反向；停下時 $\\dot\\theta = e_2$，$\\vV_s$ 正是亮起的第 2 欄（對照虛線旁的 q₂）。',
   },
   {
     title: 'J_s 的欄位怎麼算',
@@ -42,7 +44,7 @@ $$J_{s,i}(\\theta) = \\big[\\Ad_{e^{[\\vS_1]\\theta_1}\\cdots e^{[\\vS_{i-1}]\\t
 $$\\vV_s = J_s(\\theta)\\,\\dot\\theta = \\sum_{i=1}^{n} J_{s,i}(\\theta)\\,\\dot\\theta_i$$
 
 落到末端點上，就是各關節造成的速度向量頭尾相接（彩色箭頭），總和為藍色的 $\\dot p$。合成的 twist 仍是一個螺旋運動：在平面上相當於繞瞬時轉心 ✕ 轉動；若 $\\sum_i \\dot\\theta_i = 0$，則 $\\omega_z = 0$，變成純平移。`,
-    simHint: '調整 θ̇₁～θ̇₃，看三支彩色分量如何頭尾相接成藍色的 ṗ；按 ▶ 播放，末端軌跡始終與藍色箭頭相切。也試試 θ̇ = (0.5, −1, 0.5)。',
+    simHint: '調整 $\\dot\\theta_1$～$\\dot\\theta_3$，看三支彩色分量如何頭尾相接成藍色的 ṗ；按 ▶ 播放，末端軌跡始終與藍色箭頭相切。也試試 $\\dot\\theta = (0.5, -1, 0.5)$。',
   },
   {
     title: 'J_b：從末端看同一件事',
@@ -60,7 +62,7 @@ $$J_{b,i}(\\theta) = \\big[\\Ad_{e^{-[\\vB_n]\\theta_n}\\cdots e^{-[\\vB_{i+1}]\
 $$J_s(\\theta) = [\\Ad_{T_{sb}}]\\,J_b(\\theta), \\qquad J_b(\\theta) = [\\Ad_{T_{bs}}]\\,J_s(\\theta)$$
 
 下方即時計算 $\\|J_s - [\\Ad_{T_{sb}}]J_b\\|$：不論姿勢為何，都只剩 $10^{-16}$ 等級的浮點誤差。平面例子裡兩者的 $\\omega_z$ 列完全相同：$\\{s\\}$ 與 $\\{b\\}$ 的 $z$ 軸平行，同一個角速度在兩邊的 $z$ 分量自然一樣。`,
-    simHint: '隨意拖動關節角，盯著 ‖J_s − Ad·J_b‖ 的讀數；Ad 矩陣第一欄下方兩格，正是末端位置 (p_y, −p_x)。',
+    simHint: '隨意拖動關節角，盯著 ‖J_s − Ad·J_b‖ 的讀數；平面 3R 的 Ad 矩陣第一欄下方兩格，正是末端位置 (p_y, −p_x)。',
   },
   {
     title: 'v_s 不是末端速度，以及下一課',
@@ -90,7 +92,7 @@ const quiz: QuizQuestion[] = [
     question: '把末端座標系 $\\{b\\}$ 沿 $\\hat x_b$ 再往外移 0.2 m（例如裝上工具，姿態不變）。下列何者正確？',
     options: ['$J_s$ 與 $J_b$ 都不變', '只有 $J_s$ 改變', '$J_s$ 不變；$J_b$ 的線速度列改變、角速度列不變', '兩者的角速度列都會改變'],
     answer: 2,
-    explanation: '$J_s$ 的欄是各關節軸寫在 $\\{s\\}$ 中的螺旋軸，公式裡根本沒有 $M$，所以和 $\\{b\\}$ 放在哪裡無關。$J_b$ 的欄是同一組軸寫在 $\\{b\\}$ 中：原點移動後，軸相對於 $\\{b\\}$ 原點的位置 $q^b$ 改變，$v = -\\omega \\times q^b$ 跟著改變；姿態沒變，所以 $\\omega$ 列不變。',
+    explanation: '$J_s$ 的欄是各關節軸寫在 $\\{s\\}$ 中的螺旋軸，公式裡根本沒有 $M$，所以和 $\\{b\\}$ 放在哪裡無關。$J_b$ 的欄是同一組軸寫在 $\\{b\\}$ 中：原點移動後，軸相對於 $\\{b\\}$ 原點的位置 $q^b$ 改變，$v = -\\omega \\times q^b$ 跟著改變；姿態沒變，所以 $\\omega$ 列不變。以平面 3R 為例，每一欄的 $v_y$ 都加 0.2，$v_x$ 不變。',
   },
   {
     question: '模擬中只讓關節 2 以 1 rad/s 轉動（$\\dot\\theta = e_2$）。$\\vV_s$ 的線速度部分 $v_s$ 代表什麼？',
@@ -125,8 +127,11 @@ const WORLD = { xmin: -1.75, xmax: 2.55, ymin: -0.78, ymax: 1.75 };
 const WORLD_NARROW = { xmin: -0.85, xmax: 2.25, ymin: -0.78, ymax: 1.75 };
 /** Where the {b} origin sits on screen when the camera rides on {b} (2D). */
 const ANCHOR: Pt = [1.2, 0.12];
-const PULSE_T = 1.4;
-const PULSE_A = 0.35;
+/**
+ * Safe-area margins [left, right, bottom, top] (world units at zoom 1, ≈ 130 px/m on desktop) used by
+ * the keep-in-view zoom: room for joint glyphs and labels, and the bottom margin clears the hint overlay.
+ */
+const FIT_MARGIN: Margins = [0.2, 0.2, 0.3, 0.2];
 const ROWS_2D = ['ωz', 'vx', 'vy'];
 const ROWS_3D = ['ωx', 'ωy', 'ωz', 'vx', 'vy', 'vz'];
 const NONE = [false, false, false];
@@ -165,7 +170,9 @@ const limitsFor = (k: ModelKey): [number, number][] =>
 
 const fmtSci = (x: number): string => (x === 0 ? '0' : x.toExponential(1));
 
-type Anim = { kind: 'none' } | { kind: 'pulse'; joint: number; t: number; theta0: number[] } | { kind: 'play' };
+/** A running single-joint pulse (schedule in pulse.ts: the shown joint rate is the true rate). */
+type Pulse = { kind: 'pulse'; joint: number; t: number; theta0: number[]; plan: PulsePlan };
+type Anim = { kind: 'none' } | Pulse | { kind: 'play' };
 
 /** Compact joint-axis glyph (the toolkit's ScrewAxis3D is sized for ~1 m scenes; this arm is 0.7 m). */
 interface AxisGlyph3D {
@@ -215,6 +222,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let cv: Canvas2D | null = null;
   let view3: View3D | null = null;
   let glyphPos: Pt[] = [];
+  // keep-in-view framing of the planar canvas (see viewFit.ts): tuned window and current window
+  let baseWorld: Box = WORLD;
+  let curWorld: Box = WORLD;
 
   // ---- layout ---------------------------------------------------------
   const titleEl = simTitle(host, 'Jacobian 的每一欄 = 關節此刻的螺旋軸', '平面 3R');
@@ -250,16 +260,20 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   });
   thetaPanel.el.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
   const rateSliders = [0, 1, 2].map((i) => slider(thetaPanel.el, {
-    label: `θ̇${subscript(i + 1)}`, min: -1, max: 1, step: 0.05, value: S.thetadot[i], unit: 'rad/s',
+    label: `dθ${subscript(i + 1)}/dt`, min: -1, max: 1, step: 0.05, value: S.thetadot[i], unit: 'rad/s',
     onInput: (v) => onRateInput(i, v),
   }));
+  // Combining-dot glyphs (θ̇) are misplaced by most UI fonts: typeset the rate labels with KaTeX.
+  rateSliders.forEach((s, i) => s.el.querySelector('.mr-label > span')?.replaceChildren(dotTheta(i + 1)));
 
   const actPanel = controlPanel(host);
   const actRow = row(actPanel);
   actRow.appendChild(el('span', { class: 'mr-note', style: { margin: '0' } }, '脈衝'));
   [0, 1, 2].forEach((i) => button(actRow, {
-    label: `θ̇${subscript(i + 1)} = 1`, small: true, title: `只讓關節 ${i + 1} 以 1 rad/s 轉動，並讓它擺動一下`, onClick: () => pulse(i),
-  }));
+    label: `dθ${subscript(i + 1)}/dt = 1`, small: true,
+    title: `只讓關節 ${i + 1} 轉動：來回擺動一次，轉速在 ±1 rad/s 之間（箭頭與數字隨實際轉速更新），最後回到原姿勢`,
+    onClick: () => pulse(i),
+  }).replaceChildren(dotTheta(i + 1, ' = 1')));
   const pb = playback(actRow, {
     showTime: false,
     onPlay: () => startPlay(),
@@ -301,6 +315,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   function buildPlanar(): void {
     const narrow = host.clientWidth > 0 && host.clientWidth < 520;
     const world = narrow ? WORLD_NARROW : WORLD;
+    baseWorld = world;
+    curWorld = world;
     cv = new Canvas2D(viewHost, { aspect: (world.xmax - world.xmin) / (world.ymax - world.ymin), world, overlay: true });
     cv.el.appendChild(el('div', { class: 'mr-overlay', style: { top: 'auto', bottom: '0.35rem' } }, `箭頭 = 速度 × ${K2} s · 點一下 ⊙ 可做脈衝`));
     cv.draw = drawPlanar;
@@ -315,25 +331,27 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   function build3D(): void {
-    const scene = new Scene3D(viewHost, { aspect: 2.1, grid: 2, axes: 0.16, cameraPos: [1.12, -0.3, 0.72], target: [0.28, 0.14, 0.22], autoStart: false });
+    // Framed so that the preset pose and the straightened arm ("伸直手臂" keeps θ₂) both fit.
+    const scene = new Scene3D(viewHost, { aspect: 2.1, grid: 2, axes: 0.16, cameraPos: [1.36, -0.48, 1.04], target: [0.22, 0.12, 0.36], autoStart: false });
     const robot = new Robot3D(scene, rrr3, { frameSize: 0.1, linkRadius: 0.016 });
-    const jc = JOINT_VARS.map((v) => cssVar(v, '#888'));
+    // Colours are CSS variable names, so Scene3D re-resolves them on a theme switch (no rebuild,
+    // the learner's camera orbit is kept).
+    const jc = JOINT_VARS;
     const axes = jc.map((color) => ({
       line: scene.addPolyline([[0, 0, 0], [0, 0, 1]], color, { dashed: true }),
       arrow: scene.addArrow({ color, radius: 0.006, head: 0.035 }),
       dot: scene.addSphere(0.03, color),
     }));
     const contrib = jc.map((color) => scene.addArrow({ color, radius: 0.008, head: 0.04 }));
-    const tip = scene.addArrow({ color: cssVar('--accent', '#2563eb'), radius: 0.011, head: 0.05 });
-    const pink = cssVar(VS_VAR, '#db2777');
-    const vs = scene.addArrow({ color: pink, radius: 0.01, head: 0.045 });
-    const vsCopy = new Arrow3D(pink, 0.006, 0.035, 0.45);
+    const tip = scene.addArrow({ color: '--accent', radius: 0.011, head: 0.05 });
+    const vs = scene.addArrow({ color: VS_VAR, radius: 0.01, head: 0.045 });
+    const vsCopy = new Arrow3D(VS_VAR, 0.006, 0.035, 0.45);
     scene.scene.add(vsCopy.group);
-    const wxp = scene.addArrow({ color: cssVar(WXP_VAR, '#4b5563'), radius: 0.008, head: 0.04 });
+    const wxp = scene.addArrow({ color: WXP_VAR, radius: 0.008, head: 0.04 });
     const levers = jc.map((color) => scene.addPolyline([[0, 0, 0], [0, 0, 0]], color, { dashed: true }));
-    const trailLine = scene.addPolyline([[0, 0, 0], [0, 0, 0]], cssVar('--warn', '#b45309'));
-    const tipLabel = scene.addLabel('ṗ', [0, 0, 0], cssVar('--accent', '#2563eb'));
-    const vsLabel = scene.addLabel('v_s', [0, 0, 0], pink);
+    const trailLine = scene.addPolyline([[0, 0, 0], [0, 0, 0]], '--warn');
+    const tipLabel = scene.addLabel('ṗ', [0, 0, 0], '--accent');
+    const vsLabel = scene.addLabel('v_s', [0, 0, 0], VS_VAR);
     // the toolkit's text sprites ({s}, {b}, labels) are sized for ~1 m scenes: shrink them for this 0.7 m arm
     scene.scene.traverse((o) => { if ((o as { isSprite?: boolean }).isSprite) o.scale.multiplyScalar(0.6); });
     view3 = { scene, robot, axes, contrib, tip, vs, vsCopy, wxp, levers, trail: trailLine, tipLabel, vsLabel };
@@ -375,17 +393,41 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       : [k * v[0], k * v[1]]);
     const plus = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
     const len = (a: Pt): number => Math.hypot(a[0], a[1]);
+    const o = P([0, 0]);
+    const pts = fk.joints.map((q) => P(q));
+    const moving = S.thetadot.filter((x) => Math.abs(x) > 1e-9).length;
+    const chain = moving >= 2 && !S.showVs;
+
+    // Keep the arm (and its main arrows) on the canvas. Normal view: pan, and zoom out only when the
+    // content is larger than the window. Camera on {b}: zoom out about {b} only, so {b} stays put.
+    // Done before drawing so everything uses one transform; the tuned window is kept when all fits.
+    {
+      const fit: Pt[] = [o, ...pts, plus(pts[3], D(vel.tipVel, K2))];
+      const fr = 0.43; // frame arrow + label
+      fit.push(P([fr, 0]), P([0, fr]));
+      fit.push(P([tip[0] + fr * ch, tip[1] + fr * sh]), P([tip[0] - fr * sh, tip[1] + fr * ch]));
+      if (S.showVs) fit.push(plus(o, D(vel.vS, K2)), plus(pts[3], D(vel.vS, K2)));
+      if (chain) {
+        let q = pts[3];
+        for (let i = 0; i < 3; i++) { q = plus(q, D(vel.contributions[i].tipVel, K2)); fit.push(q); }
+      }
+      const box = body
+        ? scaleAbout(baseWorld, ANCHOR, zoomToFit(baseWorld, ANCHOR, fit, FIT_MARGIN))
+        : panZoomToFit(baseWorld, [0, 0], fit, FIT_MARGIN);
+      if (!sameBox(box, curWorld)) {
+        curWorld = box;
+        c.setWorld(box);
+      }
+    }
 
     // ground
     if (body) drawWorldGrid(c, P, Pinv); else c.grid(0.5);
     drawBase(c, P);
-    const o = P([0, 0]);
     c.frame({ x: o[0], y: o[1], theta: body ? -phi : 0 }, 0.4, { labels: 's', width: 2 });
 
     if (trail.length > 1) c.polyline(trail.map((q) => P(q)), { color: cssVar('--warn', '#b45309'), width: 2, alpha: 0.85 });
 
     // links
-    const pts = fk.joints.map((q) => P(q));
     for (let i = 0; i < 3; i++) c.line(pts[i], pts[i + 1], { color: muted, width: 9, alpha: 0.5 });
 
     // joint axes recovered from the Jacobian columns (the column *is* the axis)
@@ -406,8 +448,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
 
     // instantaneous centre of the resulting planar twist (multi-joint motion only)
-    const moving = S.thetadot.filter((x) => Math.abs(x) > 1e-9).length;
-    const chain = moving >= 2 && !S.showVs;
     const icr = chain ? instantCenter(planarTwist(vel.Vs)) : null;
     if (icr && Math.hypot(icr[0], icr[1]) < 8) {
       const ic = P(icr);
@@ -432,7 +472,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const q = local[i];
       const mid: Pt = [(ref[0] + glyphPos[i][0]) / 2, (ref[1] + glyphPos[i][1]) / 2];
       const name = useS ? `q${subscript(i + 1)}` : `q${subscript(i + 1)}ᵇ`;
-      c.text(mid, `${name} = (${fmt(q[0], 2)}, ${fmt(q[1], 2)})`, { color: jc[i], bg: pill, dy: -2 });
+      // beside the dashed line (upper side on screen), so it does not sit on a link or a joint glyph
+      const [ax, ay] = c.toScreen(ref);
+      const [bx, by] = c.toScreen(glyphPos[i]);
+      const nl = Math.hypot(bx - ax, by - ay) || 1;
+      let nx = -(by - ay) / nl;
+      let ny = (bx - ax) / nl;
+      if (ny > 0) { nx = -nx; ny = -ny; }
+      c.text(mid, `${name} = (${fmt(q[0], 2)}, ${fmt(q[1], 2)})`, { color: jc[i], bg: pill, dx: 12 * nx, dy: 12 * ny });
     }
 
     // velocity arrows: per-joint contributions chained head-to-tail, then the total
@@ -475,7 +522,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const w = vel.omegaS[2];
     const vNorm = Math.hypot(vel.vS[0], vel.vS[1]);
     const pure = Math.abs(w) < 1e-9 && vNorm > 1e-9 ? ' · ω = 0：純平移' : '';
-    c.overlay.textContent = `${useS ? 'J_s：軸點相對 {s} 原點' : 'J_b：軸點相對 {b} 原點'}${body ? ' · 相機黏在 {b}' : ''}${pure}`;
+    c.setOverlayText(`${useS ? 'J_s：軸點相對 {s} 原點' : 'J_b：軸點相對 {b} 原點'}${body ? ' · 相機黏在 {b}' : ''}${pure}`);
   }
 
   function drawBase(c: Canvas2D, P: (q: ArrayLike<number>) => Pt): void {
@@ -567,9 +614,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       v.contrib[i].group.visible = v.contrib[i].group.visible && moving >= 2 && !S.showVs;
       start = end;
     }
+    // labels sit a little beyond the arrowhead so they do not cover it
+    const beyond = (end: Vec, dir: Vec): Vec => {
+      const n = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+      return [end[0] + (0.06 * dir[0]) / n, end[1] + (0.06 * dir[1]) / n, end[2] + (0.06 * dir[2]) / n + 0.02];
+    };
     const tipEnd = add(p, vel.tipVel, K3);
     v.tip.setFromTo(p, tipEnd);
-    v.tipLabel.position.set(tipEnd[0], tipEnd[1], tipEnd[2] + 0.04);
+    v.tipLabel.position.set(...(beyond(tipEnd, vel.tipVel) as [number, number, number]));
     v.tipLabel.visible = v.tip.group.visible;
     const o: Vec = [0, 0, 0];
     const vsEnd = add(o, vel.vS, K3);
@@ -577,7 +629,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const mid = add(p, vel.vS, K3);
     v.vsCopy.setFromTo(p, mid);
     v.wxp.setFromTo(mid, add(mid, vel.omegaCrossP, K3));
-    v.vsLabel.position.set(vsEnd[0], vsEnd[1], vsEnd[2] + 0.04);
+    v.vsLabel.position.set(...(beyond(vsEnd, vel.vS) as [number, number, number]));
     for (const a of [v.vs, v.vsCopy, v.wxp]) a.group.visible = a.group.visible && S.showVs;
     v.vsLabel.visible = S.showVs;
     // position vectors from the reference origin to the closest point of each axis
@@ -620,11 +672,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     const dims = planar ? 2 : 3;
     info.set(K_TIP, `${fmtVec(vel.tipVel.slice(0, dims), 2)} m/s`);
+    // refresh() runs every animation frame while a pulse/playback is active: only touch the DOM on change
     if (decLabel) {
-      decLabel.textContent = useS ? K_DEC : K_DEC_B;
+      const label = useS ? K_DEC : K_DEC_B;
+      if (decLabel.textContent !== label) decLabel.textContent = label;
       const show = S.showAdj ? 'none' : '';
-      decLabel.style.display = show;
-      if (decLabel.nextElementSibling instanceof HTMLElement) decLabel.nextElementSibling.style.display = show;
+      if (decLabel.style.display !== show) {
+        decLabel.style.display = show;
+        if (decLabel.nextElementSibling instanceof HTMLElement) decLabel.nextElementSibling.style.display = show;
+      }
     }
     info.set(K_DEC, useS
       ? `${fmtVec(vel.vS.slice(0, dims), 2)} ＋ ${fmtVec(vel.omegaCrossP.slice(0, dims), 2)}`
@@ -632,7 +688,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const d = singularityMeasure(snap, planar);
     const name = planar ? 'det J_s' : 'det J_v（末端點）';
     info.set(K_SING, `${name} = ${fmt(d, 3)}${Math.abs(d) < 1e-3 ? '  ≈ 0 → 奇異，Jacobian 掉秩' : ''}`);
-    changeEl.textContent = describeChange();
+    const msg = describeChange();
+    if (changeEl.textContent !== msg) changeEl.textContent = msg;
     cv?.requestRender();
     update3D();
   }
@@ -680,6 +737,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   function onRateInput(i: number, v: number): void {
+    // a running pulse drives θ̇ itself: end it first (playback keeps running with the new rates)
+    if (anim.kind === 'pulse') stopAnim();
     S.thetadot[i] = v;
     const nz = S.thetadot.map((x, k) => (Math.abs(x) > 1e-9 ? k : -1)).filter((k) => k >= 0);
     S.selected = nz.length === 1 ? nz[0] : -1;
@@ -746,20 +805,35 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   function pulse(i: number): void {
     const theta0 = anim.kind === 'pulse' ? anim.theta0 : S.theta.slice();
     if (anim.kind === 'play') pb.setPlaying(false, { silent: true });
+    // symmetric swing when both sides are free; next to a joint limit, half a swing on the free side
+    const [lo, hi] = limitsFor(S.model)[i];
+    const plan = planPulse(theta0[i], lo, hi);
+    S.theta = theta0.slice();
     S.thetadot = [0, 0, 0];
-    S.thetadot[i] = 1;
+    S.thetadot[i] = pulseState(plan, theta0[i], 0).rate;
     S.selected = i;
     status = '';
     trail = [];
-    anim = { kind: 'pulse', joint: i, t: 0, theta0 };
+    anim = { kind: 'pulse', joint: i, t: 0, theta0, plan };
     syncControls();
     manual();
     loop.start();
     refresh();
   }
 
+  /** End (or interrupt) a pulse: back to its start pose, showing its nominal rate θ̇ = e_i again. */
+  function endPulse(): void {
+    if (anim.kind !== 'pulse') return;
+    S.theta = anim.theta0.slice();
+    S.thetadot = [0, 0, 0];
+    S.thetadot[anim.joint] = 1;
+    anim = { kind: 'none' };
+    thetaPanel.set(S.theta, { silent: true });
+    rateSliders.forEach((s, k) => s.set(S.thetadot[k], { silent: true }));
+  }
+
   function startPlay(): void {
-    if (anim.kind === 'pulse') { S.theta = anim.theta0.slice(); thetaPanel.set(S.theta, { silent: true }); }
+    endPulse();
     if (!playStart) playStart = S.theta.slice();
     status = '';
     anim = { kind: 'play' };
@@ -767,7 +841,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   function stopAnim(): void {
-    if (anim.kind === 'pulse') S.theta = anim.theta0.slice();
+    endPulse();
     anim = { kind: 'none' };
     loop.stop();
     pb.setPlaying(false, { silent: true });
@@ -786,18 +860,22 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const loop = createLoop((dt) => {
     if (anim.kind === 'pulse') {
-      anim.t += dt;
-      const k = Math.min(1, anim.t / PULSE_T);
+      // the shown joint rate is the true rate of the swing (see pulse.ts)
+      anim.t = Math.min(anim.plan.period, anim.t + dt);
+      const j = anim.joint;
+      const st = pulseState(anim.plan, anim.theta0[j], anim.t);
       const th = anim.theta0.slice();
-      const [lo, hi] = limitsFor(S.model)[anim.joint];
-      th[anim.joint] = clamp(anim.theta0[anim.joint] + PULSE_A * Math.sin(2 * Math.PI * k), lo, hi);
+      th[j] = st.theta;
       S.theta = th;
-      if (k >= 1) {
-        S.theta = anim.theta0.slice();
-        anim = { kind: 'none' };
+      S.thetadot = [0, 0, 0];
+      S.thetadot[j] = st.rate;
+      if (anim.t >= anim.plan.period) {
+        endPulse();
         loop.stop();
+      } else {
+        thetaPanel.set(S.theta, { silent: true });
+        rateSliders.forEach((s, k) => s.set(S.thetadot[k], { silent: true }));
       }
-      thetaPanel.set(S.theta, { silent: true });
       refresh();
     } else if (anim.kind === 'play') {
       // Kinematic integration θ += θ̇ dt; full-turn joints wrap, limited joints stop the playback.
@@ -846,10 +924,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     setFocus(i);
   }
 
-  const unsubTheme = ctx.onThemeChange(() => {
-    // 3D materials capture colours at creation time: rebuild the scene for the new theme.
-    if (S.model === 'rrr3') { teardownView(); build3D(); refresh(); }
-  });
+  // Theme switches need no handling here: the 2D canvas resolves its colours at draw time and the 3D
+  // scene re-resolves the CSS variable names it was given.
 
   buildPlanar();
   syncControls();
@@ -860,7 +936,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     destroy() {
       anim = { kind: 'none' };
       loop.stop();
-      unsubTheme();
       teardownView();
     },
   };
@@ -891,6 +966,11 @@ function eqBlock(parent: HTMLElement, tex: string, inline: boolean): { el: HTMLD
 
 function eqSym(parent: HTMLElement, tex: string): void {
   parent.appendChild(el('span', { style: { fontSize: '0.92rem' } }, mathEl(tex)));
+}
+
+/** KaTeX label θ̇_i (+ optional text), scaled down to the surrounding UI font size. */
+function dotTheta(i: number, suffix = ''): HTMLSpanElement {
+  return el('span', { style: { fontSize: '0.86em', lineHeight: '1' } }, mathEl(`\\dot\\theta_{${i}}${suffix}`));
 }
 
 const lesson: Lesson = { meta, steps, quiz, mount };

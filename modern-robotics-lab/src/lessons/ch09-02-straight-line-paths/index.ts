@@ -185,7 +185,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   host.append(view2, view3);
   // Narrow hosts (phones) get a taller canvas so the arm is not tiny.
   const narrow = host.clientWidth > 0 && host.clientWidth < 520;
-  const cv = new Canvas2D(view2, { aspect: narrow ? 1.3 : 1.85, world: WORLD, overlay: true });
+  const cv = new Canvas2D(view2, { aspect: narrow ? 1.3 : 1.95, world: WORLD, overlay: true });
 
   const pbPanel = controlPanel(host);
   const pbRow = row(pbPanel);
@@ -256,13 +256,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     { label: '比較表', apply: () => { paneA.style.display = 'none'; paneB.style.display = ''; } },
   ]);
   const [pl, pr] = split(paneA);
-  const pTheta = new Plot2D(pl, { title: 'θ(s)：播放中的路徑', xLabel: 's', yLabel: 'rad', series: thetaSpecs(), xRange: [0, 1], height: 110 });
-  const pSpeed = new Plot2D(pr, { title: '‖dθ/ds‖：三條路徑', xLabel: 's', series: speedSpecs(), xRange: [0, 1], height: 110 });
+  const pTheta = new Plot2D(pl, { title: 'θ(s)：播放中的路徑', xLabel: 's', yLabel: 'rad', series: thetaSpecs(), xRange: [0, 1], height: 104 });
+  const pSpeed = new Plot2D(pr, { title: '‖dθ/ds‖：三條路徑', xLabel: 's', series: speedSpecs(), xRange: [0, 1], height: 104 });
   const tableWrap = el('div', { class: 'md', style: { overflowX: 'auto' } });
   paneB.appendChild(tableWrap);
   const tbody = el('tbody');
   tableWrap.appendChild(el('table', { style: { fontSize: '0.8rem', margin: '0.4rem 0 0.2rem' } },
-    el('thead', {}, el('tr', {}, ['路徑', '末端路徑長', '最大‖dθ/ds‖', '最小|sin θ₂|', 'IK 無解', '跳變', '碰撞'].map((h) => el('th', { style: { whiteSpace: 'nowrap' } }, h)))),
+    el('thead', {}, el('tr', {}, ['路徑', '末端路徑長', '最大‖dθ/ds‖', '最小|sin θ₂|', 'IK 無解', '跳變', '碰撞'].map((h) => el('th', { style: { padding: '0.3em 0.45em' } }, h)))),
     tbody));
 
   function thetaSpecs(): SeriesSpec[] {
@@ -290,7 +290,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // ------------------------------------------------------------------ 2D drawing
   const clampPt = (x: number, y: number): Pt => [clamp(x, WORLD.xmin + 0.05, WORLD.xmax - 0.05), clamp(y, WORLD.ymin + 0.05, WORLD.ymax - 0.05)];
-  const handleColor = cssVar('--fg-muted', '#667');
+  // CSS variable names are resolved at draw time, so the handles follow a theme switch.
+  const handleColor = '--fg-muted';
   const hStart = poseHandle(cv, { x: st.start.x, y: st.start.y, theta: st.start.phi }, {
     label: '起點', color: handleColor, knob: 0.38, frameSize: 0.22,
     onChange: (p) => {
@@ -310,7 +311,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const obHandle = cv.addHandle({
     get: () => st.obC,
     set: (p) => { st.obC = clampPt(p[0], p[1]); chips2.clear(); recompute(); },
-    color: cssVar('--danger', '#b91c1c'), radius: 7, enabled: st.obstacle,
+    color: '--danger', radius: 7, enabled: st.obstacle,
   });
 
   cv.draw = (c) => {
@@ -421,10 +422,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const P = res.paths[st.sel];
     const s = P.s;
     for (let i = 0; i < 3; i++) pTheta.setXY(i, s, P.theta.map((t) => (t ? t[i] : NaN)));
+    let vmax = 0;
     PATH_KINDS.forEach((k, i) => {
       const Q = res.paths[k];
-      if (st.show[k]) pSpeed.setXY(i, Q.s, Q.speed); else pSpeed.setXY(i, [], []);
+      if (st.show[k]) {
+        pSpeed.setXY(i, Q.s, Q.speed);
+        if (Number.isFinite(Q.maxSpeed)) vmax = Math.max(vmax, Q.maxSpeed);
+      } else pSpeed.setXY(i, [], []);
     });
+    // A magnitude plot starts at zero, so spikes and ratios between the paths read correctly.
+    pSpeed.setRanges(undefined, [0, Math.max(1, vmax) * 1.12]);
     pTheta.setOptions({ series: thetaSpecs() });
     pSpeed.setOptions({ series: speedSpecs() });
     renderLegend();
@@ -445,7 +452,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       inFail = f;
     });
     pTheta.setMarkers(m);
-    pSpeed.setMarkers([cur]);
+    // Same red markers (unlabelled) on the speed plot, so a gap or spike can be matched to its cause.
+    pSpeed.setMarkers(m.map((k) => ({ ...k, label: undefined })));
   }
 
   function renderLegend(): void {
@@ -478,14 +486,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       : st.sel === 'joint'
         ? `不需逐點解 IK，dθ/ds 恆定${nearSing ? '；途中雖經過奇異附近，關節速度仍平順' : ''}。`
         : '一路可達、連續，遠離奇異。');
-    if (Math.abs(res.dphi) < 1e-9) text += '（Δφ = 0：螺旋路徑與笛卡兒直線重合）';
+    if (Math.abs(res.dphi) < 1e-9) text += '（Δφ = 0：螺旋＝笛卡兒直線）';
     status2.textContent = text;
     status2.style.color = parts.length ? danger : (st.sel === 'joint' ? fg : ok);
   }
 
   function renderTable(): void {
     const danger = cssVar('--danger');
-    const cell = (txt: string, bad = false) => el('td', { style: { fontFamily: 'var(--mono)', color: bad ? danger : '', whiteSpace: 'nowrap' } }, txt);
+    const cell = (txt: string, bad = false) => el('td', { style: { fontFamily: 'var(--mono)', color: bad ? danger : '', whiteSpace: 'nowrap', padding: '0.3em 0.45em' } }, txt);
     if (!res.ok) { tbody.replaceChildren(); return; }
     tbody.replaceChildren(...PATH_KINDS.map((k) => {
       const P = res.paths[k];
@@ -496,7 +504,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         cell(fmt(P.minSin2, 2), k !== 'joint' && P.minSin2 < 0.25),
         cell(P.failCount ? `${P.failCount} 點` : '—', P.failCount > 0),
         cell(P.jumps.length ? `${P.jumps.length} 次` : '—', P.jumps.length > 0),
-        cell(st.obstacle ? (P.firstCollision >= 0 ? `s = ${fmt(P.s[P.firstCollision], 2)}` : '無') : '—', P.firstCollision >= 0));
+        cell(st.obstacle ? (P.firstCollision >= 0 ? `s=${fmt(P.s[P.firstCollision], 2)}` : '無') : '—', P.firstCollision >= 0));
     }));
   }
 
@@ -504,7 +512,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let s3: Scene3Parts | null = null;
   function ensureScene(): Scene3Parts {
     if (s3) return s3;
-    const scene = new Scene3D(view3, { aspect: 1.9, grid: 2, axes: 0.25, cameraPos: [1.2, -1.5, 1.0], target: [-0.1, 0.1, 0.33] });
+    const scene = new Scene3D(view3, { aspect: narrow ? 1.35 : 2.05, grid: 2, axes: 0.25, cameraPos: [1.2, -1.5, 1.0], target: [-0.1, 0.1, 0.33] });
     const tube = (color: number) => Array.from({ length: SAMPLES3 - 1 }, () => scene.addLink({ radius: 0.008, color }));
     const ghost = () => { const f = scene.addFrame({ size: 0.11, opacity: 0.45 }); return f; };
     s3 = {

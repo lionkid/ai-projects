@@ -27,6 +27,10 @@ describe(`${meta.id}: lesson content`, () => {
       expect(html, t.slice(0, 60)).not.toContain('katex-error');
       // A leftover "$" means an unbalanced math delimiter.
       expect(html.replace(/<[^>]+>/g, ''), t.slice(0, 60)).not.toMatch(/\$/);
+      // A leftover "**" means bold that CommonMark refused to close, e.g. "**路徑（path）**只" (closing run
+      // between a full-width punctuation mark and a letter is not right-flanking).
+      const plain = html.replace(/<span class="katex[\s\S]*?<\/annotation>/g, '').replace(/<[^>]+>/g, '');
+      expect(plain, t.slice(0, 60)).not.toMatch(/\*\*/);
     }
   });
 });

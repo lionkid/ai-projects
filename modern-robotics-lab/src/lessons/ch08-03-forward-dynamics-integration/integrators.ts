@@ -3,8 +3,8 @@
  *
  * The arm is the lab's `planar2R` (L1 = L2 = 1 m, 1 kg point masses at the link
  * tips, gravity along −y). Two equivalent descriptions from @/mr are used:
- *  - the closed-form Lagrangian model (`planar2RDynamics` / `planar2RAccel`, book §8.4),
- *    which is cheap enough to integrate in real time with tiny steps;
+ *  - the closed-form Lagrangian model (`planar2RDynamics` / `planar2RAccel`, the book's 2R example
+ *    in §8.1; §8.4 gives the general closed form), cheap enough to integrate in real time with tiny steps;
  *  - the Newton–Euler model (`InverseDynamics` on `planar2R.Mlist/Glist/Slist`),
  *    used to show how forward dynamics is assembled from n + 1 inverse-dynamics calls (§8.5).
  * Integrators are the library's `eulerStepGeneric` (explicit Euler) and `rk4Step`.

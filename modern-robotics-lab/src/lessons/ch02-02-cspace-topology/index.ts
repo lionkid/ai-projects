@@ -10,7 +10,7 @@ import { planarFK, wrapToPi } from '@/mr';
 import { meta } from './meta';
 import {
   PATH_PRESETS, PI, TWO_PI, appendUnwrapped, densify, glueStages, ikNearest, implicitCoords, morphNormal, morphPoint,
-  otherElbow, pathLength, pushTrail, samplePath, torusDist, trailPieces, unwrapSeq, wrapPolylines, wrapTh,
+  otherElbow, pathLength, pushTrail, samplePath, torusDist, trailPieces, trailSamples, unwrapSeq, wrapPolylines, wrapTh,
   type Th, type Trail, type V3,
 } from './torus';
 
@@ -91,7 +91,7 @@ const quiz: QuizQuestion[] = [
       'workspace 與 C-space 都不變',
     ],
     answer: 0,
-    explanation: 'C-space 只由關節決定：兩個能自由旋轉的轉動關節就是 $S^1 \\times S^1$，與連桿長度無關。連桿長度只影響正向運動學這個「投影」，所以 workspace 的內半徑從 $|L_1 - L_2| = 0$ 變成 $0.5$。',
+    explanation: 'C-space 只由關節決定：兩個能自由旋轉的轉動關節就是 $S^1 \\times S^1$，與連桿長度無關。連桿長度只影響正向運動學這個「投影」，所以 workspace 的內半徑 $|L_1 - L_2|$ 從 0 變成 0.5，中間出現一個到不了的洞。',
   },
   {
     question: '下列哪個系統的 C-space 與無關節極限的 2R 手臂**拓撲相同**？',
@@ -125,7 +125,9 @@ const NU = 72;      // θ1 segments of the torus mesh
 const NV = 36;      // θ2 segments
 const TRAIL_MAX = 400;
 const TRAIL_STEP = 0.025; // min. spacing (rad, on the torus) between stored trail samples
-const PATH_DOTS_MAX = 700;
+const TRAIL_DOTS_MAX = 2400; // 3D trail dots after densifying (a fast drag stores few, far-apart samples)
+const DOT_STEP = 0.02;       // max. spacing (rad) between neighbouring 3D dots, so they merge into a line
+const PATH_DOTS_MAX = 1200;
 const MAP_PX = 512;
 const LABEL_FONT = 44;
 const LABEL_SCALE = 0.0036;
@@ -162,7 +164,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let trail: Trail = [];                          // wrapped samples; null = break (the configuration jumped)
   let path: Th[] | null = null;                   // densified, unwrapped
   let pathDots: Th[] = [];                        // evenly spaced samples of `path` for the 3D view
-  let playS: number | null = null;                // playback progress ∈ [0, 1] or null
+  let playS: number | null = null;                // playback progress ∈ [0, 1] (kept while paused) or null
+  let playing = false;
   let sweep: { pts: Th[]; s: number; dur: number } | null = null; // step demos (moves θ without showing a path)
   let destroyed = false;
   let drawing: Th[] | null = null;                // unwrapped raw points while drawing
@@ -266,7 +269,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const btnRow = row(panel);
   const glueBtn = button(btnRow, { label: '▶ 黏合動畫', small: true, variant: 'primary', title: '從方格開始：先黏上下邊成圓柱，再黏左右邊成環面', onClick: () => startGlueAnim() });
   button(btnRow, { label: '⇄ 換另一組解', small: true, title: '末端位置不變，換到另一個肘部方向的關節角', onClick: () => { stopPlay(); setTheta(otherElbow(L1, L2, th).th, 'button', true); } });
-  button(btnRow, { label: '清除軌跡', small: true, onClick: () => { trail = []; trailDirty = true; refresh(); } });
+  button(btnRow, { label: '清除軌跡', small: true, onClick: () => { clearTrail(); refresh(); } });
   const drawBtn = button(btnRow, { label: '✎ 畫路徑', small: true, title: '在方格上按住拖曳，畫出一條路徑', onClick: () => setDrawMode(!drawMode) });
   const playBtn = button(btnRow, { label: '▶ 播放路徑', small: true, onClick: () => togglePlay() });
   button(btnRow, { label: '清除路徑', small: true, onClick: () => { stopPlay(); setPath(null); chips.clear(); } });
@@ -328,7 +331,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
   const cur = markerPair(0.075, '--accent', 0.45);
   const ghost = markerPair(0.062, '--fg-muted', 0.4);
-  // trail / path dots: one round point sprite per sample (cheap even for software WebGL)
+  // trail / path: one round point sprite per sample (cheap even for software WebGL). The samples are dense and the
+  // sprites a few pixels wide (size × half the view height / depth), so they merge into a thick line on the surface.
   const dotCanvas = document.createElement('canvas');
   dotCanvas.width = dotCanvas.height = 32;
   const dctx = dotCanvas.getContext('2d');
@@ -345,8 +349,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     torusGroup.add(m);
     return m;
   };
-  const trailDots = makeDots(TRAIL_MAX, '--series-6', 0.045);
-  const pathDotsMesh = makeDots(PATH_DOTS_MAX, '--series-7', 0.06);
+  const trailDots = makeDots(TRAIL_DOTS_MAX, '--series-6', 0.14);
+  const pathDotsMesh = makeDots(PATH_DOTS_MAX, '--series-7', 0.18);
   // seam labels: theme-bound text sprites; their scale is divided by the group scale (see rebuildSurface) so they
   // keep a readable size while the long flat sheet is shown shrunk
   const seamLabels = [
@@ -397,18 +401,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     seamLabels[0].position.set(lbl1[0], lbl1[1], lbl1[2]);
     seamLabels[1].position.set(lbl2[0], lbl2[1], lbl2[2]);
     seamLabels.forEach((s, k) => s.scale.copy(labelBase[k]).multiplyScalar(1 / groupScale));
+    // the marker spheres keep their on-screen size too (on the shrunk flat sheet they would be ~3 px)
+    for (const m of [cur.solid, cur.xray, ghost.solid, ghost.xray]) m.scale.setScalar(1 / groupScale);
     pathDotsDirty = true;
     trailDirty = true;
     torusOverlay.textContent = `② 環面　${glueLong(glue)}`;
   };
 
-  const setDots = (pts3: THREE.Points, pts: Th[], max: number) => {
+  /** `off`: height above the surface; the path sits above the trail, as in the 2D square (no interleaved dots). */
+  const setDots = (pts3: THREE.Points, pts: Th[], max: number, off: number) => {
     const n = Math.min(pts.length, max);
     const start = pts.length - n;
     const attr = pts3.geometry.attributes.position as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
     for (let i = 0; i < n; i++) {
-      const p = surf(pts[start + i], 0.02);
+      const p = surf(pts[start + i], off);
       arr[3 * i] = p[0]; arr[3 * i + 1] = p[1]; arr[3 * i + 2] = p[2];
     }
     attr.needsUpdate = true;
@@ -434,8 +441,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const showGhost = !o.atOrigin && torusDist(o.th, th) > 1e-6;
     ghost.solid.visible = showGhost;
     ghost.xray.visible = showGhost;
-    if (trailDirty) { setDots(trailDots, trail.filter((p): p is Th => p !== null), TRAIL_MAX); trailDirty = false; }
-    if (pathDotsDirty) { setDots(pathDotsMesh, pathDots, PATH_DOTS_MAX); pathDotsDirty = false; }
+    if (trailDirty) { setDots(trailDots, trailSamples(trail, DOT_STEP, TRAIL_DOTS_MAX), TRAIL_DOTS_MAX, 0.02); trailDirty = false; }
+    if (pathDotsDirty) { setDots(pathDotsMesh, pathDots, PATH_DOTS_MAX, 0.035); pathDotsDirty = false; }
     render3D();
   };
 
@@ -557,20 +564,31 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function setPath(p: Th[] | null): void {
     path = p && p.length > 1 ? densify(p, 0.03) : null;
+    playS = null;
+    playing = false;
+    playBtn.textContent = '▶ 播放路徑';
     pathDots = [];
     if (path) {
+      // evenly spaced dots, wrapped into [-π, π]²: the flat / half-glued sheet is not periodic in θ
       const L = pathLength(path);
-      const n = Math.min(PATH_DOTS_MAX, Math.max(2, Math.ceil(L / 0.035) + 1));
-      for (let i = 0; i < n; i++) pathDots.push(samplePath(path, i / (n - 1)));
+      const n = Math.min(PATH_DOTS_MAX, Math.max(2, Math.ceil(L / DOT_STEP) + 1));
+      for (let i = 0; i < n; i++) pathDots.push(wrapTh(samplePath(path, i / (n - 1))));
     }
     pathDotsDirty = true;
     pathInfo.textContent = path ? `長度 ${fmt(pathLength(path), 2)} rad` : '';
     refresh();
   }
 
+  /** A new path starts a fresh trail, so the views show the path and its replay rather than older history. */
+  function clearTrail(): void {
+    trail = [];
+    trailDirty = true;
+  }
+
   function loadPreset(i: number, play: boolean): void {
     setDrawMode(false);
     stopPlay();
+    clearTrail();
     setPath(PATH_PRESETS[i].pts);
     if (path) {
       setTheta(path[0], 'path', true);
@@ -583,12 +601,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function startPlay(): void {
     if (!path) { chips.activate(0); return; } // activating a preset loads it and calls startPlay again
-    if (playS == null || playS >= 1) { playS = 0; setTheta(path[0], 'path', true); }
+    if (playS == null || playS >= 1) playS = 0;
+    // (re)start or resume: put the configuration back on the path (the learner may have moved it while paused)
+    setTheta(samplePath(path, playS), 'path', true);
+    playing = true;
     playBtn.textContent = '⏸ 暫停路徑';
     kick();
   }
+  /** Pause the path playback (its progress is kept) and stop any step demo. */
   function stopPlay(): void {
-    if (playS != null && playS < 1) playS = null;
+    playing = false;
     sweep = null;
     playBtn.textContent = '▶ 播放路徑';
   }
@@ -611,7 +633,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     setTheta(pts[pts.length - 1], 'path');
   }
   function togglePlay(): void {
-    if (playS != null && playS < 1) stopPlay(); else startPlay();
+    if (playing) stopPlay(); else startPlay();
   }
 
   function setDrawMode(on: boolean): void {
@@ -632,17 +654,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     radius: 8,
     color: '--accent',
   });
+  // while drawing, the pointer is captured (releasing outside the view still ends the stroke) and clamped to the
+  // visible area, so a pointer far outside cannot produce a long jump that would be lifted the "wrong way round"
+  const clampToView = (p: Pt): Th => [Math.max(-W, Math.min(W, p[0])), Math.max(-W, Math.min(W, p[1]))];
   sq.onPointer({
-    down: (p) => {
+    down: (p, ev) => {
       if (!drawMode) return;
+      try { sq.canvas.setPointerCapture(ev.pointerId); } catch { /* ignore */ }
       drawing = [];
-      appendUnwrapped(drawing, wrapTh([p[0], p[1]]));
+      appendUnwrapped(drawing, wrapTh(clampToView(p)));
       sq.requestRender();
     },
     move: (p) => {
       if (!drawMode || !drawing) return;
       const last = drawing[drawing.length - 1];
-      const nxt = wrapTh([p[0], p[1]]);
+      const nxt = wrapTh(clampToView(p));
       if (torusDist(nxt, last) > 0.03) { appendUnwrapped(drawing, nxt); sq.requestRender(); }
     },
     up: () => {
@@ -650,6 +676,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const pts = drawing;
       setDrawMode(false);
       if (pts.length > 2 && pathLength(pts) > 0.2) {
+        clearTrail();
         setPath(pts);
         setTheta(pts[0], 'path', true);
         if (path) aimCamera(wrapToPi(samplePath(path, 0.5)[0]), 0.5);
@@ -703,9 +730,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     for (const [ox, oy] of tileOffsets) c.point([th[0] + ox, th[1] + oy], 5, { color: accent, alpha: 0.35 });
     if (stepNow === 0) c.text(th, '目前組態', { color: accent, dy: -18, bg });
-    c.overlay.textContent = drawMode
+    c.setOverlayText(drawMode
       ? '① 方格\n✎ 按住拖曳畫路徑（可畫進外圍＝越過邊界）'
-      : `① 方格（顯式座標）\nθ = (${fmt((th[0] * 180) / PI, 0)}°, ${fmt((th[1] * 180) / PI, 0)}°)`;
+      : `① 方格（顯式座標）\nθ = (${fmt((th[0] * 180) / PI, 0)}°, ${fmt((th[1] * 180) / PI, 0)}°)`);
   };
 
   // ---------------- ③ arm: drawing + interaction
@@ -730,8 +757,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (ri > 1e-3) c.circle([0, 0], ri, { fill: cssVar('--sim-bg'), color: accent, width: 1.2, dash: [5, 4] });
     c.text([ro * 0.7, -ro * 0.72], 'workspace', { color: accent, dy: 10, font: `11px ${cssVar('--font')}` });
     c.frame({ x: 0, y: 0, theta: 0 }, 0.45, { labels: 's', width: 1.6 });
-    if (path) c.polyline(path.map((q) => planarFK([L1, L2], q).tip as Pt), { color: cssVar('--series-7'), width: 2.4 });
+    // trail first, path on top (same order as the square and the torus)
     for (const piece of trailPieces(trail)) c.polyline(piece.map((q) => planarFK([L1, L2], q).tip as Pt), { color: cssVar('--series-6'), width: 1.8, alpha: 0.85 });
+    if (path) c.polyline(path.map((q) => planarFK([L1, L2], q).tip as Pt), { color: cssVar('--series-7'), width: 2.4 });
     const o = otherElbow(L1, L2, th);
     if (!o.atOrigin && torusDist(o.th, th) > 1e-6) drawPlanarArm(c, [L1, L2], o.th, { alpha: 0.42, eeRadius: 4, linkWidth: 7 });
     drawPlanarArm(c, [L1, L2], th, { angleArcs: true, linkWidth: 8 });
@@ -740,7 +768,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (o.atOrigin || armNote === 'singular') msg += '\n末端在原點：θ₁ 任意 → 無限多組解（奇異）';
     else if (o.coincident) msg += '\n在 workspace 邊界：兩組解重合';
     else if (armNote === 'clamped') msg += '\n目標超出可達範圍 → 投影到邊界';
-    c.overlay.textContent = msg;
+    c.setOverlayText(msg);
   };
 
   // ---------------- gallery (last step)
@@ -879,11 +907,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       setCamSph([f[0] + (g[0] - f[0]) * e, f[1] + (g[1] - f[1]) * e, f[2] + (g[2] - f[2]) * e]);
       if (u >= 1) camTween = null;
     }
-    if (path && playS != null && playS < 1) {
+    if (path && playing && playS != null && playS < 1) {
       const dur = Math.max(3, pathLength(path) / 1.4);
       playS = Math.min(1, playS + dt / dur);
       setTheta(samplePath(path, playS), 'path');
-      if (playS >= 1) playBtn.textContent = '▶ 播放路徑';
+      if (playS >= 1) { playing = false; playBtn.textContent = '▶ 播放路徑'; }
     }
     if (sweep) {
       sweep.s = Math.min(1, sweep.s + dt / sweep.dur);
@@ -894,7 +922,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       plot.push(tNow, [th[0], Math.cos(th[0]), Math.sin(th[0])]);
       lastPush = tNow;
     }
-    const busy = !!glueAnim || !!camTween || !!sweep || (path != null && playS != null && playS < 1);
+    const busy = !!glueAnim || !!camTween || !!sweep || (path != null && playing);
     if (busy) lastActive = performance.now();
     else if (performance.now() - lastActive > 1500) loop.stop();
   });
@@ -932,13 +960,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       aimCamera(circMean(th[0], o.th[0]), 0.5, dur);
       focusOn([arm.el, sq.el, scene.el]);
     } else if (i === 1) {
-      // explicit coordinates: replay a short move across the θ1 = ±π seam so the split trail is visible at once
+      // explicit coordinates: the move across the θ1 = ±π seam is drawn at once (so the cut trail is visible
+      // immediately), then the configuration replays it so the jump from the right edge to the left edge is seen
       setGlue(0);
       aimCamera(0, 0.22, dur);
       setRep('explicit');
-      trail = [];
-      trailDirty = true;
-      startSweep(SEAM_SWEEP, 1.5);
+      seedSeamTrail();
+      startSweep(SEAM_SWEEP, 2.4);
       focusOn([sq.el]);
     } else if (i === 2) {
       // gluing: the seam-crossing trail from the previous step becomes one unbroken curve
@@ -949,6 +977,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       // representations: one full turn of joint 1 makes θ1 jump once while cos θ1, sin θ1 stay smooth
       setGlue(2);
       setRep('implicit');
+      // seen from above, the full turn of joint 1 is one closed loop around the hole
+      aimCamera(-0.55, 0.95, dur);
       startSweep([[th[0], th[1]], [th[0] + TWO_PI, th[1]]], 4.5);
       focusOn([repSel.el, plot.el]);
     } else if (i === 4) {

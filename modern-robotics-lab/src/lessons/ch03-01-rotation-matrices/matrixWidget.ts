@@ -51,6 +51,9 @@ export function matrixWidget(parent: HTMLElement, opts: MatrixWidgetOpts = {}): 
         const v = Number(input.value);
         if (input.value !== '' && Number.isFinite(v)) opts.onEdit?.(i, j, v);
       });
+      // on commit (blur / Enter) show the value actually in use: the owner may clamp it, and an
+      // emptied or invalid field falls back to the last accepted number
+      input.addEventListener('change', () => paint());
       cells[i].push(cell);
       inputs[i].push(input);
       grid.appendChild(cell);
@@ -60,12 +63,15 @@ export function matrixWidget(parent: HTMLElement, opts: MatrixWidgetOpts = {}): 
   const paint = () => {
     for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
       const cell = cells[i][j];
+      const t = fmt(values[i][j], digits);
       if (editable) {
         const inp = inputs[i][j];
         if (cell.firstChild !== inp) cell.replaceChildren(inp);
-        if (document.activeElement !== inp) inp.value = fmt(values[i][j], digits);
-      } else {
-        cell.textContent = fmt(values[i][j], digits);
+        if (document.activeElement !== inp && inp.value !== t) inp.value = t;
+      } else if (cell.firstChild !== null && cell.firstChild.nodeType !== Node.TEXT_NODE) {
+        cell.replaceChildren(t); // leaving edit mode: replace the <input> by plain text
+      } else if (cell.textContent !== t) {
+        cell.textContent = t; // called every animation frame: write only what changed
       }
     }
   };

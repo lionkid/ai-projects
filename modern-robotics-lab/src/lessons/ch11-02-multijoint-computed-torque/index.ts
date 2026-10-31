@@ -36,9 +36,9 @@ $$\\tau = \\bar M\\big(K_p\\theta_e + K_d\\dot\\theta_e\\big) + \\tilde g(\\thet
   },
   {
     title: '計算力矩：先抵消，再當線性系統控制',
-    md: `**計算力矩法（computed torque）**先用模型把非線性動力學整個抵消，再把剩下的部分當成線性系統來設計：
+    md: `**計算力矩法**（computed torque）先用模型把非線性動力學整個抵消，再把剩下的部分當成線性系統來設計：
 
-$$\\tau = \\tilde M(\\theta)\\Big(\\ddot\\theta_d + K_p\\theta_e + K_i\\!\\int\\!\\theta_e\\,dt + K_d\\dot\\theta_e\\Big) + \\tilde c(\\theta,\\dot\\theta) + \\tilde g(\\theta).$$
+$$\\begin{aligned}\\tau = {}&\\tilde M(\\theta)\\Big(\\ddot\\theta_d + K_p\\theta_e + K_i\\!\\int\\!\\theta_e\\,dt + K_d\\dot\\theta_e\\Big) \\\\ &+ \\tilde c(\\theta,\\dot\\theta) + \\tilde g(\\theta).\\end{aligned}$$
 
 若模型正確，代入 $\\tau = M\\ddot\\theta + c + g$：兩邊的 $c$、$g$ 互相抵銷，再約掉可逆的 $M$，每個關節只剩自己的線性方程 $\\ddot\\theta_{e,i} + K_d\\dot\\theta_{e,i} + K_p\\theta_{e,i} = 0$（取 $K_i = 0$）。這就是**回饋線性化（feedback linearization）**：耦合被抵消、誤差被解耦，上一課的 $\\omega_n$、$\\zeta$ 分析可以直接用在每個關節上。`,
     simHint: '已加入關節 1 的起始偏差 20°。e₁ 的實線與灰色虛線（理想二階響應）重合，e₂ 則一直貼著零：兩個關節的誤差被解耦了。切回 PD+g 比較看看。',
@@ -57,7 +57,7 @@ $$\\tau = \\tilde M(\\theta)\\Big(\\ddot\\theta_d + K_p\\theta_e + K_i\\!\\int\\
     title: '模型不準怎麼辦',
     md: `質量與慣量只能估計。模型有落差時抵消就不完全，誤差方程多出一個由模型誤差造成的擾動：
 
-$$\\ddot\\theta_e + K_d\\dot\\theta_e + K_p\\theta_e = \\tilde M^{-1}\\big[(M-\\tilde M)\\ddot\\theta + (c-\\tilde c) + (g-\\tilde g)\\big].$$
+$$\\begin{aligned}\\ddot\\theta_e + K_d\\dot\\theta_e + K_p\\theta_e = \\tilde M^{-1}\\big[&(M-\\tilde M)\\ddot\\theta \\\\ &+ (c-\\tilde c) + (g-\\tilde g)\\big].\\end{aligned}$$
 
 回饋會吸收大部分的不匹配，所以性能是**逐漸變差**，不會一下子崩潰；動作越快，$(M-\\tilde M)\\ddot\\theta$ 這項越大。停住時剩下的偏差主要來自重力估錯，加上積分項 $K_i$ 就能把它消掉。`,
     simHint: '模型質量誤差已設為 −20%（控制器低估了質量）。看停住時的殘餘誤差，再勾選「積分項 Ki」；也試試 +20% 與更短的 T_f。',
@@ -324,12 +324,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (st.kind === 'task') {
       errPlot.setOptions({ title: '末端追蹤誤差 x_d − x', yLabel: 'mm', series: [{ name: 'e_x', color: cssVar('--axis-x', '#e11') }, { name: 'e_y', color: cssVar('--axis-y', '#1a1') }] });
       setSeries(errPlot, [[t, trial.err.map((e) => 1000 * e[0])], [t, trial.err.map((e) => 1000 * e[1])]]);
-      auxPlot.setOptions({ title: '關節速度 dθ/dt（奇異附近暴增）', yLabel: 'rad/s', series: [{ name: 'dθ₁/dt', color: c1 }, { name: 'dθ₂/dt', color: c4 }] });
+      // The marker label is kept short: it is drawn to the right of the line and would be cut off
+      // at mobile width; the title says what the red line means.
+      auxPlot.setOptions({ title: '關節速度 dθ/dt（奇異附近暴增，紅線＝|det J| 最小）', yLabel: 'rad/s', series: [{ name: 'dθ₁/dt', color: c1 }, { name: 'dθ₂/dt', color: c4 }] });
       setSeries(auxPlot, [[t, trial.dth.map((d) => d[0])], [t, trial.dth.map((d) => d[1])]]);
       let iMin = 0;
       trial.detJ.forEach((d, i) => { if (Math.abs(d) < Math.abs(trial.detJ[iMin])) iMin = i; });
       group.setMarkers(0, []);
-      group.setMarkers(1, [{ x: t[iMin], color: cssVar('--danger', '#b91c1c'), label: `|det J| 最小 ${fmt(Math.abs(trial.detJ[iMin]), 2)}` }]);
+      group.setMarkers(1, [{ x: t[iMin], color: cssVar('--danger', '#b91c1c'), label: `|det J| ${fmt(Math.abs(trial.detJ[iMin]), 2)}` }]);
       return;
     }
     const eSeries: SeriesSpec[] = [{ name: 'e₁', color: c1, width: 2 }, { name: 'e₂', color: c4, width: 2 }];
@@ -387,7 +389,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.text([v.xmax - 0.2, v.ymax - 0.65], 'g', { color: muted });
     const e = trial.err[i];
     const errTxt = st.kind === 'task' ? `|x_e| = ${fmt(1000 * Math.hypot(e[0], e[1]), 1)} mm` : `θ_e = (${fmt(deg(e[0]), 1)}°, ${fmt(deg(e[1]), 1)}°)`;
-    c.overlay.textContent = `t = ${fmt(trial.t[i], 2)} s　${KIND_SHORT[st.kind]}\n${errTxt}${trial.diverged ? '\n⚠ 發散，模擬中止' : ''}`;
+    c.setOverlayText(`t = ${fmt(trial.t[i], 2)} s　${KIND_SHORT[st.kind]}\n${errTxt}${trial.diverged ? '\n⚠ 發散，模擬中止' : ''}`);
   };
 
   // ---- animation --------------------------------------------------------------

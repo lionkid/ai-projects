@@ -35,7 +35,7 @@ const PATHS: PathPreset[] = [
 const steps: LessonStep[] = [
   {
     title: '給一個點，找兩組角度',
-    md: `**逆向運動學（inverse kinematics, IK）**把正向運動學倒過來問：末端要停在 $(x, y)$，關節角該是多少？正向運動學 $\\theta \\mapsto (x, y)$ 只有一個答案；反方向卻常常不只一個。
+    md: `**逆向運動學**（inverse kinematics, IK）把正向運動學倒過來問：末端要停在 $(x, y)$，關節角該是多少？正向運動學 $\\theta \\mapsto (x, y)$ 只有一個答案；反方向卻常常不只一個。
 
 平面 2R 手臂是最小的例子：目標點在可達範圍內時，手肘可以彎向「基座–目標連線」的這一側或另一側，兩種姿勢的末端落在同一點。畫布用實線畫目前顯示的解、虛線畫另一個解；旁邊的關節空間圖把兩組 $(\\theta_1, \\theta_2)$ 標成兩個點——關節空間裡的兩個點，對應到工作空間的同一個點。`,
     simHint: '拖曳紫色目標點到不同位置：實線是目前顯示的解、虛線是另一解；右側關節空間圖的兩個點會跟著移動。',
@@ -55,7 +55,7 @@ $$\\cos\\theta_2 = \\frac{x^2 + y^2 - L_1^2 - L_2^2}{2L_1L_2}.$$
 
 $$\\theta_1 = \\atantwo(y, x) - \\atantwo(L_2\\sin\\theta_2,\\ L_1 + L_2\\cos\\theta_2).$$
 
-這裡必須用雙引數的 $\\atantwo$。單引數的 $\\arctan(y/x)$ 只看比值，而 $(x, y)$ 與 $(-x, -y)$ 的比值相同，所以它只會回答 $(-90^\\circ, 90^\\circ)$ 之間的角度。目標在左半平面（$x < 0$）時答案差了 $180^\\circ$，整隻手臂轉到對面，末端落在 $(-x, -y)$。$\\atantwo$ 同時看 $x$、$y$ 的正負號，四個象限都分得清。`,
+這裡必須用雙引數的 $\\atantwo$。單引數的 $\\arctan(y/x)$ 只看比值，而 $(x, y)$ 與 $(-x, -y)$ 的比值相同，所以它只會回答 $(-90^\\circ, 90^\\circ)$ 之間的角度。目標在左半平面（$x < 0$）時答案差了 $180^\\circ$，整隻手臂轉到對面，末端落在對稱點 $(-x, -y)$ 上。$\\atantwo$ 同時看 $x$、$y$ 的正負號，四個象限都分得清。`,
     simHint: '目標已移到左半平面：紅色虛線是誤用 atan(y/x) 算出的手臂，末端跑到 (−x, −y)。按「右半平面」比較，並對照角度弧 γ、β、θ₁。',
   },
   {
@@ -72,7 +72,7 @@ $$|L_1 - L_2| \\le \\sqrt{x^2 + y^2} \\le L_1 + L_2 .$$
     md: `真正動起來時，我們要關節角**連續**變化。在關節空間裡，兩個分支是 $\\theta_2 > 0$ 與 $\\theta_2 < 0$ 兩條帶子，被 $\\theta_2 = 0$（伸直）與 $\\theta_2 = \\pm\\pi$（摺疊）兩條奇異線隔開。連續的關節路徑要換分支，就得穿過奇異線，也就是末端必須碰到環帶的邊界。
 
 所以末端路徑留在環帶內部時，鎖定一個分支就能平順跟隨。但若 $L_1 = L_2$ 而路徑正好穿過原點，鎖定分支會讓 $\\theta_1$ 瞬間跳 $180^\\circ$；想保持連續，就得讓 $\\theta_2$ 越過 $\\pm 180^\\circ$，自動換到另一個分支。`,
-    simHint: '路徑「穿過原點」已就緒：先用「鎖定 elbow-down」按 ▶ 播放路徑，再改成「連續追蹤」重播，比較右側關節空間的軌跡在哪裡斷開。',
+    simHint: '已用「鎖定 elbow-down」走完「穿過原點」：關節空間的軌跡在中途斷開，灰色虛影是跳之前的姿勢。改選「連續追蹤」比較；按 ▶ 可重播動畫。',
   },
   {
     title: '六軸手臂怎麼辦，以及數值方法',
@@ -87,13 +87,13 @@ const quiz: QuizQuestion[] = [
   {
     question: '$L_1 = L_2 = 1$ m 的 2R 手臂，末端沿著通過基座的直線從 $(-1, 0)$ 走到 $(1, 0)$，並要求關節角連續變化。下列何者正確？',
     options: [
-      '全程鎖定 elbow-down 就能連續跟隨',
-      '經過原點時 $\\theta_2$ 必須越過 $\\pm180^\\circ$、分支由 elbow-down 換成 elbow-up；硬鎖同一分支會讓 $\\theta_1$ 跳 $180^\\circ$',
-      '原點不在工作空間內，這條路徑無法完成',
-      '必須在原點把 $\\theta_2$ 歸零才能繼續',
+      '全程鎖定 elbow-down 即可：整條路徑都在環帶內，$\\theta$ 自然連續',
+      '過原點時讓 $\\theta_2$ 越過 $\\pm180^\\circ$、換到 elbow-up；硬鎖分支則 $\\theta_1$ 跳 $180^\\circ$',
+      '做不到：原點不在工作空間內，手臂根本到不了 $(0, 0)$',
+      '在原點先把 $\\theta_2$ 歸零（伸直）再繼續，分支就能保持不變',
     ],
     answer: 1,
-    explanation: '$L_1 = L_2$ 時 $\\beta = \\theta_2/2$，所以同一分支上 $\\theta_1 = \\gamma \\mp |\\theta_2|/2$。末端越過原點時方向角 $\\gamma$ 突變 $180^\\circ$，鎖定的分支只好讓 $\\theta_1$ 也跳 $180^\\circ$。若讓 $\\theta_2$ 從 $180^\\circ$ 繼續轉、包裹成 $-180^\\circ$（換到另一分支），$\\theta_1$ 就接得上：手肘停在原來那一側，只是分支標籤換了。原點本身可達（內圓半徑 $|L_1 - L_2| = 0$），只是那一點的 $\\theta_1$ 可以任意。',
+    explanation: '路徑看似都在可達區內，但 $L_1 = L_2$ 時原點正是縮成一點的內圓，也就是 $\\theta_2 = \\pm180^\\circ$ 的奇異線。這時 $\\beta = \\theta_2/2$，同一分支上 $\\theta_1 = \\gamma \\mp |\\theta_2|/2$；末端越過原點時方向角 $\\gamma$ 突變 $180^\\circ$，鎖定的分支只好讓 $\\theta_1$ 也跳 $180^\\circ$。若讓 $\\theta_2$ 從 $180^\\circ$ 繼續轉、包裹成 $-180^\\circ$（換到 elbow-up），$\\theta_1$ 就接得上：手肘停在原來那一側，只是分支標籤換了。原點本身可達，只是那一點的 $\\theta_1$ 可以任意；在原點把 $\\theta_2$ 歸零則會讓末端離開原點，做不到。',
   },
   {
     question: '同一支 $L_1 = L_2 = 1$ m 的手臂加上關節限制 $|\\theta_2| \\le 90^\\circ$。哪些目標點仍然可達？每點有幾組解？',
@@ -120,10 +120,10 @@ const quiz: QuizQuestion[] = [
   {
     question: 'PUMA 型 6R 手臂（腕部三軸交於一點）一般最多有幾組 IK 解？理由是什麼？',
     options: [
-      '2 組：和 2R 一樣只有手肘上下',
-      '6 組：每個關節貢獻一組',
-      '無限多組：6 個關節對 6 個約束一定有冗餘',
-      '8 組：腕心由前三軸決定（肩部左右 × 手肘上下 = 4），球形腕對每組再有 2 種翻轉',
+      '2 組：和 2R 一樣，只有手肘朝上、朝下兩種',
+      '6 組：每個關節各自貢獻一種姿勢選擇',
+      '無限多組：6 個關節對 6 個約束，必定有冗餘',
+      '8 組：肩部 2 種 × 手肘 2 種 × 腕部翻轉 2 種',
     ],
     answer: 3,
     explanation: '腕部三軸交於一點時，腕心位置與後三軸無關，所以先用前三軸解腕心：轉盤可以面向或背對腕心（2 種），手肘再有上、下兩種，共 4 組。接著後三軸只負責姿態，球形腕對同一個旋轉通常有兩組解（$\\theta_5$ 與 $-\\theta_5$，$\\theta_4$、$\\theta_6$ 各差 $180^\\circ$），所以 $4 \\times 2 = 8$。6 個關節對 6 個約束並沒有冗餘，解是有限個。',
@@ -289,8 +289,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tTri = toggle(optRow, { label: '三角形', value: show.tri, onChange: (v) => { show.tri = v; redraw(); } });
   const tArcs = toggle(optRow, { label: '角度弧', value: show.arcs, onChange: (v) => { show.arcs = v; redraw(); } });
   const tAtan = toggle(optRow, { label: 'atan 對照', value: show.atan, onChange: (v) => { show.atan = v; redraw(); } });
-  const sL1 = slider(panel, { label: 'L₁', min: 0.3, max: 1.5, step: 0.05, value: L1, unit: 'm', onInput: (v) => setLengths(v, L2) });
-  const sL2 = slider(panel, { label: 'L₂', min: 0.3, max: 1.5, step: 0.05, value: L2, unit: 'm', onInput: (v) => setLengths(L1, v) });
+  const sL1 = slider(panel, { label: 'L₁', min: 0.3, max: 1.5, step: 0.05, value: L1, unit: 'm', onInput: (v) => lengthsFromSlider(v, L2) });
+  const sL2 = slider(panel, { label: 'L₂', min: 0.3, max: 1.5, step: 0.05, value: L2, unit: 'm', onInput: (v) => lengthsFromSlider(L1, v) });
   const pathRow = row(panel);
   const playBtn = button(pathRow, { label: '▶ 播放路徑', small: true, variant: 'primary', onClick: () => togglePlay() });
   button(pathRow, { label: '⟲ 回到起點', small: true, onClick: () => resetPath() });
@@ -310,14 +310,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onStart: () => { stopPath(); if (sub === 'arm2') { jumpGhost = null; setMsg(''); } },
     label: '目標',
     radius: 9,
-    color: cssVar('--series-5', '#7c3aed'),
+    color: '--series-5',
   };
   const knobHandle: Handle = {
     get: knobPos,
     set: (p) => { phi = Math.atan2(p[1] - target[1], p[0] - target[0]); refresh(); },
     radius: 6,
     enabled: false,
-    color: cssVar('--series-5', '#7c3aed'),
+    color: '--series-5',
   };
   cv.addHandle(targetHandle);
   cv.addHandle(knobHandle);
@@ -365,7 +365,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       refresh();
       return;
     }
-    const q = snapToBoundary(L1, L2, p, SNAP_PX / cv.scale);
+    // Before the first layout the canvas scale is meaningless; fall back to a 2 cm snap radius.
+    const q = snapToBoundary(L1, L2, p, cv.width > 0 ? SNAP_PX / cv.scale : 0.02);
     const res = followSegment(L1, L2, cur, target, q, mode);
     const recording = step === 4;
     if (res.jump > JUMP_TOL && res.jumpFrom) {
@@ -424,7 +425,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     selMode.set(m, { silent: true });
     jumpGhost = null;
     setMsg('');
-    if (path && step === 4) { resetPath(); return; }
+    if (path && step === 4) { resetPath(); runPathInstant(); return; }
     cur = choose(ik, m, cur);
     lastBranch = ik.reach === 'two' ? cur.branch : null;
     refresh();
@@ -434,7 +435,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     sub = s;
     stopPath();
     knobHandle.enabled = s === 'wrist3';
-    targetHandle.label = s === 'wrist3' ? '目標 p' : '目標';
+    // In the 3R mode the target is labelled 'p' by drawWrist3 (placed clear of the frame and links).
+    targetHandle.label = s === 'wrist3' ? undefined : '目標';
     kvA.el.style.display = s === 'wrist3' ? 'none' : '';
     kvB.el.style.display = s === 'wrist3' ? '' : 'none';
     tTri.el.style.display = tArcs.el.style.display = tAtan.el.style.display = s === 'arm2' ? '' : 'none';
@@ -442,8 +444,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     jumpGhost = null;
     if (s === 'wrist3') {
       cur3 = null;
-      target = [0.9, 1.1];
-      phi = 30 * D;
+      // |w| ≈ 1.46 m: θ₂ ≈ ±87°, so the two decoupled solutions are clearly distinct.
+      target = [1.5, 1.2];
+      phi = 20 * D;
       setMsg('', '');
     } else {
       if (s === 'newton' && solve2R(L1, L2, target[0], target[1]).solutions.length === 0) target = [1.1, 0.8];
@@ -481,6 +484,28 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (sub !== 'arm2') setSub('arm2');
     if (Math.abs(L1 - path.L[0]) > 1e-9 || Math.abs(L2 - path.L[1]) > 1e-9) setLengths(path.L[0], path.L[1]);
     resetPath();
+    runPathInstant();
+  }
+
+  /**
+   * Follows the whole selected path at once (trails, jump ghost and warning included), so the
+   * outcome is visible immediately; ▶ then replays it as an animation from the start.
+   */
+  function runPathInstant(): void {
+    if (!path) return;
+    const { a, b } = path;
+    const n = 60;
+    for (let k = 1; k <= n; k++) {
+      const s = k / n;
+      moveTarget([a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s], false);
+    }
+    pathS = 1;
+  }
+
+  /** Link-length slider moved: in the path step, redo the selected path with the new lengths. */
+  function lengthsFromSlider(a: number, b: number): void {
+    setLengths(a, b);
+    if (step === 4 && path) { chipSets[4].clear(); resetPath(); runPathInstant(); }
   }
 
   function resetPath(): void {
@@ -524,7 +549,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       kvB.set(KB.w, `(${fmt(r3.w[0], 2)}, ${fmt(r3.w[1], 2)})`);
       const { rIn, rOut } = annulus(L1, L2);
       const rw = Math.hypot(r3.w[0], r3.w[1]);
-      kvB.set(KB.rw, `${fmt(rw, 2)} m ${r3.sols.length ? '✓ 在環帶內' : rw > rOut ? '✗ 太遠' : '✗ 太近'}（${fmt(rIn, 2)}–${fmt(rOut, 2)}）`);
+      kvB.set(KB.rw, `${fmt(rw, 2)} m ${r3.sols.length ? '✓' : rw > rOut ? '✗ 太遠' : '✗ 太近'}（環帶 ${fmt(rIn, 1)}–${fmt(rOut, 1)}）`);
       const dn = r3.sols.find((s) => s.branch === 'down');
       const up = r3.sols.find((s) => s.branch === 'up');
       kvB.set(KB.d, dn ? deg(dn) : '—');
@@ -547,10 +572,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     kvA.set(K.c2, `${fmt(ik.c2, 3)}${Math.abs(ik.c2) > 1 + 1e-12 ? '（超出 [−1, 1]）' : ''}`);
     const reachable = ik.solutions.length > 0;
     const t2 = Math.acos(clamp(ik.c2, -1, 1));
-    kvA.set(K.t2, reachable ? `±${fmt(t2 / D, 1)}°` : '—（無實數解）');
+    // On the boundary sin θ₂ = 0, so ±θ₂ (and ±β) coincide: print a single value there.
+    const merged = ik.reach === 'one';
+    const pm = merged ? '' : '±';
+    kvA.set(K.t2, reachable ? `${pm}${fmt(t2 / D, 1)}°${ik.degenerate ? '（θ₁ 任意）' : merged ? '（兩解合一）' : ''}` : '—（無實數解）');
     kvA.set(K.g, ik.r > 1e-9 ? `${fmt(ik.gamma / D, 1)}°（${quadrantOf(x, y)}）` : '未定義（r = 0）');
     const b = beta(L1, L2, t2);
-    kvA.set(K.b, reachable ? `±${fmt(Math.abs(b) / D, 1)}°` : '—');
+    kvA.set(K.b, reachable ? `${pm}${fmt(Math.abs(b) / D, 1)}°` : '—');
     const dn = byBranch(ik, 'down');
     const up = byBranch(ik, 'up');
     kvA.set(K.t1d, dn ? (ik.degenerate ? '任意' : `${fmt(dn.theta1 / D, 1)}°`) : '—');
@@ -698,10 +726,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     c.line(r3.w, target, { color: col.target, width: 2, dash: [5, 4] });
     c.point(r3.w, 6, { color: r3.prim ? col.ann : col.danger });
-    c.text(r3.w, 'w（腕心）', { color: r3.prim ? col.fg : col.danger, dx: -6, dy: 16, bg: col.bg });
     c.frame({ x: target[0], y: target[1], theta: phi }, 0.3, { width: 2 });
     c.line(target, knobPos(), { color: col.target, width: 1.5, dash: [4, 3] });
-    c.text(knobPos(), 'φ', { color: col.target, dx: 12, dy: -10 });
+    // Labels on the free side of each point so none sits on a link: w on the side of the last link
+    // away from the elbow, p on the −y side of the target frame, φ beyond the knob (screen px).
+    const n: Pt = [-Math.sin(phi), Math.cos(phi)];
+    const E = elbowOf(L1, r3.prim ?? r3.ik.fallback!);
+    const away = (E[0] - r3.w[0]) * n[0] + (E[1] - r3.w[1]) * n[1] > 0 ? -1 : 1;
+    const kw = 14 + 30 * Math.abs(n[0]);
+    c.text(r3.w, 'w（腕心）', { color: r3.prim ? col.fg : col.danger, dx: away * n[0] * kw, dy: -away * n[1] * kw, bg: col.bg });
+    const kp = 15 + 6 * Math.abs(n[0]);
+    c.text(target, 'p', { color: col.target, dx: -n[0] * kp, dy: n[1] * kp, bg: col.bg });
+    c.text(knobPos(), 'φ', { color: col.target, dx: 15 * Math.cos(phi), dy: -15 * Math.sin(phi) });
   }
 
   function drawNewton(c: Canvas2D, col: Colors): void {
@@ -731,15 +767,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     else if (sub === 'newton') drawNewton(c, col);
     else draw2R(c, col);
     const ok = sub === 'wrist3' ? solve3().prim != null : ik.solutions.length > 0;
-    targetHandle.color = ok ? col.target : col.danger;
-    knobHandle.color = col.target;
+    // Theme variable names (resolved when the handles are drawn), so a theme switch keeps them right.
+    targetHandle.color = ok ? '--series-5' : '--danger';
     if (sub === 'newton') {
       const res = newton2R(L1, L2, NEWTON_GUESS, target, 8);
-      c.overlay.textContent = `Newton：${res.converged ? `${res.thetas.length - 1} 步收斂` : '8 步內未收斂'}　|e| = ${res.errors.map((e) => e.toExponential(0)).slice(0, 6).join(' → ')}`;
+      c.setOverlayText(`Newton：${res.converged ? `${res.thetas.length - 1} 步收斂` : '8 步內未收斂'}　|e| = ${res.errors.map((e) => e.toExponential(0)).slice(0, 6).join(' → ')}`);
     } else if (sub === 'wrist3') {
-      c.overlay.textContent = `p = (${fmt(target[0], 2)}, ${fmt(target[1], 2)})  φ = ${fmt(phi / D, 0)}°  L₃ = ${L3}`;
+      c.setOverlayText(`p = (${fmt(target[0], 2)}, ${fmt(target[1], 2)})  φ = ${fmt(phi / D, 0)}°  L₃ = ${L3}`);
     } else {
-      c.overlay.textContent = `p = (${fmt(target[0], 2)}, ${fmt(target[1], 2)})  r = ${fmt(ik.r, 2)} m`;
+      c.setOverlayText(`p = (${fmt(target[0], 2)}, ${fmt(target[1], 2)})  r = ${fmt(ik.r, 2)} m`);
     }
   };
 

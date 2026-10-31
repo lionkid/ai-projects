@@ -214,6 +214,19 @@ export function radialRates(L: number[], th: Vec, speed: number): RadialRates {
 }
 
 /**
+ * Slow-motion factor (simulated seconds per real second) for showing a radial run of the 2R:
+ * `playback` far from the singularity; closer in, small enough that the shown θ2 decays like
+ * e^(−logRate·t_real), i.e. warp·|dθ2/dt| = logRate·|θ2|. At constant tip speed the joint rates blow
+ * up within the last few millimetres, which plain slow motion would show for only a few frames.
+ */
+export function radialWarp(L: number[], th: Vec, speed: number, playback: number, logRate: number): number {
+  const rr = radialRates(L, th, speed);
+  const q2 = rr.qdot ? Math.abs(rr.qdot[1]) : Infinity;
+  if (!Number.isFinite(q2) || q2 < 1e-12) return playback;
+  return Math.min(playback, (logRate * Math.abs(wrapAngle(th[1]))) / q2);
+}
+
+/**
  * Configuration of a 2R arm whose tip moves radially outward along the ray through `tip0`
  * (exact, by inverse kinematics on the same branch) after travelling distance `s`.
  */

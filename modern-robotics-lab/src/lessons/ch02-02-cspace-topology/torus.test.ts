@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { planarFK } from '@/mr';
 import {
   PATH_PRESETS, PI, TWO_PI, densify, glueStages, ikNearest, implicitCoords, morphNormal, morphPoint, otherElbow,
-  pathLength, pushTrail, samplePath, torusDist, trailPieces, unwrapSeq, wrapAngle, wrapPolylines, type Th, type Trail,
+  pathLength, pushTrail, samplePath, torusDist, trailPieces, trailSamples, unwrapSeq, wrapAngle, wrapPolylines,
+  type Th, type Trail,
 } from './torus';
 
 const R = 1;
@@ -112,6 +113,29 @@ describe('wrap-aware paths', () => {
     pushTrail(capped, [2, 2], { minStep: 0.01, max: 3, jump: true });
     pushTrail(capped, [2.1, 2], { minStep: 0.01, max: 3 });
     expect(capped).toEqual([[2, 2], [2.1, 2]]);
+  });
+
+  it('3D trail samples fill gaps, stay on the square and never bridge a break', () => {
+    const o = { minStep: 0.025, max: 100 };
+    const trail: Trail = [];
+    pushTrail(trail, [PI - 0.2, 1], o);
+    pushTrail(trail, [-PI + 0.3, 1.1], o);                    // a fast 0.5-rad move across the θ1 seam
+    pushTrail(trail, [0.5, -2], { ...o, jump: true });        // jump: a new piece
+    pushTrail(trail, [0.6, -2], o);
+    const pts = trailSamples(trail, 0.05, 1000);
+    for (const p of pts) {
+      expect(Math.abs(p[0])).toBeLessThanOrEqual(PI);
+      expect(Math.abs(p[1])).toBeLessThanOrEqual(PI);
+    }
+    const gaps = pts.slice(1).map((p, i) => torusDist(p, pts[i]));
+    // exactly one large gap: the break between the two pieces
+    expect(gaps.filter((g) => g > 0.05 + 1e-9)).toHaveLength(1);
+    expect(torusDist(pts[0], [PI - 0.2, 1])).toBeLessThan(1e-12);
+    expect(torusDist(pts[pts.length - 1], [0.6, -2])).toBeLessThan(1e-12);
+    // the cap keeps the newest samples
+    const capped = trailSamples(trail, 0.05, 5);
+    expect(capped).toHaveLength(5);
+    expect(capped[4]).toEqual(pts[pts.length - 1]);
   });
 
   it('densify bounds the step and samplePath hits both ends', () => {

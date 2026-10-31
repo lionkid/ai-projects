@@ -30,7 +30,7 @@ const steps: LessonStep[] = [
 
 $$\\tau_i = \\big((p - p_i)\\times f\\big)_z = d_i\\,\\|f\\| ,$$
 
-$p$ 是末端、$p_i$ 是關節位置，$d_i$ 是力臂（關節到力作用線的垂直距離）。作用線穿過哪個關節，那個關節就完全不必出力。這裡忽略連桿自重。`,
+$p$ 是末端、$p_i$ 是關節位置，$d_i$ 是帶正負號的力臂：大小是關節到力作用線的垂直距離，$f$ 繞關節逆時針時為正。作用線穿過哪個關節，那個關節就完全不必出力。這裡忽略連桿自重。`,
     simHint: '拖曳橘色力箭頭的尖端改變 f；按「力穿過關節 2」，看虛線力臂 d₂ 與 τ₂ 一起歸零。',
   },
   {
@@ -40,7 +40,7 @@ $p$ 是末端、$p_i$ 是關節位置，$d_i$ 是力臂（關節到力作用線�
 $$\\dot\\theta^{\\mathsf T}\\tau = \\mathcal V^{\\mathsf T}\\mathcal F = (J\\dot\\theta)^{\\mathsf T}\\mathcal F \\quad \\text{對所有 } \\dot\\theta ,$$
 
 因此 $\\tau = J^{\\mathsf T}(\\theta)\\,\\mathcal F$。前提是 $\\mathcal V$ 與 $\\mathcal F$ 寫在同一個座標系：$\\tau = J_b^{\\mathsf T}\\mathcal F_b = J_s^{\\mathsf T}\\mathcal F_s$，其中 $\\mathcal F_s = [\\Ad_{T_{bs}}]^{\\mathsf T}\\mathcal F_b$。拿 $J_s$ 去配 $\\mathcal F_b$ 算出來的數字沒有物理意義。`,
-    simHint: '拉動虛擬速度 θ̇₁、θ̇₂：兩邊的功率永遠相等。下方表格用 PoE 的 J_b、J_s 算 Jᵀℱ，看哪一種配錯了座標系。',
+    simHint: '拉動虛擬速度 $\\dot\\theta_1$、$\\dot\\theta_2$（滑桿寫作 dθ/dt）：兩邊的功率永遠相等。下方表格用 PoE 的 J_b、J_s 算 Jᵀℱ，看哪一種配錯了座標系。',
   },
   {
     title: '力橢球',
@@ -55,7 +55,7 @@ $$\\|\\tau\\|^2 = f^{\\mathsf T}(J_vJ_v^{\\mathsf T})\\,f \\le \\tau_{\\max}^{2}
     title: '奇異構型反而能扛',
     md: `把手臂完全伸直，再讓力沿著連桿方向：每個關節到作用線的力臂都是 0，所以 $\\tau = 0$，負載全由連桿以軸向力承擔，手臂就像一根撐竿。
 
-用橢圓的語言：伸直時 $\\sigma_{\\min} = 0$，速度橢圓沿手臂方向壓成線段，力橢圓在同一方向的半軸 $\\tau_{\\max}/\\sigma_{\\min}$ 變成無限大，也就是
+用橢圓的語言：伸直時 $\\sigma_{\\min} = 0$，速度橢圓在手臂方向的半軸縮成 0，只剩一條垂直於手臂的線段；力橢圓在手臂方向的半軸 $\\tau_{\\max}/\\sigma_{\\min}$ 變成無限大，也就是
 
 $$f \\in \\mathcal N\\big(J_v^{\\mathsf T}\\big) \\;\\Rightarrow\\; \\tau = J_v^{\\mathsf T} f = 0 .$$
 
@@ -87,23 +87,23 @@ const quiz: QuizQuestion[] = [
   {
     question: '人用伸直的手臂推牆，比彎著手肘推牆輕鬆得多。用力橢圓解釋，哪個說法最恰當？',
     options: [
-      '伸直時接近奇異，力橢圓沿手臂方向的半軸 $\\tau_{\\max}/\\sigma_{\\min}$ 非常大，沿手臂推牆幾乎不需要關節力矩',
       '伸直時速度橢圓最大，所以能出的力也最大',
       '伸直時 Jacobian 的秩變大，所以力量增加',
+      '伸直時接近奇異，力橢圓沿手臂方向的半軸 $\\tau_{\\max}/\\sigma_{\\min}$ 非常大，沿手臂推牆幾乎不需要關節力矩',
       '力橢圓與姿勢無關，差別只在肌肉疲勞',
     ],
-    answer: 0,
+    answer: 2,
     explanation: '伸直時 $J_v$ 的欄位都垂直於手臂，沿手臂方向的力滿足 $J_v^{\\mathsf T}f \\approx 0$：各關節的力臂幾乎為零，力由骨骼（連桿）軸向承擔。這就是力橢圓沿手臂方向變得很長的原因；速度橢圓在同一方向則被壓扁——兩者的半軸互為倒數。',
   },
   {
     question: '平面 3R 只考慮末端的純力 $f \\in \\mathbb R^2$（$J_v$ 為 $2\\times 3$ 且滿秩）。下列敘述何者正確？',
     options: [
-      '給定 $f$，$\\tau = J_v^{\\mathsf T} f$ 唯一；但不是每個 $\\tau \\in \\mathbb R^3$ 都能被某個末端力平衡',
       '給定 $f$，有無限多組 $\\tau$ 都能讓手臂靜止',
       '任意的 $\\tau$ 都對應唯一的 $f$',
       '$J_v^{\\mathsf T}$ 是方陣，所以可以直接求逆得到 $f$',
+      '給定 $f$，$\\tau = J_v^{\\mathsf T} f$ 唯一；但不是每個 $\\tau \\in \\mathbb R^3$ 都能被某個末端力平衡',
     ],
-    answer: 0,
+    answer: 3,
     explanation: '$J_v^{\\mathsf T}$ 是 $3\\times 2$：把 2 維的 $f$ 映到力矩空間裡的一個 2 維子空間，所以給定 $f$ 時 $\\tau$ 唯一。反過來，若 $\\tau$ 有分量落在 $J_v$ 的零空間方向（自運動方向），任何末端力都平衡不了它——即使末端被固定住，手臂也會沿自運動方向動起來。',
   },
   {
@@ -152,6 +152,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let ax: AxesInfo = ellipseAxes(J);
   let pts: Pt[] = [];
   let ghostTh: number[] | null = null;
+  const labels = new LabelPlacer();
 
   const fEnv = (): Pt => (conv === 'env' ? f : [-f[0], -f[1]]);
 
@@ -175,13 +176,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // step 2: virtual power and frame pairing
   const powerPanel = controlPanel(host, { compact: true });
+  // joint rates are written dθ/dt in HTML/canvas text (a combining dot renders as a stray tick there)
   const qdSliders = [0, 1, 2].map((i) => slider(powerPanel, {
-    label: `虛擬 θ̇${'₁₂₃'[i]}`, min: -1, max: 1, step: 0.05, value: qdot[i], unit: 'rad/s',
+    label: `虛擬 dθ${'₁₂₃'[i]}/dt`, min: -1, max: 1, step: 0.05, value: qdot[i], unit: 'rad/s',
     onInput: (v) => { qdot[i] = v; chipGroups[step]?.clear(); update(); },
   }));
   const powCell = el('div', { style: { display: 'grid', gap: '0.15rem' } });
   powerPanel.appendChild(powCell);
-  const rPj = readout(powCell, { label: '馬達 θ̇ᵀτ =', unit: 'W' });
+  const rPj = readout(powCell, { label: '馬達 (dθ/dt)ᵀτ =', unit: 'W' });
   const rPt = readout(powCell, { label: '末端 𝒱ᵀℱ =', unit: 'W' });
   const frameKv = kv(powerPanel, ['ℱ_b（{b} 座標）', 'ℱ_s = [Ad_Tbs]ᵀ ℱ_b', 'J_bᵀℱ_b ＝ J_sᵀℱ_s ✓', 'J_sᵀℱ_b ✗ 座標系配錯']);
   frameKv.el.style.gridColumn = '1 / -1';
@@ -200,8 +202,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   host.appendChild(postureBox);
   const table = el('table', { style: { borderCollapse: 'collapse', fontSize: '0.8rem', width: '100%' } });
   postureBox.appendChild(table);
-  const cellStyle = { padding: '0.12rem 0.45rem', borderBottom: `1px solid ${cssVar('--border', '#ddd')}`, textAlign: 'right', fontFamily: cssVar('--mono') || 'monospace' };
-  table.appendChild(el('tr', {}, ...['姿勢（點選套用）', 'τ₁ (N·m)', 'τ₂ (N·m)', '‖τ‖'].map((h, i) => el('th', { style: { ...cellStyle, textAlign: i ? 'right' : 'left', fontFamily: 'inherit', color: cssVar('--fg-muted') } }, h))));
+  // var(--…) in inline styles: the browser re-resolves them when the learner switches theme
+  const cellStyle = { padding: '0.12rem 0.45rem', borderBottom: '1px solid var(--border)', textAlign: 'right', fontFamily: 'var(--mono)' };
+  table.appendChild(el('tr', {}, ...['姿勢（點選套用）', 'τ₁ (N·m)', 'τ₂ (N·m)', '‖τ‖'].map((h, i) => el('th', { style: { ...cellStyle, textAlign: i ? 'right' : 'left', fontFamily: 'inherit', color: 'var(--fg-muted)' } }, h))));
   const postureRows = [...POSTURES_2R.map((p) => p.label), '目前姿勢'].map((label, i) => {
     const btn = i < POSTURES_2R.length
       ? el('button', { class: 'mr-chip', type: 'button', style: { padding: '0.05rem 0.55rem', fontSize: '0.75rem' }, onClick: () => { setModel('2R'); setConfig(POSTURES_2R[i].th); } }, label)
@@ -258,7 +261,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     rD.el.style.display = show.arms ? '' : 'none';
     rGhost.el.style.display = ghostTh ? '' : 'none';
     if (ghostTh) rGhost.set(`(${staticTorques(model, ghostTh, fe).tau.map((x) => fmt(x, 1)).join(', ')}) N·m`);
-    if (show.arms) rD.set(`(${momentArms(L, th, f).map((a) => fmt(a.d, 2)).join(', ')}) m`);
+    // signed arms of the force the tip actually applies (fe), so that τ_i = d_i |f| in both conventions
+    if (show.arms) rD.set(`(${momentArms(L, th, fe).map((a) => fmt(a.d, 2)).join(', ')}) m`);
     (key === '3R' ? bars3 : bars2).set(tau);
     sTh.forEach((s, i) => { if (i < th.length) s.set(th[i], { silent: true }); });
     sFm.set(vnorm(f), { silent: true });
@@ -285,7 +289,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       rows.forEach((t, i) => {
         const r = postureRows[i];
         const cur = i < POSTURES_2R.length && key === '2R' && POSTURES_2R[i].th.every((a, k) => Math.abs(wrapAngle(a - th[k])) < 0.5 * D);
-        r.tr.style.background = cur || i === POSTURES_2R.length ? cssVar('--accent-soft', 'rgba(37,99,235,0.08)') : '';
+        r.tr.style.background = cur || i === POSTURES_2R.length ? 'var(--accent-soft)' : '';
         if (t) { r.cells[0].textContent = fmt(t[0], 1); r.cells[1].textContent = fmt(t[1], 1); r.cells[2].textContent = fmt(vnorm(t), 1); }
         else r.cells.forEach((c) => { c.textContent = '–'; });
       });
@@ -334,7 +338,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     get: () => { const t = pts[pts.length - 1] ?? [0, 0]; return [t[0] + f[0] * K_F, t[1] + f[1] * K_F]; },
     set: (p) => { chipGroups[step]?.clear(); const t = pts[pts.length - 1]; setForce([(p[0] - t[0]) / K_F, (p[1] - t[1]) / K_F]); },
     radius: 8,
-    color: cssVar('--warn', '#b45309'),
+    color: '--warn', // resolved at draw time, so it follows a theme switch
   });
   cv.addHandle({
     get: () => pts[pts.length - 1] ?? [0, 0],
@@ -348,17 +352,19 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const warn = cssVar('--warn', '#b45309'), rose = cssVar('--series-2', '#e11d48'), purple = cssVar('--series-5', '#7c3aed');
     const bgElev = cssVar('--bg-elev', '#fff');
     const jointColors = [cssVar('--series-1', '#2563eb'), cssVar('--series-2', '#e11d48'), cssVar('--series-3', '#16a34a')];
+    labels.reset();
     c.grid(0.5);
     c.circle([0, 0], L.reduce((a, b) => a + b, 0), { color: cssVar('--grid-strong', '#ccc'), dash: [4, 4], width: 1 });
     c.frame({ x: 0, y: 0, theta: 0 }, 0.3, { alpha: 0.6 });
     const tip = pts[pts.length - 1];
     const fe = fEnv();
+    labels.reserve(c, tip, 10); // the tip handle
 
     if (ghostTh) {
       drawPlanarArm(c, L, ghostTh, { alpha: 0.28 });
       const gj = planarFK(L, ghostTh).joints;
       const ge = Math.hypot(gj[1][0], gj[1][1]) || 1;
-      labelBeside(c, [gj[1][0], gj[1][1]], '另一組解', { color: muted, bg: bgElev }, [gj[1][0] / ge, -gj[1][1] / ge], 10);
+      labels.beside(c, [gj[1][0], gj[1][1]], '另一組解', { color: muted, bg: bgElev }, [gj[1][0] / ge, -gj[1][1] / ge], 10);
     }
 
     // line of action and moment arms
@@ -369,14 +375,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         const name = `d${'₁₂₃'[i]}`;
         if (Math.abs(a.d) < 1e-3) {
           c.point(a.joint, 5, { color: cssVar('--ok', '#15803d') });
-          labelInside(c, a.joint, `${name} = 0`, { color: cssVar('--ok', '#15803d'), dx: -22, dy: -14, bg: bgElev, font: 'bold 11px sans-serif' });
+          labels.inside(c, a.joint, `${name} = 0`, { color: cssVar('--ok', '#15803d'), dx: -22, dy: -14, bg: bgElev, font: 'bold 11px sans-serif' });
           return;
         }
         c.line(a.joint, a.foot, { color: jointColors[i], width: 1.5, dash: [2, 3] });
         c.point(a.foot, 3, { color: jointColors[i] });
         const mid: Pt = [(a.joint[0] + a.foot[0]) / 2, (a.joint[1] + a.foot[1]) / 2];
         const sgn = fh[0] * mid[0] + fh[1] * mid[1] >= 0 ? 1 : -1; // put the label on the side away from the base
-        labelInside(c, mid, name, { color: jointColors[i], bg: bgElev, font: 'bold 11px sans-serif', dx: sgn * 11 * fh[0], dy: -sgn * 11 * fh[1] });
+        labels.inside(c, mid, name, { color: jointColors[i], bg: bgElev, font: 'bold 11px sans-serif', dx: sgn * 11 * fh[0], dy: -sgn * 11 * fh[1] });
       });
     }
 
@@ -416,7 +422,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       }
       const dm = Math.hypot(dir[0], dir[1]) || 1;
       const lp: Pt = [p[0] + (dir[0] / dm) * (r + 0.2), p[1] + (dir[1] / dm) * (r + 0.2)];
-      labelInside(c, lp, `τ${'₁₂₃'[i]}`, { color: col, bg: bgElev, font: 'bold 12px sans-serif' });
+      labels.inside(c, lp, `τ${'₁₂₃'[i]}`, { color: col, bg: bgElev, font: 'bold 12px sans-serif' });
     });
 
     // ellipses at the tip
@@ -435,7 +441,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.ellipse(tip, a1, a2, ang, { color: rose, width: 2, dash: raw2 > ELLIPSE_CAP ? [7, 4] : undefined });
       const out = ax.u2[0] * tip[0] + ax.u2[1] * tip[1] >= 0 ? 1 : -1;
       const e2: Pt = [tip[0] + out * ax.u2[0] * Math.min(a2, 1.0), tip[1] + out * ax.u2[1] * Math.min(a2, 1.0)];
-      labelInside(c, e2, raw2 > ELLIPSE_CAP ? '力橢圓（此方向 → ∞）' : `力橢圓（‖τ‖ ≤ ${fmt(tauBar, 0)} N·m）`, { color: rose, bg: bgElev, dy: -12 });
+      labels.inside(c, e2, raw2 > ELLIPSE_CAP ? '力橢圓（此方向 → ∞）' : `力橢圓（‖τ‖ ≤ ${fmt(tauBar, 0)} N·m）`, { color: rose, bg: bgElev, dy: -12 });
     }
 
     // virtual tip velocity (power step)
@@ -444,7 +450,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const e: Pt = [tip[0] + pw.v[0] * K_V, tip[1] + pw.v[1] * K_V];
       c.arrow(tip, e, { color: purple, width: 2.5, dash: [5, 3] });
       const vm = Math.hypot(pw.v[0], pw.v[1]) || 1;
-      labelBeside(c, e, '𝒱 = J θ̇（虛擬）', { color: purple, bg: bgElev }, [pw.v[0] / vm, -pw.v[1] / vm]);
+      labels.beside(c, e, '𝒱 = J·dθ/dt（虛擬）', { color: purple, bg: bgElev }, [pw.v[0] / vm, -pw.v[1] / vm]);
     }
 
     // the force arrow (as drawn by the learner) and its reaction
@@ -460,17 +466,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         const back: Pt = [tip[0] - f[0] * K_F * 0.6, tip[1] - f[1] * K_F * 0.6];
         c.arrow(tip, back, { color: muted, width: 1.5, dash: [4, 3], alpha: 0.7 });
         const rl = step === 0 ? '反作用' : conv === 'env' ? '反作用：環境 → 末端' : '反作用：末端 → 環境';
-        labelBeside(c, back, rl, { color: muted, font: '11px sans-serif', bg: bgElev }, [-f[0] / m, f[1] / m]);
+        labels.beside(c, back, rl, { color: muted, font: '11px sans-serif', bg: bgElev }, [-f[0] / m, f[1] / m]);
       }
       c.arrow(tip, head, { color: warn, width: 3.5, head: 13 });
       // narrow canvases (phones) get the short symbol; the select box spells out the convention
       const wide = c.width >= 460;
       const fl = conv === 'env' ? (wide ? 'ℱ（末端 → 環境）' : 'ℱ') : (wide ? 'ℱ_ext（環境 → 末端）' : 'ℱ_ext');
-      labelBeside(c, head, fl, { color: warn, bg: bgElev, font: wide ? undefined : 'bold 13px sans-serif' }, side);
+      labels.beside(c, head, fl, { color: warn, bg: bgElev, font: wide ? undefined : 'bold 13px sans-serif' }, side);
     }
+    labels.flush();
 
     const degs = th.map((t) => `${fmt(t / D, 0)}°`).join(', ');
-    c.overlay.textContent = `${key}  θ = (${degs})  f = (${fmt(f[0], 1)}, ${fmt(f[1], 1)}) N  ${ax.rank < 2 ? '（奇異構型）' : ''}`;
+    c.setOverlayText(`${key}  θ = (${degs})  f = (${fmt(f[0], 1)}, ${fmt(f[1], 1)}) N  ${ax.rank < 2 ? '（奇異構型）' : ''}`);
   };
 
   // ---------------------------------------------------------------- per-step presets
@@ -498,10 +505,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         },
       },
     ],
+    // (0, 1) first: in the step-1 pose its virtual tip velocity points 30° away from the upward load,
+    // whereas (1, 0) lies almost on top of the force arrow and (0.7, −0.7) runs along link 2
     [
-      { label: 'θ̇ = (1, 0)', apply: () => { qdot = [1, 0, 0]; syncQd(); } },
-      { label: 'θ̇ = (0, 1)', apply: () => { qdot = [0, 1, 0]; syncQd(); } },
-      { label: 'θ̇ = (0.7, −0.7)', apply: () => { qdot = [0.7, -0.7, 0]; syncQd(); } },
+      { label: 'dθ/dt = (0, 1)', apply: () => { qdot = [0, 1, 0]; syncQd(); } },
+      { label: 'dθ/dt = (1, 0)', apply: () => { qdot = [1, 0, 0]; syncQd(); } },
+      { label: 'dθ/dt = (0.7, −0.7)', apply: () => { qdot = [0.7, -0.7, 0]; syncQd(); } },
     ],
     [
       { label: '肘部 90°', apply: () => { setModel('2R'); setConfig([20 * D, 90 * D]); } },
@@ -577,22 +586,53 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
 }
 
-/** Centered text whose anchor is pulled back inside the visible canvas so long labels never get clipped. */
-function labelInside(c: Canvas2D, p: Pt, str: string, style: TextStyle): void {
-  c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
-  const half = c.ctx.measureText(str).width / 2 + 8;
-  const [sx, sy] = c.toScreen(p);
-  const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
-  const y = Math.min(c.height - 12, Math.max(12, sy + (style.dy ?? 0)));
-  c.text(c.toWorld(x, y), str, { ...style, dx: 0, dy: 0 });
-}
+/**
+ * Places the canvas labels of one frame: each label is pulled back inside the canvas so it is never
+ * clipped, and nudged vertically when it would cover a label placed earlier in the same frame
+ * (force, ellipse and reaction labels often point the same way). The labels are drawn by flush() at
+ * the end of the frame, on top of every arrow and ellipse. Call reset() at the start of a frame.
+ */
+class LabelPlacer {
+  private rects: [number, number, number, number][] = [];
+  private queue: (() => void)[] = [];
 
-/** Label placed next to an anchor along a screen-space direction (e.g. beside an arrow head), kept inside the canvas. */
-function labelBeside(c: Canvas2D, p: Pt, str: string, style: TextStyle, dir: Pt, gap = 8): void {
-  c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
-  const halfW = c.ctx.measureText(str).width / 2 + 4;
-  const off = Math.abs(dir[0]) * halfW + Math.abs(dir[1]) * 9 + gap;
-  labelInside(c, p, str, { ...style, dx: dir[0] * off, dy: dir[1] * off });
+  reset(): void { this.rects = []; this.queue = []; }
+
+  flush(): void { for (const draw of this.queue) draw(); this.queue = []; }
+
+  /** Keep labels off a screen square around world point p (e.g. a drag handle Canvas2D draws last). */
+  reserve(c: Canvas2D, p: Pt, halfPx: number): void {
+    const [sx, sy] = c.toScreen(p);
+    this.rects.push([sx - halfPx, sy - halfPx, sx + halfPx, sy + halfPx]);
+  }
+
+  /** Centred text at `p` (+ dx/dy in px). */
+  inside(c: Canvas2D, p: Pt, str: string, style: TextStyle): void {
+    c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
+    const w = c.ctx.measureText(str).width;
+    const half = w / 2 + 8, hw = w / 2 + 5, hh = 9;
+    const [sx, sy] = c.toScreen(p);
+    const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
+    const clampY = (y: number) => Math.min(c.height - 12, Math.max(12, y));
+    const y0 = clampY(sy + (style.dy ?? 0));
+    const free = (y: number) => this.rects.every(([a, b, cc, d]) => x + hw <= a || x - hw >= cc || y + hh <= b || y - hh >= d);
+    let y = y0;
+    for (const k of [0, 1, -1, 2, -2, 3, -3]) {
+      const cand = clampY(y0 + k * 2 * hh);
+      if (free(cand)) { y = cand; break; }
+    }
+    this.rects.push([x - hw, y - hh, x + hw, y + hh]);
+    const at = c.toWorld(x, y);
+    this.queue.push(() => c.text(at, str, { ...style, dx: 0, dy: 0 }));
+  }
+
+  /** Label next to an anchor along a screen-space direction (e.g. beside an arrow head). */
+  beside(c: Canvas2D, p: Pt, str: string, style: TextStyle, dir: Pt, gap = 8): void {
+    c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
+    const halfW = c.ctx.measureText(str).width / 2 + 4;
+    const off = Math.abs(dir[0]) * halfW + Math.abs(dir[1]) * 9 + gap;
+    this.inside(c, p, str, { ...style, dx: dir[0] * off, dy: dir[1] * off });
+  }
 }
 
 const lesson: Lesson = { meta, steps, quiz, mount };

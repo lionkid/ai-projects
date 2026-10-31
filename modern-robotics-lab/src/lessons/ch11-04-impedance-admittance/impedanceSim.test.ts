@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ImpedanceSim, clampTarget, HOME, H, type ImpParams, type Vec2 } from './impedanceSim';
+import { ImpedanceSim, clampTarget, coulombStep, HOME, H, type ImpParams, type Vec2 } from './impedanceSim';
 
 /** Start at HOME, move the target to x0, run T seconds; stats over the last `win` seconds. */
 function run(p: Partial<ImpParams>, x0: Vec2, T: number, win = 1.5) {
@@ -58,6 +58,41 @@ describe('wall contact', () => {
       const bad = run({ mode: 'admittance', arm, M: 2, B: 60, K: 300, kw: 5e3, delayMs: 15 }, x0, 4);
       expect(bad.lost > 0 || bad.fmax - bad.fmin > 10).toBe(true);
     }
+  });
+});
+
+describe('joint friction with stiction', () => {
+  it('coulombStep stops a joint inside the friction bound and only slows it at the bound', () => {
+    // Uncoupled unit inertias: a small velocity is cancelled, a large one loses W·pMax.
+    expect(coulombStep(0.003, -0.002, 1, 0, 1, 0.01)).toEqual([0, 0]);
+    const [a, b] = coulombStep(0.5, -0.5, 1, 0, 1, 0.01);
+    expect(a).toBeCloseTo(0.49, 12);
+    expect(b).toBeCloseTo(-0.49, 12);
+    // Coupled inertia: whatever sticks ends exactly at rest; kinetic energy never grows.
+    const W = [[0.8, -0.5], [-0.5, 0.9]];
+    const det = W[0][0] * W[1][1] - W[0][1] * W[0][1];
+    const M = [[W[1][1] / det, -W[0][1] / det], [-W[0][1] / det, W[0][0] / det]];
+    const ke = (u: number[]) => 0.5 * (u[0] * (M[0][0] * u[0] + M[0][1] * u[1]) + u[1] * (M[1][0] * u[0] + M[1][1] * u[1]));
+    for (const v of [[0.02, 0.01], [0.3, -0.01], [-0.05, 0.4], [1, 1]]) {
+      const u = coulombStep(v[0], v[1], W[0][0], W[0][1], W[1][1], 0.05);
+      expect(ke(u)).toBeLessThanOrEqual(ke(v) + 1e-12);
+    }
+    expect(coulombStep(0.02, 0.01, W[0][0], W[0][1], W[1][1], 0.05)).toEqual([0, 0]);
+  });
+
+  it('the geared arm under impedance control stays stuck short of the target (no creep)', () => {
+    const sim = new ImpedanceSim({ mode: 'impedance', arm: 'geared', K: 100, B: 30, wallOn: false });
+    sim.x0 = [...HOME]; sim.reset(HOME);
+    sim.x0 = [1.36, 0.42];
+    const errAt = (T: number) => {
+      while (sim.t < T) sim.step();
+      return Math.hypot(sim.x[0] - sim.x0[0], sim.x[1] - sim.x0[1]);
+    };
+    const e4 = errAt(4);
+    const e12 = errAt(12);
+    expect(e4).toBeGreaterThan(0.02);
+    expect(Math.abs(e12 - e4)).toBeLessThan(1e-4);
+    expect(Math.hypot(sim.v[0], sim.v[1])).toBeLessThan(1e-6);
   });
 });
 

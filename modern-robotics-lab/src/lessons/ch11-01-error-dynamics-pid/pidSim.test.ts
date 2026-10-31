@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_PLANT, charPoly, pdGainsFromPole, pdPrediction, pdSag2R, pidKiBound, polyRoots, simulateJoint, stepMetrics,
-  tailAmplitude, PREVIEW_ARM, type TrialOptions,
+  DEFAULT_PLANT, charPoly, dominantRoot, linearSettlingTime, pdGainsFromPole, pdPrediction, pdSag2R, pidKiBound, polyRoots,
+  simulateJoint, stepMetrics, tailAmplitude, PREVIEW_ARM, type TrialOptions,
 } from './pidSim';
 import { planar2RDynamics } from '@/mr';
 
@@ -106,6 +106,29 @@ describe('linear analysis helpers', () => {
     expect(maxRe(1.1 * bound)).toBeGreaterThan(0);
     const unstable = trial({ gains: { kp, ki: 1.3 * bound, kd }, T: 12 });
     expect(unstable.diverged || tailAmplitude(unstable.t, unstable.err, 2) > 1).toBe(true);
+  });
+  it('the exact linear settling time matches the simulation where the 4/(ζωn) rule does not', () => {
+    // ζ ≈ 0.17, 0.40, 1.00 (critical) and 1.9 (overdamped); no gravity, no saturation
+    for (const kd of [1, 2.4, 2 * Math.sqrt(20 * P.M) - P.b, 12]) {
+      const tr = trial({ gains: { kp: 20, ki: 0, kd } });
+      const m = stepMetrics(tr.t, tr.err);
+      const pr = pdPrediction(P, 20, kd)!;
+      expect(Math.abs(m.ts! - pr.tsExact)).toBeLessThan(0.03 + 0.02 * pr.tsExact);
+    }
+    // critical damping: (1 + x) e^{−x} = 0.02 at x ≈ 5.834, so the rule of thumb 4/ωn is ~30 % short
+    const crit = pdPrediction(P, 20, 2 * Math.sqrt(20 * P.M) - P.b)!;
+    expect(crit.zeta).toBeCloseTo(1, 9);
+    const x = crit.tsExact * crit.wn;
+    expect((1 + x) * Math.exp(-x)).toBeCloseTo(0.02, 6);
+    expect(crit.ts / crit.tsExact).toBeLessThan(0.75);
+    // for light damping the envelope rule is fine (ζ = 0.1, ωn = 10: rule 4 s, exact within 10 %)
+    expect(Math.abs(linearSettlingTime(0.1, 10) - 4) / 4).toBeLessThan(0.1);
+  });
+  it('dominantRoot returns the right-most root (upper member of a pair)', () => {
+    const r = dominantRoot(polyRoots([1, 6, 13, 20])); // (s + 4)(s² + 2s + 5)
+    expect(r!.re).toBeCloseTo(-1, 9);
+    expect(r!.im).toBeCloseTo(2, 9);
+    expect(dominantRoot(polyRoots([1, 6, 11, 6]))!.re).toBeCloseTo(-1, 9);
   });
   it('stepMetrics reads a pure exponential correctly', () => {
     const t = Array.from({ length: 1001 }, (_, i) => i * 0.01);

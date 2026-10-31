@@ -1,6 +1,6 @@
 import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } from '@/types';
 import {
-  el, fmt, controlPanel, row, slider, angleSlider, select, toggle, simTitle, kv, mdElement, split,
+  el, fmt, controlPanel, row, slider, angleSlider, select, toggle, simTitle, kv, legend, mdElement, split,
   Canvas2D, Plot2D, createLoop, presetChips, algorithmStepper, playback, planarArmPoints,
   type Pt, type Handle, type PresetChipsHandle, type SeriesSpec, type Marker,
 } from '@/ui';
@@ -88,7 +88,7 @@ $$\\theta^{i+1} = \\theta^i + J_b^{\\T}\\big(J_bJ_b^{\\T} + \\lambda^2 I\\big)^{
   },
   {
     title: '冗餘與最小範數解',
-    md: `只要求末端**位置**時，3R 多出一個自由度：$J_v$ 是 2×3，$J_v\\Delta\\theta = v$ 有無限多解，彼此只差一個**零空間**（null space）分量——末端不動、只改變手臂姿勢的自運動 $\\hat n$。偽逆挑的是其中 $\\|\\Delta\\theta\\|$ 最小的一個，它與零空間正交：$\\Delta\\theta \\cdot \\hat n = 0$。
+    md: `只要求末端**位置**時，3R 多出一個自由度：$J_v$ 是 2×3，$J_v\\Delta\\theta = v$ 有無限多解，彼此只差一個**零空間**（null space）分量——末端不動、只改變手臂姿勢的自運動（方向記為 $\\hat n$）。偽逆挑的是其中 $\\|\\Delta\\theta\\|$ 最小的一個，它與零空間正交：$\\Delta\\theta \\cdot \\hat n = 0$。
 
 若某個關節比較「貴」（慢、耗能），可改用加權偽逆，最小化 $\\Delta\\theta^{\\T}W\\Delta\\theta$。這時步長帶有零空間分量，收斂到的姿勢也跟著改變。`,
     simHint: '已切到「只要位置」：粉紅箭頭是零空間自運動（末端那支為零），讀數顯示第 1 步的 Δθ·n̂ ≈ 0。按「加權 J⁺」，比較終點姿勢與玫瑰色虛線（對照）。',
@@ -110,35 +110,35 @@ const quiz: QuizQuestion[] = [
   {
     question: '只要位置的 3R 手臂（總長 2.4 m），目標在 $|p| = 2.67$ m 處，超出可達範圍。迭代會怎樣？',
     options: [
-      '只要迭代次數夠多，最後一定收斂',
-      '殘差降不到 0。最接近的姿勢是伸直指向目標，偏偏那裡 $J$ 降秩，$J^{\\dagger}$ 在附近亂跳；阻尼夠的 DLS 會停在伸直姿勢、殘差卡在約 0.27 m，所以要偵測「殘差不再下降」',
-      '關節角會發散到無限大',
-      '會收斂到可達範圍內離目標最遠的姿勢',
+      '只要迭代次數夠多，殘差終究會降到容許誤差以下，只是比可達目標慢',
+      '殘差卡在約 0.27 m；最接近的姿勢正是伸直的奇異構型，$J^{\\dagger}$ 在附近亂跳',
+      '每一步都把關節往同一方向推，關節角最後發散到無限大',
+      '收斂到可達範圍內離目標最遠的姿勢，殘差約 $|p| + 2.4$ m',
     ],
     answer: 1,
-    explanation: '$f(\\theta) = 0$ 根本沒有解，能做的只是讓殘差最小：手臂伸直、指向目標，殘差 $|p| - 2.4 \\approx 0.27$ m。這個姿勢正是徑向的奇異構型，$\\sigma_{\\min} \\to 0$，偽逆步長 $\\propto 1/\\sigma_{\\min}$ 在附近暴衝、來回振盪；阻尼足夠（例如 $\\lambda = 0.5$）時 DLS 會穩定停在那裡。角度會包裹，不會跑到無限大；正確做法是偵測停滯並回報「不可達」。第 6 步的「不可達目標」預設可以直接驗證：實線（$J^{\\dagger}$）亂跳後停滯，虛線（DLS）停在伸直姿勢。',
+    explanation: '$f(\\theta) = 0$ 根本沒有解，多迭代幾次也不會收斂；迭代只會讓殘差變小，不會往「最遠」的姿勢跑。殘差最小的姿勢是手臂伸直、指向目標，殘差 $|p| - 2.4 \\approx 0.27$ m，偏偏這正是徑向的奇異構型：$\\sigma_{\\min} \\to 0$，偽逆步長 $\\propto 1/\\sigma_{\\min}$ 在附近暴衝、來回振盪（角度每步包裹，不會跑到無限大）。阻尼足夠（例如 $\\lambda = 0.5$）的 DLS 則會穩定停在伸直姿勢。實作上要偵測「殘差不再下降」並回報不可達。第 6 步的「不可達目標」預設可以直接驗證：實線（$J^{\\dagger}$）亂跳後停滯，虛線（DLS）停在伸直姿勢。',
   },
   {
     question: '冗餘手臂（$J$ 是 2×3）用 $\\Delta\\theta = J^{\\dagger}v$。這一步有什麼幾何意義？改用 $W = \\diag(10, 1, 1)$ 的加權偽逆又如何？',
     options: [
-      '$J^{\\dagger}v$ 讓三個關節轉一樣多；加權後只有關節 1 會動',
-      '加權偽逆會讓末端偏離 $v$ 的方向',
-      '$J^{\\dagger}v$ 是所有滿足 $J\\Delta\\theta = v$ 的步長中 $\\|\\Delta\\theta\\|$ 最小者，沒有零空間分量；加權後改為最小化 $\\Delta\\theta^{\\T}W\\Delta\\theta$，關節 1 動得較少、其他關節補上，步長帶有零空間分量',
-      '$J^{\\dagger}$ 只對方陣有定義，冗餘時不能用',
+      '$J^{\\dagger}v$ 讓三個關節轉一樣多；加權後只剩關節 1 在動，其他關節不動',
+      '$J^{\\dagger}v$ 是最小範數解；加權後末端不再沿 $v$ 的方向移動，需另外修正',
+      '$J^{\\dagger}v$ 是最小範數解、與零空間正交；加權後關節 1 少動、多了零空間分量',
+      '$J^{\\dagger}$ 只對方陣有定義，冗餘手臂得先鎖住一個關節才能用',
     ],
     answer: 2,
-    explanation: '$J\\Delta\\theta = v$ 的解是一條直線 $\\Delta\\theta_p + s\\,\\hat n$。最小範數解是這條線上離原點最近的點，必然與 $\\hat n$ 正交。加權版本仍然精確滿足 $J\\Delta\\theta = v$（末端方向不變），只是改用 $W$ 量「長度」：關節 1 的權重是 10，最省的作法是讓它少動，於是步長在 $\\hat n$ 上有了分量，$\\|\\Delta\\theta\\|$ 反而變大。',
+    explanation: '$J\\Delta\\theta = v$ 的解是一條直線 $\\Delta\\theta_p + s\\,\\hat n$。最小範數解是這條線上離原點最近的點，必然與 $\\hat n$ 正交。加權版本仍然精確滿足 $J\\Delta\\theta = v$（末端方向不變），只是改用 $W$ 量「長度」：關節 1 的權重是 10，最省的作法是讓它少動，於是步長在 $\\hat n$ 上有了分量，$\\|\\Delta\\theta\\|$ 反而變大。兩種解法下各關節的轉量一般都不相同；偽逆也不限於方陣，2×3 的 $J$ 正是它最典型的用途。',
   },
   {
     question: '為什麼逆速度運動學 $\\dot\\theta = J^{\\dagger}\\mathcal V$ 與 Newton 步 $\\Delta\\theta = J_b^{\\dagger}\\mathcal V_b$ 長得一模一樣？',
     options: [
-      '巧合，兩者推導無關',
-      '因為 $J^{\\dagger} = J^{\\T}$',
-      '因為誤差 $\\mathcal V_b$ 永遠是 0',
-      '兩者解的是同一個線性化關係「關節變化 → 末端 twist」。$\\mathcal V_b$ 是「一秒內走完全部誤差」的 twist，把它當速度就是 Newton 步；每個瞬間給定想要的 twist、換成 $\\dot\\theta$，就是逆速度運動學',
+      '巧合：一個是微分關係、一個是最佳化，兩者的推導互不相關',
+      '因為對任何手臂都有 $J^{\\dagger} = J^{\\T}$，所以兩個式子其實都是轉置法',
+      '因為收斂時 $\\mathcal V_b = 0$，兩式只在迭代終點那一刻才恰好相同',
+      '兩者解同一個線性關係 $J\\,\\delta\\theta = \\mathcal V$；Newton 步把 $\\mathcal V_b$ 當成持續 1 秒的速度',
     ],
     answer: 3,
-    explanation: '$\\mathcal V = J(\\theta)\\dot\\theta$ 是速度層級的精確關係；Newton 法把它用在有限的步長上：$J\\,\\Delta\\theta \\approx \\mathcal V_b \\cdot (1\\ \\text{s})$。把 Newton 步除以時間步長 $\\Delta t$ 就是 $\\dot\\theta$，所以追蹤控制可以看成「每個控制週期做一次 Newton 修正」，奇異附近的問題與補救（步長限制、DLS）也完全相同。',
+    explanation: '$\\mathcal V = J(\\theta)\\dot\\theta$ 是速度層級的精確關係；Newton 法把它用在有限的步長上：$J\\,\\Delta\\theta \\approx \\mathcal V_b \\cdot (1\\ \\text{s})$。把 Newton 步除以時間步長 $\\Delta t$ 就是 $\\dot\\theta$，所以追蹤控制可以看成「每個控制週期做一次 Newton 修正」，奇異附近的問題與補救（步長限制、DLS）也完全相同。這與 $J^{\\dagger} = J^{\\T}$ 無關（一般並不成立），也不是只在收斂時才一致：每一步的形式都相同。',
   },
   {
     question: '某一步 $J$ 的最小奇異值 $\\sigma = 0.01$，誤差在對應方向的分量是 0.1。偽逆與 DLS（$\\lambda = 0.1$）在這個方向各走多少？',
@@ -163,6 +163,14 @@ const lg = (x: number) => Math.log10(Math.max(x, 1e-13));
 /** Step norms: fixed point when readable, exponent form when tiny. */
 const fmtNorm = (x: number) => (x >= 1e-3 || x === 0 ? fmt(x, 3) : x.toExponential(1));
 const MONO = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+
+/** Vertical bars from 0 to each value at x = k + dx; NaN entries break the plotted polyline between bars. */
+function stems(vals: number[], dx: number): [number[], number[]] {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  vals.forEach((v, k) => { xs.push(k + dx, k + dx, NaN); ys.push(0, v, NaN); });
+  return [xs, ys];
+}
 
 type CmpKind = 'method' | 'guess' | 'weights';
 interface Comparison { records: IterRecord[]; status: RunStatus; label: string; kind: CmpKind }
@@ -191,30 +199,43 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // ------------------------------------------------------------------ layout
   simTitle(host, '數值 IK：一步一步逼近目標', '平面 3R');
-  const cv = new Canvas2D(host, { height: 340, world: WORLD, overlay: true });
+  const cv = new Canvas2D(host, { height: 312, world: WORLD, overlay: true });
 
-  // The comparison series are only listed (and drawn) while a comparison run exists.
-  const seriesE = (withCmp: boolean): SeriesSpec[] => {
-    const base: SeriesSpec[] = [{ name: '‖ω_b‖', color: '--series-1' }, { name: '‖v_b‖', color: '--series-2' }];
-    return withCmp
-      ? [...base, { name: '對照 ω', color: '--series-1', dash: [5, 4], width: 1.4 }, { name: '對照 v', color: '--series-2', dash: [5, 4], width: 1.4 }]
-      : base;
-  };
-  const seriesS = (withCmp: boolean): SeriesSpec[] =>
-    withCmp ? [{ name: '本方法', color: '--series-4' }, { name: '對照', color: '--series-4', dash: [5, 4], width: 1.4 }] : [{ name: '本方法', color: '--series-4' }];
+  // One HTML legend line for both iteration plots (in-plot legends would cover the first iterates).
+  // Solid = current settings; the dashed comparison run is described by `legendCmp`.
+  const legendRow = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 0.9rem', margin: '0.35rem 0 0' } });
+  host.appendChild(legendRow);
+  legend(legendRow, [
+    { color: 'var(--series-1)', label: '‖ω_b‖' },
+    { color: 'var(--series-2)', label: '‖v_b‖' },
+    { color: 'var(--series-4)', label: '‖Δθ‖' },
+  ]).style.margin = '0';
+  const legendCmp = el('span', { class: 'mr-legend', style: { margin: '0' } });
+  legendRow.appendChild(legendCmp);
+
+  // Comparison series are dashed copies of the main ones; they only get data while a comparison exists.
+  const seriesE: SeriesSpec[] = [
+    { name: '‖ω_b‖', color: '--series-1' }, { name: '‖v_b‖', color: '--series-2' },
+    { name: '對照 ω', color: '--series-1', dash: [5, 4], width: 1.4 }, { name: '對照 v', color: '--series-2', dash: [5, 4], width: 1.4 },
+  ];
+  const seriesS: SeriesSpec[] = [{ name: '‖Δθ‖', color: '--series-4', width: 4 }, { name: '對照', color: '--series-4', dash: [3, 2], width: 2.5 }];
+  const PLOT_H = 150;
   const [pl, pr] = split(host);
   const plotsRow = pl.parentElement as HTMLElement;
-  const plotE = new Plot2D(pl, { title: '誤差 log₁₀‖·‖', xLabel: '迭代 k', height: 132, yRange: [-13, 2.5], xRange: [0, 6], series: seriesE(false), legend: true });
-  const plotS = new Plot2D(pr, { title: '每步 ‖Δθ‖ (rad)', xLabel: '迭代 k', height: 132, xRange: [0, 6], yRange: [0, 1.1], series: seriesS(false), legend: false });
+  plotsRow.style.marginTop = '0.2rem';
+  const plotE = new Plot2D(pl, { title: '誤差 log₁₀‖·‖', xLabel: '迭代 k', height: PLOT_H, yRange: [-13, 2.5], xRange: [0, 6], series: seriesE, legend: false });
+  const plotS = new Plot2D(pr, { title: '每步 ‖Δθ‖ (rad)', xLabel: '迭代 k', height: PLOT_H, xRange: [0, 6], yRange: [0, 1.1], series: seriesS, legend: false });
   const [tl, tr] = split(host);
   const trackRow = tl.parentElement as HTMLElement;
   trackRow.style.display = 'none';
-  const plotRate = new Plot2D(tl, { title: '‖dθ/dt‖ (rad/s)', xLabel: 't (s)', height: 132, xWindow: 12, yRange: [0, 1], series: [{ name: '‖dθ/dt‖', color: '--series-1' }] });
-  const plotTE = new Plot2D(tr, { title: '追蹤誤差 log₁₀‖V_err‖', xLabel: 't (s)', height: 132, xWindow: 12, yRange: [-7, 1], series: [{ name: '誤差', color: '--series-2' }] });
+  const plotRate = new Plot2D(tl, { title: '‖dθ/dt‖ (rad/s)', xLabel: 't (s)', height: PLOT_H, xWindow: 12, yRange: [0, 1], series: [{ name: '‖dθ/dt‖', color: '--series-1' }], legend: false });
+  const plotTE = new Plot2D(tr, { title: '追蹤誤差 log₁₀‖V_err‖', xLabel: 't (s)', height: PLOT_H, xWindow: 12, yRange: [-7, 1], series: [{ name: '誤差', color: '--series-2' }], legend: false });
 
-  const panel = controlPanel(host, { compact: true });
-  const chipRow = row(panel);
-  const runRow = row(panel);
+  // Presets and transport first, then the live readouts, then the less frequently used settings,
+  // so the first view (≈ 860 px) shows the canvas, both plots, the stepper and the numbers.
+  const panelTop = controlPanel(host, { compact: true });
+  const chipRow = row(panelTop);
+  const runRow = row(panelTop);
   const stepper = algorithmStepper(runRow, { onStep: doStep, onReset: resetRun, intervalMs: 700, speeds: [0.5, 1, 2, 5] });
   const pb = playback(runRow, {
     onPlay: () => trackLoop.start(),
@@ -223,6 +244,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onSpeed: (s) => { trackLoop.speed = s; },
   });
   pb.el.style.display = 'none';
+
+  const K = { V: 'V_b（誤差）', dth: 'Δθ（最近一步）', sig: 'σ_min(J_b)', reach: '目標', ns: '第 1 步 Δθ·n̂' } as const;
+  const info = kv(host, Object.values(K));
+  const KT = { rate: 'dθ/dt (rad/s)', sig: 'σ_min(J_b)', reach: '目標' } as const;
+  const infoT = kv(host, Object.values(KT));
+  infoT.el.style.display = 'none';
+
+  const panel = controlPanel(host, { compact: true });
   const selMethod = select<Method>(panel, {
     label: '方法',
     value: opts.method,
@@ -254,26 +283,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const tNull = toggle(togRow, { label: '零空間', title: '畫出零空間自運動時各關節的速度', value: show.nullspace, onChange: (v) => { show.nullspace = v; cv.requestRender(); } });
   const tW = toggle(togRow, { label: '加權 J⁺', title: 'W = diag(10, 1, 1)：關節 1 的「成本」是其他關節的 10 倍', value: false, onChange: (v) => { opts.weights = v ? W1 : null; inputsChanged(); } });
 
-  const K = { V: 'V_b（誤差）', dth: 'Δθ（最近一步）', sig: 'σ_min(J_b)', reach: '目標', ns: '第 1 步 Δθ·n̂' } as const;
-  const info = kv(host, Object.values(K));
-  const KT = { rate: 'dθ/dt (rad/s)', sig: 'σ_min(J_b)', reach: '目標' } as const;
-  const infoT = kv(host, Object.values(KT));
-  infoT.el.style.display = 'none';
-  // Two key/value pairs per row when there is room. The style change is deferred to the next frame
-  // (and skipped when nothing changes) so it never re-triggers this observer inside its own callback.
+  // The iteration readout keeps one pair per row (its vectors would wrap in a narrow column); the
+  // short tracking readout uses two pairs per row when there is room. The style change is deferred to
+  // the next frame (and skipped when nothing changes) so it never re-triggers this observer.
   let kvCols = '';
   let kvRaf = 0;
   const applyCols = () => {
     const cols = host.clientWidth >= 520 ? 'auto 1fr auto 1fr' : 'auto 1fr';
     if (cols === kvCols) return;
     kvCols = cols;
-    info.el.style.gridTemplateColumns = cols;
     infoT.el.style.gridTemplateColumns = cols;
   };
   applyCols();
   const ro = new ResizeObserver(() => { cancelAnimationFrame(kvRaf); kvRaf = requestAnimationFrame(applyCols); });
   ro.observe(host);
-  info.el.style.margin = infoT.el.style.margin = '0.4rem 0 0';
+  info.el.style.margin = infoT.el.style.margin = '0.1rem 0 0.35rem';
 
   // Five-bar preview card (last step)
   const card = el('div', {
@@ -314,7 +338,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   function statusText(): string {
     const last = records[records.length - 1];
     if (status === 'converged') return `✓ 收斂：${records.length - 1} 步`;
-    if (status === 'stalled') return `■ 停滯：殘差卡在 ${fe(last.omegaNorm + last.vNorm)}，不再下降`;
+    if (status === 'stalled') {
+      // An oscillating run can stop on a bad iterate: report the best residual reached as well.
+      const best = Math.min(...records.map((r) => r.omegaNorm + r.vNorm));
+      const now = last.omegaNorm + last.vNorm;
+      return now > 1.5 * best ? `■ 停滯：殘差最低到 ${fe(best)} 後不再下降（目前 ${fe(now)}）` : `■ 停滯：殘差卡在 ${fe(now)}，不再下降`;
+    }
     if (status === 'maxIter') return `■ ${MAX_ITER} 步仍未收斂`;
     return '';
   }
@@ -458,30 +487,34 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // ------------------------------------------------------------------ plots & readouts
   function updatePlots(): void {
-    plotE.setOptions({ title: cmp ? `誤差 log₁₀‖·‖（虛線：${cmp.label}）` : '誤差 log₁₀‖·‖', series: seriesE(!!cmp) });
-    plotS.setOptions({ title: cmp ? `每步 ‖Δθ‖ (rad)（虛線：${cmp.label}）` : '每步 ‖Δθ‖ (rad)', series: seriesS(!!cmp) });
+    legendCmp.textContent = cmp ? `實線：目前設定　虛線：對照（${cmp.label}）` : '實線：目前設定';
     const n = records.length;
     const ks = records.map((_, i) => i);
     const pos = task.positionOnly;
     plotE.setXY(0, pos ? [] : ks, pos ? [] : records.map((r) => lg(r.omegaNorm)));
     plotE.setXY(1, ks, records.map((r) => lg(r.vNorm)));
-    const done = records.slice(0, n - 1);
-    plotS.setXY(0, done.map((_, i) => i), done.map((r) => r.dthetaNorm));
+    // Step norms are per-iteration quantities: draw them as stems (a lone 41 rad step must be visible).
+    // The comparison stems sit slightly to the right of the main ones.
+    const dx = cmp ? 0.14 : 0;
+    const [sx, sy] = stems(records.slice(0, n - 1).map((r) => r.dthetaNorm), -dx);
+    plotS.setXY(0, sx, sy);
     if (cmp) {
       const kc = cmp.records.map((_, i) => i);
       plotE.setXY(2, pos ? [] : kc, pos ? [] : cmp.records.map((r) => lg(r.omegaNorm)));
       plotE.setXY(3, kc, cmp.records.map((r) => lg(r.vNorm)));
-      const cs = cmp.records.slice(0, -1);
-      plotS.setXY(1, cs.map((_, i) => i), cs.map((r) => r.dthetaNorm));
+      const [cx, cy] = stems(cmp.records.slice(0, -1).map((r) => r.dthetaNorm), dx);
+      plotS.setXY(1, cx, cy);
     } else {
       plotE.setXY(2, [], []); plotE.setXY(3, [], []); plotS.setXY(1, [], []);
     }
     const xmax = Math.max(6, n - 1, cmp ? Math.min(cmp.records.length - 1, MAX_ITER) : 0);
-    plotE.setRanges([0, xmax], undefined);
+    // A small margin keeps k = 0 off the frame.
+    const xr: [number, number] = [-0.4, xmax + 0.4];
+    plotE.setRanges(xr, undefined);
     let ymax = 1;
     for (const r of records) ymax = Math.max(ymax, r.dthetaNorm);
     if (cmp) for (const r of cmp.records) ymax = Math.max(ymax, r.dthetaNorm);
-    plotS.setRanges([0, xmax], [0, ymax * 1.1]);
+    plotS.setRanges(xr, [0, ymax * 1.1]);
     const last = records[n - 1];
     const mk: Marker[] = [{ y: lg(LESSON_TOL.ev), label: '門檻 10⁻⁶', dash: [2, 3] }];
     if (!pos) mk.push({ x: n - 1, y: lg(last.omegaNorm), color: '--series-1' });
@@ -489,7 +522,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     plotE.setMarkers(mk);
     const ms: Marker[] = [];
     if (Number.isFinite(opts.maxStep)) ms.push({ y: opts.maxStep, label: '最大步長', dash: [2, 3] });
-    if (n > 1) ms.push({ x: n - 2, y: records[n - 2].dthetaNorm, color: '--series-4' });
+    if (n > 1) ms.push({ x: n - 2 - dx, y: records[n - 2].dthetaNorm, color: '--series-4' });
     plotS.setMarkers(ms);
   }
 
@@ -510,7 +543,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     info.set(K.dth, prev?.dtheta
       ? `(${prev.dtheta.map((x) => fmt(x, 2)).join(', ')})，‖Δθ‖ = ${fmtNorm(prev.dthetaNorm)} rad${prev.clipped ? '（已截斷）' : ''}`
       : '—（尚未迭代）');
-    info.set(K.sig, `${fmt(last.sigmaMin, 4)}${last.sigmaMin < 0.05 ? ' ⚠ 近奇異' : ''}`);
+    // The step from θᵏ⁻¹ was computed with J_b(θᵏ⁻¹): its σ_min is what explains a huge Δθ.
+    info.setLabel(K.sig, prev ? 'σ_min(J_b) 上一步 → 現在' : 'σ_min(J_b)');
+    const near = last.sigmaMin < 0.05 || (prev != null && prev.sigmaMin < 0.05);
+    info.set(K.sig, `${prev ? `${fmt(prev.sigmaMin, 3)} → ` : ''}${fmt(last.sigmaMin, 3)}${near ? ' ⚠ 近奇異' : ''}`);
     const reach = poseReachable(task);
     info.set(K.reach, reach.reachable
       ? '可達'
@@ -552,7 +588,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     while (rateWin.length && rateWin[0][0] < trk.t - 12) rateWin.shift();
     let top = 1;
     for (const [, v] of rateWin) top = Math.max(top, v * 1.1);
-    plotRate.setRanges(undefined, [0, top]);
+    // Fixed 12 s time window (0–12 s at first, then scrolling): auto-ranging a single sample after a
+    // reset would give a degenerate axis.
+    const xr: [number, number] = [Math.max(0, trk.t - 12), Math.max(12, trk.t)];
+    plotRate.setRanges(xr, [0, top]);
+    plotTE.setRanges(xr, undefined);
     plotRate.push(trk.t, [rn]);
     plotTE.push(trk.t, [lg(trk.err)]);
   }
@@ -603,6 +643,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     stepper.el.style.display = it ? '' : 'none';
     pb.el.style.display = it ? 'none' : '';
     plotsRow.style.display = it ? '' : 'none';
+    // Its flex layout is an inline style, so restore 'flex' explicitly ('' would fall back to block).
+    legendRow.style.display = it ? 'flex' : 'none';
     trackRow.style.display = it ? 'none' : '';
     info.el.style.display = it ? '' : 'none';
     infoT.el.style.display = it ? 'none' : '';
@@ -687,13 +729,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const p1 = planarArmPoints(LINKS, q.map((x, i) => x + eps * n[i]));
     const vel: Pt[] = [1, 2, 3].map((i) => [(p1[i][0] - p0[i][0]) / eps, (p1[i][1] - p0[i][1]) / eps] as Pt);
     // Longest arrow drawn 0.45 m long; the tip's velocity is zero (that is what "null space" means).
-    const scale = 0.45 / Math.max(1e-9, ...vel.map((v) => Math.hypot(v[0], v[1])));
+    const speeds = vel.map((v) => Math.hypot(v[0], v[1]));
+    const scale = 0.45 / Math.max(1e-9, ...speeds);
     vel.forEach((v, k) => {
       const p = p0[k + 1];
-      if (Math.hypot(v[0], v[1]) * scale > 0.03) c.arrow(p, [p[0] + v[0] * scale, p[1] + v[1] * scale], { color: '--series-7', width: 2.6, head: 10 });
+      if (speeds[k] * scale > 0.03) c.arrow(p, [p[0] + v[0] * scale, p[1] + v[1] * scale], { color: '--series-7', width: 2.6, head: 10 });
       else c.circle(p, 8 / c.scale, { color: '--series-7', width: 2 });
     });
-    c.text(p0[1], '自運動 n̂', { color: '--series-7', dx: -8, dy: 18, bg: '--sim-bg' });
+    // Key in the (empty) bottom-right corner: labels next to the arrows ended up on the links.
+    const v = c.visible();
+    c.text([v.xmax, v.ymin], '→ 自運動 n̂：末端不動時各關節點的速度', { color: '--series-7', align: 'right', dx: -8, dy: -13, bg: '--sim-bg', font: '12px sans-serif' });
   }
 
   /** Target {d}; returns whether {b} currently sits on it (then one shared label is drawn). */
@@ -709,7 +754,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     c.frame({ x: task.x, y: task.y, theta: task.phi }, 0.35, { width: 2.5 });
     c.line([task.x, task.y], knobPos(), { color: '--series-5', width: 1.5, dash: [4, 3] });
-    frameLabel(c, [task.x, task.y], task.phi, onTarget ? '{b} = {d}' : '{d}', '--series-5');
+    if (onTarget) frameLabel(c, [task.x, task.y], task.phi, '{b} = {d}', '--series-5');
+    // {d} has no link behind it, so its label goes on the −x side; {b} keeps its −y side (no collision
+    // when the two frames are close and equally oriented, e.g. right after one Newton step).
+    else c.text([task.x, task.y], '{d}', { color: '--series-5', font: MONO, dx: -24 * Math.cos(task.phi), dy: 24 * Math.sin(task.phi), bg: '--sim-bg' });
   }
 
   function drawTrack(c: Canvas2D): void {
@@ -742,8 +790,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (n > 1 || a) c.text(g[1], 'θ⁰', { color: '--fg-muted', dx: -14, dy: -12, bg: '--sim-bg' });
     // where the comparison run ended
     if (cmp) {
-      const pc = drawArm(c, cmp.records[cmp.records.length - 1].theta, '--series-2', 'dashed');
-      c.text(pc[1], `對照終點（${cmp.label}）`, { color: '--series-2', dy: 16, bg: '--sim-bg', font: '11px sans-serif' });
+      drawArm(c, cmp.records[cmp.records.length - 1].theta, '--series-2', 'dashed');
+      // Key in the (empty) top-right corner instead of on the arm, where it collided with other labels.
+      const v = c.visible();
+      c.text([v.xmax, v.ymax], `- - 對照終點（${cmp.label}）`, { color: '--series-2', align: 'right', dx: -8, dy: 13, bg: '--sim-bg', font: '12px sans-serif' });
     }
     if (show.iterates) {
       const from = Math.max(1, n - 7);

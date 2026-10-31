@@ -26,7 +26,7 @@ const steps: LessonStep[] = [
 $$\\text{dof} = \\underbrace{2+2}_{A,\\;B} - \\underbrace{1}_{|AB|} = 3$$
 
 這 3 個數也可以換成更順手的 $(x, y, \\phi)$：參考點的位置加上轉角。在 3D 空間要取三個不共線的點：$9-3=6$，也就是 3 個位置加 3 個姿態。`,
-    simHint: '拖曳桿子兩端的 A、B：四個座標都在變，但 |AB| 始終不變；右側讀數顯示只要 (x, y, φ) 三個數就能描述整根桿。',
+    simHint: '拖曳桿子兩端的 A、B：四個座標都在變，但 |AB| 始終不變；「點數法」卡片的讀數顯示只要 (x, y, φ) 三個數就能描述整根桿。',
   },
   {
     title: '關節是「拿走」自由度',
@@ -39,8 +39,8 @@ $$\\text{dof} = \\underbrace{2+2}_{A,\\;B} - \\underbrace{1}_{|AB|} = 3$$
 
 $$c_i = m - f_i ,$$
 
-其中 $m$ 是單一剛體的自由度：平面 $m=3$、空間 $m=6$。平面中 R、P 的 $f=1$，所以各拿走 2 個。右側表格整理了常見關節。`,
-    simHint: '用上方的「無關節／R 關節／P 關節」切換兩根桿的接法：dof 從 6 掉到 4，右側表格會標出用到的關節。',
+其中 $m$ 是單一剛體的自由度：平面 $m=3$、空間 $m=6$。平面中 R、P 的 $f=1$，所以各拿走 2 個。模擬區的關節表整理了常見關節。`,
+    simHint: '用上方的「無關節／R 關節／P 關節」切換兩根桿的接法：dof 從 6 掉到 4，關節表會標出用到的關節。',
   },
   {
     title: 'Grübler 公式',
@@ -58,7 +58,7 @@ $$\\text{dof} = m(N-1) - \\sum_{i=1}^{J} c_i = m(N-1-J) + \\sum_{i=1}^{J} f_i$$
 這一步請先預測、再驗證：
 
 1. 選一個機構，從圖上數出 $N$、$J$、$\\sum f_i$（計數區會先遮住）；
-2. 在右側點選你預測的 dof，答案才會揭曉；
+2. 在「先預測，再揭曉」卡片點選你預測的 dof，答案才會揭曉；
 3. 拖曳手把確認：dof = 1 時，每個點都只能沿一條曲線走（手把旁是雙箭頭）；五連桿的頂點卻能往平面上任何方向移動（十字箭頭）。
 
 提醒：曲柄滑塊的滑塊與地面之間是 P 關節，別漏算。`,
@@ -72,12 +72,12 @@ $$\\text{dof} = 3(5-1-6)+6 = 0$$
 
 公式判定它是結構，但三根桿等長又互相平行，它其實能動！Grübler 公式的前提是**所有約束彼此獨立**；在這個特殊幾何下，第三根桿的約束早已被另外兩根保證，成了**多餘約束（redundant constraint）**。
 
-模擬器另外用數值方法數出**真正獨立**的約束數（約束 Jacobian 的秩）。所以 Grübler 只是**下限**：實際 dof ≥ 公式值；尺寸「一般」（沒有刻意的等長、平行）時兩者就相等。`,
+模擬器另外用數值方法數出**真正獨立**的約束數（約束 Jacobian 的秩）。獨立約束最多和寫下的一樣多、不會更多，所以 Grübler 只是**下限**：實際 dof ≥ 公式值；尺寸「一般」（沒有刻意的等長、平行）時兩者就相等。`,
     simHint: '選「平行四邊形疊加」：公式說 0，手把卻拖得動。再選「中間桿歪一點」——N、J 完全相同，這次真的鎖死了。',
   },
   {
     title: '從自由度到組態空間',
-    md: `機構上每一點位置的完整描述叫**組態（configuration）**，所有可能組態的集合叫**組態空間（C-space）**；dof 就是這個空間的**維度**。
+    md: `知道了機構的**組態（configuration）**，它身上任何一點在哪裡都算得出來；把所有可能的組態收集起來，就得到**組態空間（C-space）**，而 dof 正是這個空間的**維度**。
 
 2R 平面手臂：$N=3$、$J=2$，$\\text{dof}=3(3-1-2)+2=2$，兩個關節角 $(\\theta_1,\\theta_2)$ 就能描述它。對開鏈來說，dof 正好是各關節 $f_i$ 的總和。
 
@@ -102,7 +102,7 @@ const quiz: QuizQuestion[] = [
     question: '模擬中的五連桿 dof = 2。若用「+ 連桿」在兩個原本不相連的接點之間，再加一根兩端都是 R 關節的桿（尺寸一般、沒有特殊的平行關係），dof 會變成？',
     options: ['3：多一根桿就多一些自由度', '2：不受影響', '1', '0'],
     answer: 2,
-    explanation: '新桿帶進 $+3$，但兩個 R 關節各拿走 2，共 $-4$，淨變化 $-1$：$3(6-1-7)+7=1$。在閉迴路上加桿、加關節通常讓機構「更緊」而不是更自由——關節是約束，不是馬達。可以在模擬中用「+ 連桿」親手驗證。',
+    explanation: '新桿帶進 $+3$，但兩個 R 關節各拿走 2，共 $-4$，淨變化 $-1$：$3(6-1-7)+7=1$。在閉迴路上加桿、加關節通常讓機構「更緊」而不是更自由——關節是約束，不是馬達。可以在模擬中用「+ 連桿」親手驗證；但別把兩端都接在地面支點上：那根桿兩端都被固定，什麼也沒約束到，實際 dof 仍是 2，計數區會出現「Grübler 低估了」的警告。',
   },
   {
     question: '「平行四邊形疊加」的 Grübler 值是 0，卻能動。若只把中間那根桿的地面支點往右挪一點（不再與另外兩根平行），會發生什麼事？',
@@ -206,7 +206,8 @@ const CSS = `
 .dg-root .dg-result { font-size: 0.84rem; margin: 0.4rem 0; line-height: 1.45; }
 .dg-root .dg-result.ok { color: var(--ok); }
 .dg-root .dg-result.bad { color: var(--danger); }
-.dg-root .dg-cs { max-width: 250px; margin: 0.15rem auto 0; }
+.dg-root .dg-cs { max-width: 220px; margin: 0.15rem auto 0; }
+.dg-root .mr-controls.dg-cs-sliders { grid-template-columns: 1fr 1fr; gap: 0.3rem 0.8rem; }
 .dg-root .dg-card .mr-controls { padding-top: 0.3rem; }
 .dg-root .dg-hidden { display: none !important; }
 .dg-root .mr-canvas-wrap .mr-overlay { max-width: calc(100% - 1rem); white-space: normal; line-height: 1.35; }
@@ -217,6 +218,8 @@ const CSS = `
 // ---------------------------------------------------------------------------
 
 const RAD2DEG = 180 / Math.PI;
+/** Integer with a typographic minus, matching the KaTeX formula above it (−2, not -2). */
+const num = (v: number) => String(v).replace('-', '−');
 const dist = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
 function segDist(p: Pt, a: Pt, b: Pt): { d: number; at: Pt } {
@@ -301,6 +304,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let trail: Pt[] = [];
   let guard = false; // suppresses chip callbacks while we repaint chips programmatically
   const undoStack: Snapshot[] = [];
+  /** Step 4 hides everything that gives the dof away (counts, motion arrows, locked colour) until the learner predicts. */
+  const isMasked = () => step === 3 && !revealed;
 
   // ---------------- layout
   simTitle(root, '平面連桿積木（planar linkage sandbox）', 'dof 計數器');
@@ -403,7 +408,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const csHost = el('div', { class: 'dg-cs' });
   csCard.appendChild(csHost);
   const cs = new Canvas2D(csHost, { aspect: 1, world: { xmin: -4.35, xmax: 3.7, ymin: -4.35, ymax: 3.7 }, margin: 0.02 });
-  const csSliders = el('div', { class: 'mr-controls compact' });
+  const csSliders = el('div', { class: 'mr-controls compact dg-cs-sliders' });
   csCard.appendChild(csSliders);
   const s1 = angleSlider(csSliders, { label: 'θ₁', value: ARM2R.theta0[0], onInput: () => setArmFromSliders() });
   const s2 = angleSlider(csSliders, { label: 'θ₂', value: ARM2R.theta0[1], onInput: () => setArmFromSliders() });
@@ -418,10 +423,29 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const movingOrdinal = (bi: number): number => { let k = 0; for (let i = 0; i < bi; i++) if (!mech.bodies[i].fixed) k++; return k; };
   const bodyColor = (bi: number): string => cssVar(`--series-${(movingOrdinal(bi) % 7) + 1}`, '#2563eb');
   const sliderJointOf = (bi: number) => mech.joints.find((j) => j.type === 'P' && j.b === bi);
+  /** World end points of the P rails (with a drawn extent) carried by body bi. */
+  const railEnds = (bi: number): Pt[] => {
+    const b = mech.bodies[bi];
+    const out: Pt[] = [];
+    for (const j of mech.joints) {
+      if (j.type !== 'P' || j.a !== bi || !j.extent) continue;
+      const o = worldPt(b, j.pa), d = worldDir(b, j.dir);
+      out.push([o[0] + d[0] * j.extent[0], o[1] + d[1] * j.extent[0]], [o[0] + d[0] * j.extent[1], o[1] + d[1] * j.extent[1]]);
+    }
+    return out;
+  };
+  /** Points that outline a body: its shape pins, plus its rails when it has fewer than two
+   *  (a former ground that carried a slider rail, after a kinematic inversion). */
+  const outlinePts = (bi: number): Pt[] => {
+    const b = mech.bodies[bi];
+    const pts = shapePins(mech, bi, groups).map((i) => worldPt(b, i));
+    if (!b.fixed && pts.length < 2) pts.push(...railEnds(bi));
+    return pts;
+  };
 
   function shapeOf(bi: number): Shape {
     const b = mech.bodies[bi];
-    const pins = shapePins(mech, bi, groups).map((i) => worldPt(b, i));
+    const pins = outlinePts(bi);
     if (pins.length === 0) return { kind: 'none' };
     if (pins.length === 1) {
       const pj = sliderJointOf(bi);
@@ -530,7 +554,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         const { x0, x1, y } = floorSpan();
         c.line([x0, y], [x1, y], { color: muted, width: 2 });
         for (let x = x0; x <= x1 + 1e-9; x += 10 * px) c.line([x, y], [x - 5 * px, y - 6 * px], { color: muted, width: 1 });
-        c.text([(x0 + x1) / 2, y + 12 * px], '地面（固定）', { color: muted });
+        // the "1（地面）" badge takes this spot while N is highlighted
+        if (hl !== 'N') c.text([(x0 + x1) / 2, y + 12 * px], '地面（固定）', { color: muted });
       } else if (gInfo.anchors.length >= 2 && hl !== 'N') {
         const lp = groundLabelPos();
         c.text([lp[0], lp[1] + 6 * px], '地面（固定桿）', { color: muted });
@@ -564,9 +589,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const ang = Math.atan2(d[1], d[0]);
       if (!A.fixed) {
         const o = worldPt(A, j.pa);
-        const proj = shapePins(mech, j.a, groups).map((i) => { const q = worldPt(A, i); return (q[0] - o[0]) * d[0] + (q[1] - o[1]) * d[1]; });
+        const proj = outlinePts(j.a).map((q) => (q[0] - o[0]) * d[0] + (q[1] - o[1]) * d[1]);
         const lo = Math.min(...proj), hi = Math.max(...proj);
-        if (hi - lo > 1e-6) c.line([o[0] + d[0] * lo, o[1] + d[1] * lo], [o[0] + d[0] * hi, o[1] + d[1] * hi], { color: bgElev, width: 3 });
+        if (proj.length && hi - lo > 1e-6) c.line([o[0] + d[0] * lo, o[1] + d[1] * lo], [o[0] + d[0] * hi, o[1] + d[1] * hi], { color: bgElev, width: 3 });
       }
       if (shapePins(mech, j.b, groups).length >= 2) {
         const p = worldPt(mech.bodies[j.b], j.pb);
@@ -593,8 +618,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       if (j?.type === 'P') c.circle(jointPos(hover.ji), 15 * px, { color: danger, width: 2.5 });
     }
 
-    // Motion hints next to the handles ---------------------------------------------------
-    if (mode === 'drag') {
+    // Motion hints next to the handles (hidden while the step-4 answer is masked: they would give it away)
+    if (mode === 'drag' && !isMasked()) {
       for (const hi of handleInfo) {
         const mo = motions.get(hi.gi);
         if (!mo) continue;
@@ -693,7 +718,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.polygon([pointer, [pointer[0] - w, pointer[1] - hh], [pointer[0] + w, pointer[1] - hh]], { color: accent, width: 1.5, alpha: 0.6 });
     }
 
-    c.overlay.textContent = overlayText();
+    c.setOverlayText(overlayText());
   };
 
   // C-space preview ----------------------------------------------------------------
@@ -718,7 +743,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.text([-P, P], 'π', { dx: -12, color: muted });
     c.text([-P, 0], 'θ₂', { dx: -15, color: muted });
     if (!ok) {
-      c.text([0, 0], '選「2R 手臂」預設', { color: muted });
+      // An edited 2R arm is no longer described by (θ₁, θ₂) alone: ask for a reset instead of a re-selection.
+      c.text([0, 0], presetKey === 'arm2R' ? '按「⟲ 重設」還原 2R 手臂' : '選「2R 手臂」預設', { color: muted });
       return;
     }
     // trail, broken where an angle wraps around
@@ -747,7 +773,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function updateCounter(): void {
     const g = grubler(mech, mSpace);
-    const masked = step === 3 && !revealed;
+    const masked = isMasked();
     nBtn.textContent = masked ? 'N = ?' : `N = ${g.N}（含地面）`;
     jBtn.textContent = masked ? 'J = ?' : `J = ${g.J}`;
     fBtn.textContent = masked ? 'Σf = ?' : `Σf = ${g.sumF}`;
@@ -761,7 +787,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const moving = mech.bodies.filter((b) => !b.fixed).length;
     if (masked) {
       checkEl.textContent = '數值檢查：預測之後才會顯示。';
-      setStatus('', '先在右側選擇你預測的 dof。');
+      setStatus('', '先在「先預測，再揭曉」卡片選擇你預測的 dof。');
       return;
     }
     if (an.maxResidual > 1e-6) { checkEl.textContent = ''; setStatus('warn', '⚠ 機構尚未組裝完成。'); return; }
@@ -772,15 +798,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         if (a > 0) setStatus('ok', `✓ dof = ${a}：需要 ${a} 個獨立的數（輸入）才能決定整個機構的姿態。`);
         else setStatus('lock', '■ dof = 0：這是結構，不是機構——所有手把都拖不動。');
       } else if (g.dof < 0 && a === 0) {
-        setStatus('warn', `⚠ 公式給 ${g.dof}，但 dof 不會小於 0：這是超靜定結構，有 ${an.redundant} 條多餘約束。`);
+        setStatus('warn', `⚠ 公式給 ${num(g.dof)}，但 dof 不會小於 0：這是超靜定結構，有 ${an.redundant} 條多餘約束。`);
       } else {
-        setStatus('warn', `⚠ Grübler 低估了：公式給 ${g.dof}，實際能動 ${a} 個自由度——有 ${an.redundant} 條約束不獨立（特殊幾何）。`);
+        setStatus('warn', `⚠ Grübler 低估了：公式給 ${num(g.dof)}，實際能動 ${a} 個自由度——有 ${an.redundant} 條約束不獨立（特殊幾何）。`);
       }
     } else {
       const sp = spatialMobility(mech, an);
       checkEl.textContent = `把同一個機構放進 3D（R 軸都平行於 z）：實際 dof = ${sp}`;
       if (sp === g.dof) setStatus('ok', `✓ 在 3D 中 dof = ${sp}，與 m = 6 的 Grübler 一致（開鏈或自由物體不受影響）。`);
-      else setStatus('warn', `⚠ 用 m = 6 數得 ${g.dof}，實際卻是 ${sp}：平面機構的 R 軸彼此平行，很多空間約束並不獨立。平面機構請用 m = 3。`);
+      else setStatus('warn', `⚠ 用 m = 6 數得 ${num(g.dof)}，實際卻是 ${sp}：平面機構的 R 軸彼此平行，很多空間約束並不獨立。平面機構請用 m = 3。`);
     }
   }
 
@@ -817,14 +843,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const extra = a !== g ? `（不過數值檢查發現它實際能動 ${a} 個——下一步會解釋）` : '';
     if (guess == null) {
       predResult.className = 'dg-result';
-      predResult.textContent = `答案：Grübler 給 ${g}${extra}。拖曳手把確認看看。`;
+      predResult.textContent = `答案：Grübler 給 ${num(g)}${extra}。拖曳手把確認看看。`;
     } else if (guess === g) {
       predResult.className = 'dg-result ok';
-      predResult.textContent = `✓ 答對了！Grübler 給 ${g}${extra}。拖曳手把確認它真的有 ${a} 個自由度。`;
+      predResult.textContent = `✓ 答對了！Grübler 給 ${num(g)}${extra}。拖曳手把確認它真的有 ${a} 個自由度。`;
     } else {
       predResult.className = 'dg-result bad';
       const hasP = mech.joints.some((j) => j.type === 'P');
-      predResult.textContent = `✗ 你預測 ${guess}，Grübler 給 ${g}。再數一次：地面有沒有算進 N？${hasP ? '滑塊的 P 關節有沒有漏算？' : ''}每個關節只算一次。`;
+      predResult.textContent = `✗ 你預測 ${guess}，Grübler 給 ${num(g)}。再數一次：地面有沒有算進 N？${hasP ? '滑塊的 P 關節有沒有漏算？' : ''}每個關節只算一次。`;
     }
   }
 
@@ -848,7 +874,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       s2.set(th[1], { silent: true });
       csNote.textContent = '方格的左右兩邊（θ₁ = ±180°）是同一個姿態，上下兩邊也是：成對的箭頭標出要「黏起來」的邊。';
     } else {
-      csNote.textContent = '組態空間預覽只對未修改的「2R 手臂」預設有效。';
+      csNote.textContent = presetKey === 'arm2R'
+        ? '這支手臂已經用工具列編輯過，不一定還能只用 (θ₁, θ₂) 描述；按「⟲ 重設」或「↶ 復原」回到 2R 手臂。'
+        : '組態空間預覽只對未修改的「2R 手臂」預設有效。';
     }
     cs.requestRender();
   }
@@ -856,11 +884,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   function refresh(): void {
     an = analyze(mech);
     motions = new Map();
-    const muted = cssVar('--fg-muted', '#888');
+    const masked = isMasked();
     for (const hi of handleInfo) {
       const mo = pinMotion(mech, an, hi.ref);
       motions.set(hi.gi, mo);
-      hi.h.color = mo.dof === 0 ? muted : undefined;
+      // CSS variable name: Canvas2D resolves it at draw time, so the grey follows theme switches.
+      hi.h.color = mo.dof === 0 && !masked ? '--fg-muted' : undefined;
     }
     updateCounter();
     updateBodyPanel();
@@ -881,7 +910,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       if (!ref) return;
       const h: Handle = {
         get: () => worldPt(mech.bodies[ref.body], ref.pin),
-        set: (p) => onDrag(ref, p),
+        set: (p) => onDrag(ref, p, gi),
         radius: 8,
         enabled: mode === 'drag',
         onStart: () => pushUndo(),
@@ -892,10 +921,16 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     });
   }
 
-  function onDrag(ref: PointRef, p: Pt): void {
+  function onDrag(ref: PointRef, p: Pt, gi: number): void {
     let r: ReturnType<typeof dragPin>;
     try { r = dragPin(mech, ref, p); } catch (e) { console.warn(e); return; }
-    if (r.locked) flash('這一點動不了：它所在的部分 dof = 0。', 1400);
+    if (r.locked) {
+      // "Did not move" is not the same as dof = 0: a movable point also stops when the cursor is
+      // off its path or beyond its reach (e.g. a four-bar rocker at a limit position). Only a point
+      // with no first-order motion at all (the × marker) is reported as locked.
+      const movable = (motions.get(gi)?.dof ?? 0) > 0;
+      flash(movable ? '這個方向走不動：游標所在的位置超出這一點此刻能到的範圍。' : '這一點動不了：它所在的部分 dof = 0。', 1400);
+    }
     if (presetKey === 'arm2R' && pristine) pushTrail();
     refresh();
   }
@@ -1196,8 +1231,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     guess = v;
     revealed = true;
     if (v == null) { guard = true; predChips.clear(); guard = false; }
-    updateCounter();
-    updatePredict();
+    refresh(); // counter, result, handle colours and the motion arrows all unmask together
   }
 
   function resetPrediction(): void {

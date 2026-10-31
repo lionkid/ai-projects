@@ -57,6 +57,26 @@ export function cspace2R(M = MASTER): Uint8Array {
   return out;
 }
 
+/** Joint positions [base, elbow, tip] of the 2R arm at q = (θ₁, θ₂), from planarFK. */
+export function arm2RPoints(q: readonly [number, number]): [P2, P2, P2] {
+  const fk = planarFK([ARM_2R.L[0], ARM_2R.L[1]], [q[0], q[1]]);
+  return [[0, 0], [fk.joints[1][0], fk.joints[1][1]], [fk.joints[2][0], fk.joints[2][1]]];
+}
+
+/** Which links of the 2R arm touch the disk at q: bit 1 = link 1, bit 2 = link 2 (same capsule test as cspace2R). */
+export function arm2RHits(q: readonly [number, number]): number {
+  const { halfWidth: w, obstacle } = ARM_2R;
+  const [b, e, t] = arm2RPoints(q);
+  const reach = obstacle.r + w;
+  return (segPointDistance(b, e, obstacle.c) <= reach ? 1 : 0) | (segPointDistance(e, t, obstacle.c) <= reach ? 2 : 0);
+}
+
+/** Joint angles at the centre of cell k of an n × n map of the 2R C-space (column ↔ θ₁, row ↔ θ₂). */
+export function cellAngles(n: number, k: number): P2 {
+  const i = k % n, j = (k - i) / n;
+  return [fracToAngle((i + 0.5) / n), fracToAngle((j + 0.5) / n)];
+}
+
 const deg = (a: number): number => angleToFrac((a * Math.PI) / 180);
 
 export const MAPS: MapPreset[] = [

@@ -8,7 +8,7 @@ import { wrapToPi } from '@/mr';
 import { meta } from './meta';
 import {
   DEFAULT_GEOM, DEFAULT_RPR, RPR_PRESETS, BRANCHES, basePoint, legLinks, elbowPoint, legPoints, loopResidual,
-  ikConfig, ikAll, branchOf, fkAll, fkNearest, driveMotors, driveTip, tipShift, fkJacobianFD, sigmaMax,
+  ikConfig, ikAll, branchOf, legBranchCounts, fkAll, fkNearest, driveMotors, driveTip, tipShift, fkJacobianFD, sigmaMax,
   motorSweep, symmetricMarginAngle, rprIK, rprFKAll, rprJoints,
   type Branch, type Config, type ElbowSide, type FiveBarGeom, type Mode, type Pose2, type Pt, type Side,
 } from './fiveBar';
@@ -48,7 +48,7 @@ $$\\text{dof} = 3(N - 1 - J) + \\sum_{i=1}^{J} f_i = 3(5-1-5) + 5 = 2 .$$
 
 $$g(\\theta_a, \\theta_p) = p_L(\\theta_1, \\phi_1) - p_R(\\theta_2, \\phi_2) = 0 .$$
 
-這就是**迴路閉合方程式（loop-closure equation）**，其中 $\\theta_a = (\\theta_1, \\theta_2)$ 是致動角、$\\theta_p = (\\phi_1, \\phi_2)$ 是被動角：兩條純量方程、四個關節角。指定兩個馬達角之後，兩個被動角便跟著確定，末端關節角 $\\psi$ 也一樣。`,
+這就是**迴路閉合方程式（loop-closure equation）**，其中 $\\theta_a = (\\theta_1, \\theta_2)$ 是致動角、$\\theta_p = (\\phi_1, \\phi_2)$ 是被動角：兩條純量方程、四個關節角。指定兩個馬達角之後，被動角只剩有限幾組可能（第 4 步會看到通常是兩組），末端關節角 $\\psi$ 也跟著確定。`,
     simHint: '按「拆開迴路：自己對準」：四個角都能自由設定，紅色箭頭就是殘差 g。試著只拖兩條腿的末端（調 φ₁、φ₂）讓 ‖g‖ 歸零，再按「自動閉合」對照。',
   },
   {
@@ -98,15 +98,15 @@ const quiz: QuizQuestion[] = [
     explanation: '給定位姿 $(R, p)$，第 $i$ 條腿長就是 $\\|p + R\\,b_i - a_i\\|$，六條腿各算各的，就像五連桿的 IK 拆成兩個 2R，不需要解任何方程組。反過來，六個腿長同時約束同一個位姿，必須聯立求解；這個多項式系統最多有 40 個（複數）解，實數解也常不只一個。平台有 6 個自由度，正好由 6 條腿驅動，並不是超定問題。',
   },
   {
-    question: '把五連桿右底座的馬達拆掉，改裝在左肘，也就是改由 $\\theta_1$ 與 $\\phi_1$ 驅動。下列哪個說法正確？',
+    question: '把五連桿右底座的馬達拆掉，改裝在左肘，也就是改由 $\\theta_1$ 與 $\\phi_1$ 驅動。給定這兩個馬達角，末端位置會怎樣？',
     options: [
-      'FK 仍然是兩圓求交點，一樣有兩種裝配模式',
-      '機構的自由度變成 1，因為只剩一條腿裝了馬達',
-      'IK 從此無解，因為右腿沒有任何馬達',
-      'FK 反而變簡單：左腿成為兩個關節都有馬達的 2R 開鏈，末端位置唯一確定',
+      '仍有兩個可能的位置，只是換成另一對圓的兩個交點',
+      '機構只剩 1 個自由度，末端沿一條曲線滑動',
+      '唯一確定：左腿成了兩個關節都被指定的 2R 開鏈，直接用 2R 正向運動學算出',
+      '無法決定，因為右腿沒有任何馬達',
     ],
-    answer: 3,
-    explanation: '馬達換位置不改變 Grübler 算出的 dof（仍是 2），卻改變了哪個問題容易。左腿兩個關節都被指定後就是普通的 2R 開鏈，用 2R 正向運動學就得到唯一的末端位置；右腿兩個關節都是被動的，只要末端還在它的可達範圍內，它就只是跟著動。IK 也還能解：只用左腿的 2R IK（兩組解）。可見「IK 易、FK 難」取決於馬達裝在哪裡。',
+    answer: 2,
+    explanation: '馬達換位置不改變 Grübler 算出的 dof（仍是 2），卻改變了哪個問題容易。左腿兩個關節都被指定，就是普通的 2R 開鏈，正向運動學給出唯一的末端位置。右腿兩個關節都是被動的，只要末端還在它的可達範圍內就跟著動；它的肘點仍有朝外、朝內兩種擺法，但兩種都通過同一個末端。反過來，IK 只需解左腿的 2R IK（兩組解）。可見「IK 易、FK 難」取決於馬達裝在哪裡。',
   },
   {
     question: '五連桿的兩個 FK 解在什麼時候合併成一個？',
@@ -595,8 +595,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     fKV.set(K.tip, `(${fmt(c.P[0], 3)}, ${fmt(c.P[1], 3)})`);
     fKV.set(K.res, `${sci(Math.hypot(r[0], r[1]))} m`);
     if (mode === 'ik') {
-      const n = ikAll(g, c.P).length;
-      fKV.set(K.sol, `IK：${n} 組分支，目前 ${branchName(branchOf(c))}`);
+      // count geometrically distinct branches: a stretched or folded leg has one elbow pose, not two
+      const [nl, nr] = legBranchCounts(g, c.P);
+      fKV.set(K.sol, `IK：左 ${nl} × 右 ${nr} = ${nl * nr} 組不同分支，目前 ${branchName(branchOf(c))}`);
     } else {
       const f = fkAll(g, c.th1, c.th2);
       const which = f.solutions.length === 2 ? `，目前在 B₁→B₂ ${c.mode === 1 ? '左' : '右'}側` : '';
@@ -643,12 +644,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   // ---------------------------------------------------------------- drawing
+  // Canvas labels stay below the overlay line, whose height grows when its text wraps on narrow screens.
+  let labelTop = LABEL_TOP;
+  const overlayRO = new ResizeObserver(() => {
+    const ov = cv.overlay;
+    const top = ov.textContent ? Math.max(LABEL_TOP, ov.offsetTop + ov.offsetHeight + 6) : LABEL_TOP;
+    if (Math.abs(top - labelTop) > 0.5) { labelTop = top; cv.requestRender(); }
+  });
+  overlayRO.observe(cv.overlay);
+
   const labelInside = (c: Canvas2D, p: Pt, str: string, style: TextStyle): void => {
     c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
     const half = c.ctx.measureText(str).width / 2 + 8;
     const [sx, sy] = c.toScreen(p);
     const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
-    const y = Math.min(c.height - 12, Math.max(LABEL_TOP, sy + (style.dy ?? 0)));
+    const y = Math.min(c.height - 12, Math.max(labelTop, sy + (style.dy ?? 0)));
     c.text(c.toWorld(x, y), str, { ...style, dx: 0, dy: 0 });
   };
 
@@ -805,7 +815,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const bg = cssVar('--bg-elev', '#fff');
     shifts.forEach((s, m) => {
       if (!s) {
-        labelInside(c, q.P, `θ${m === 0 ? '₁' : '₂'} +1°：無法裝配`, { color: danger, dx: m === 0 ? -70 : 70, dy: 30, bg });
+        // below the ground line, under the motor that cannot turn further (clear of the links)
+        const A = basePoint(g, m as Side);
+        labelInside(c, [A[0] + (m === 0 ? -0.3 : 0.3), A[1] - 0.42], `θ${m === 0 ? '₁' : '₂'} +1°：無法裝配`, { color: danger, bg });
         return;
       }
       const head: Pt = [q.P[0] + SENS_SCALE * s[0], q.P[1] + SENS_SCALE * s[1]];
@@ -1064,6 +1076,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     destroy() {
       stopTween();
       anim.stop();
+      overlayRO.disconnect();
       ph.remove();
       cv.destroy();
     },

@@ -3,9 +3,10 @@
  *
  * Plant
  *  - The lab's planar 2R arm (`@/mr` closed-form dynamics, L = 1, 1 m, 1 kg point masses,
- *    gravity along −y) plus per-joint rotor inertia and joint friction (Coulomb, smoothed with
- *    tanh, + viscous). Two hardware presets: a direct-drive (backdrivable) arm and a highly
- *    geared one (large reflected inertia and friction).
+ *    gravity along −y) plus per-joint rotor inertia and joint friction (viscous + Coulomb with
+ *    true stiction: a joint stays at rest while the torque on it is below the Coulomb level).
+ *    Two hardware presets: a direct-drive (backdrivable) arm and a highly geared one (large
+ *    reflected inertia and friction).
  *  - A vertical wall at x = x_w (occupying x > x_w): unilateral spring–damper, never pulls.
  *  - External forces on the tip: wall + the user's "rubber band" + an optional push pulse.
  *  - Semi-implicit Euler, 0.2 ms sub-steps.
@@ -93,7 +94,40 @@ export function elbowUpIK(p: Vec2): Vec {
   return sol ? [sol.theta1, sol.theta2] : [1.1, -1.8];
 }
 
-const tanh = Math.tanh;
+/**
+ * Coulomb friction with stiction for one time step of a 2-joint system.
+ * Given the joint velocities (v0, v1) the step would reach without Coulomb friction and the
+ * inverse mass matrix W = M⁻¹ (symmetric, W00, W01, W11), find friction impulses p with
+ * |p_i| ≤ pMax that bring the velocities as close to zero as the bound allows: minimise the
+ * kinetic energy after the step ½ uᵀ M u with u = v + W p (maximal dissipation). Inside the
+ * bound a joint ends exactly at rest (sticks); at the bound it slides with full Coulomb friction
+ * opposing its motion. Projected Gauss–Seidel finds which joints stick (W is SPD, two unknowns;
+ * each sweep shrinks the error by about W01²/(W00 W11) ≤ 0.65 for this arm), then the reduced
+ * linear system is solved exactly so that a sticking joint ends exactly at rest.
+ */
+export function coulombStep(v0: number, v1: number, W00: number, W01: number, W11: number, pMax: number): [number, number] {
+  if (pMax <= 0) return [v0, v1];
+  const clampP = (x: number) => Math.max(-pMax, Math.min(pMax, x));
+  let p0 = 0, p1 = 0;
+  for (let it = 0; it < 20; it++) {
+    p0 = clampP(p0 - (v0 + W00 * p0 + W01 * p1) / W00);
+    p1 = clampP(p1 - (v1 + W01 * p0 + W11 * p1) / W11);
+  }
+  const stick0 = Math.abs(p0) < pMax, stick1 = Math.abs(p1) < pMax;
+  if (stick0 && stick1) {
+    // Both joints stick: W p = −v.
+    const det = W00 * W11 - W01 * W01;
+    const q0 = -(W11 * v0 - W01 * v1) / det, q1 = -(-W01 * v0 + W00 * v1) / det;
+    if (Math.abs(q0) <= pMax && Math.abs(q1) <= pMax) return [0, 0];
+  } else if (stick0) {
+    const q0 = -(v0 + W01 * p1) / W00;
+    if (Math.abs(q0) <= pMax) return [0, v1 + W01 * q0 + W11 * p1];
+  } else if (stick1) {
+    const q1 = -(v1 + W01 * p0) / W11;
+    if (Math.abs(q1) <= pMax) return [v0 + W00 * p0 + W01 * q1, 0];
+  }
+  return [v0 + W00 * p0 + W01 * p1, v1 + W01 * p0 + W11 * p1];
+}
 
 export class ImpedanceSim {
   p: ImpParams;
@@ -193,15 +227,17 @@ export class ImpedanceSim {
     this.fWall = e.fw; this.fExt = e.f;
     const tauExt = [J[0][0] * e.f[0] + J[1][0] * e.f[1], J[0][1] * e.f[0] + J[1][1] * e.f[1]];
     const dyn = planar2RDynamics(ARM, this.theta, this.dtheta);
-    const fr = (i: number) => spec.coulomb * tanh(this.dtheta[i] / 0.01) + spec.viscous * this.dtheta[i];
-    const b0 = this.tau[0] + tauExt[0] - dyn.c[0] - dyn.g[0] - fr(0);
-    const b1 = this.tau[1] + tauExt[1] - dyn.c[1] - dyn.g[1] - fr(1);
+    const b0 = this.tau[0] + tauExt[0] - dyn.c[0] - dyn.g[0] - spec.viscous * this.dtheta[0];
+    const b1 = this.tau[1] + tauExt[1] - dyn.c[1] - dyn.g[1] - spec.viscous * this.dtheta[1];
     const M00 = dyn.M[0][0] + spec.rotor, M01 = dyn.M[0][1], M11 = dyn.M[1][1] + spec.rotor;
     const det = M00 * M11 - M01 * M01;
-    const a0 = (M11 * b0 - M01 * b1) / det;
-    const a1 = (-M01 * b0 + M00 * b1) / det;
-    this.dtheta = [this.dtheta[0] + a0 * H, this.dtheta[1] + a1 * H];
-    this.theta = [this.theta[0] + this.dtheta[0] * H, this.theta[1] + this.dtheta[1] * H];
+    // W = M⁻¹ (with rotor inertia); velocity update without Coulomb friction (semi-implicit Euler).
+    const W00 = M11 / det, W01 = -M01 / det, W11 = M00 / det;
+    const v0 = this.dtheta[0] + (W00 * b0 + W01 * b1) * H;
+    const v1 = this.dtheta[1] + (W01 * b0 + W11 * b1) * H;
+    const [u0, u1] = coulombStep(v0, v1, W00, W01, W11, spec.coulomb * H);
+    this.dtheta = [u0, u1];
+    this.theta = [this.theta[0] + u0 * H, this.theta[1] + u1 * H];
     this.t += H;
   }
 

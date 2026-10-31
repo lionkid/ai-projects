@@ -106,4 +106,10 @@ describe('controllers', () => {
     const down = run({ mode: 'conflict', ke: 2e4, delta: -0.01, amp: 0.25 }, 4);
     expect(down.fmax).toBe(0);
   });
+
+  it('the conflict stays along the normal: wiping is not disturbed while the force runs away', () => {
+    const up = run({ mode: 'conflict', ke: 2e4, delta: 0.01, amp: 0.25, freq: 0.25 }, 8, 4);
+    expect(up.fmin).toBeGreaterThan(40);
+    expect(up.emax).toBeLessThan(0.001);
+  });
 });

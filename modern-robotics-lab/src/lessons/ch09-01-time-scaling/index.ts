@@ -1,7 +1,7 @@
 import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } from '@/types';
 import {
   el, cssVar, fmt, controlPanel, row, slider, select, toggle, button, readout, playback, simTitle, note,
-  presetChips, split, Canvas2D, Plot2D, plotGroup, createLoop, type Pt, type Marker, type SeriesSpec,
+  presetChips, split, Canvas2D, Plot2D, plotGroup, createLoop, type Pt, type Marker, type SeriesSpec, type World,
 } from '@/ui';
 import { clamp } from '@/mr';
 import { meta } from './meta';
@@ -13,11 +13,11 @@ import {
 const steps: LessonStep[] = [
   {
     title: '路徑不是軌跡',
-    md: `**路徑（path）**只回答「經過哪些位置」：把幾何曲線寫成 $\\theta(s)$，參數 $s\\in[0,1]$，$s=0$ 是起點、$s=1$ 是終點，跟時間無關。**軌跡（trajectory）**再回答「什麼時候到哪裡」：
+    md: `**路徑**（path）只回答「經過哪些位置」：把幾何曲線寫成 $\\theta(s)$，參數 $s\\in[0,1]$，$s=0$ 是起點、$s=1$ 是終點，跟時間無關。**軌跡**（trajectory）再回答「什麼時候到哪裡」：
 
 $$\\theta(t)=\\theta\\big(s(t)\\big),\\qquad s(0)=0,\\ s(T)=1 .$$
 
-這個把時間映到路徑參數的函數 $s(t)$ 叫做**時間縮放（time scaling）**，必須單調不減。同一條路徑配上不同的 $s(t)$，走過的地方一模一樣，差別只在快慢怎麼分配。
+這個把時間映到路徑參數的函數 $s(t)$ 叫做**時間縮放（time scaling）**，通常取單調不減（不走回頭路）。同一條路徑配上不同的 $s(t)$，走過的地方一模一樣，差別只在快慢怎麼分配。
 
 右圖的單關節從 $0^\\circ$ 轉到 $135^\\circ$：上方的 $s$ 條只管「到哪裡」，下方的 $t$ 條只管「何時」，連接兩條的細線就是 $s(t)$。`,
     simHint: '先拖曳上方 s 條上的圓點（純幾何、沒有時間）；再按「▶ 播放」，注意弧線上「等時間間隔」的刻度在兩端擠在一起。',
@@ -35,11 +35,11 @@ $\\theta'(s)$、$\\theta''(s)$ 只由路徑的形狀決定；$\\dot s$、$\\ddot
   },
   {
     title: '三次與五次多項式',
-    md: `**三次多項式（cubic）**有 4 個係數，剛好滿足兩端位置與兩端速度為零：
+    md: `**三次多項式**（cubic）有 4 個係數，剛好滿足兩端位置與兩端速度為零：
 
 $$s(t)=3\\tau^{2}-2\\tau^{3},\\qquad \\tau=t/T .$$
 
-代價是加速度在兩端**跳變**：起動瞬間 $\\ddot s$ 從 0 直接跳到 $6/T^{2}$。**五次多項式（quintic）**再要求兩端加速度為零，得到 $s=10\\tau^{3}-15\\tau^{4}+6\\tau^{5}$，加速度從 0 平滑爬升。
+代價是加速度在兩端**跳變**：起動瞬間 $\\ddot s$ 從 0 直接跳到 $6/T^{2}$。**五次多項式**（quintic）再要求兩端加速度為零，得到 $s=10\\tau^{3}-15\\tau^{4}+6\\tau^{5}$，加速度從 0 平滑爬升。
 
 平滑不是免費的：五次的峰值速度是 $1.875/T$，比三次的 $1.5/T$ 高 25%；峰值加速度兩者相近（$5.77/T^{2}$ 對 $6/T^{2}$），只是五次的最大值出現在途中（$\\tau\\approx0.21$ 與 $0.79$），而不是一起動就出現。`,
     simHint: '在 s̈ 圖比較藍線（三次）與紅線（五次）在 t = 0 的樣子：一條垂直跳起、一條從零爬升；再看 ṡ 圖誰的峰值較高。',
@@ -55,12 +55,14 @@ $$T_{\\min}=\\frac{a+v^{2}}{v\\,a}.$$
   },
   {
     title: 'S 曲線與 jerk',
-    md: `加速度跳變時，加速度的變化率 jerk（$\\dddot s$）是一個無限大的脈衝。若關節後面接著有彈性的東西（皮帶、減速機、細長手臂），驅動力突然改變就像敲一下彈簧：結構會在自己的自然頻率上**殘留振動**。
+    md: `加速度跳變時，jerk（$\\dddot s$）是一個無限大的脈衝，驅動力也在一瞬間換成另一個值（階躍）。若關節後面接著有彈性的東西（皮帶、減速機、細長手臂），結構會在自己的自然頻率上**殘留振動**。
 
-**S 曲線**把梯形的每個轉角換成斜率 $\\pm j_{\\max}$ 的斜坡（共 7 段），加速度連續、jerk 有上限，代價是在相同 $a_{\\max}$ 下需要更長的時間。模擬中的柔性負載經由彈簧跟著關節走：
+**S 曲線**把加速度的每一次跳變換成斜率 $\\pm j_{\\max}$ 的斜坡（共 7 段）：加速度連續、jerk 有上限，代價是在相同 $a_{\\max}$ 下比梯形慢。模擬中的柔性負載經由彈簧跟著關節走：
 
-$$\\ddot q=\\omega_n^{2}(s-q)+2\\zeta\\omega_n(\\dot s-\\dot q).$$`,
-    simHint: '在「柔性負載的振動」分頁比較梯形（綠）與 S 曲線（橘）結束後的晃動，再切回「圖表」看兩者的 jerk；最後把 j_max 從 3 調到 10，看振動變大、T_min 變短。',
+$$\\ddot q=\\omega_n^{2}(s-q)+2\\zeta\\omega_n(\\dot s-\\dot q).$$
+
+預設的斜坡長 $a_{\\max}/j_{\\max}\\approx0.33$ s 恰好等於負載的週期 $1/f_n$，每段斜坡激起的振盪在斜坡結束時剛好抵銷，所以殘餘振動近乎零；換一個 $f_n$，S 曲線通常仍比梯形小，但不會是零。`,
+    simHint: '在「柔性負載的振動」分頁比較梯形（綠）與 S 曲線（橘）結束後的晃動，再到「圖表」看兩者的 jerk；把 j_max 從 3 調到 10（T_min 變短、振動變大），或把 f_n 改成 2.5 Hz。',
   },
   {
     title: '選哪一個？以及下一課',
@@ -74,7 +76,7 @@ $$\\ddot q=\\omega_n^{2}(s-q)+2\\zeta\\omega_n(\\dot s-\\dot q).$$`,
 挑選的依據是限制條件：結構夠硬、要最快就用梯形；對振動敏感就用五次或 S 曲線。注意殘餘振動也取決於動作時間與自然週期的比例，偶爾會剛好互相抵消，所以要以「jerk 有界」作為穩健的設計原則。
 
 下一課換問另一半：路徑 $\\theta(s)$ 本身怎麼選——關節空間直線、螺旋，或笛卡兒直線。`,
-    simHint: '按「四種一起比較」，讀下方表格：在同一組 v_max、a_max 下，誰的最短 T 最小？誰的殘餘振動最小？',
+    simHint: '按「全部比較」，讀下方表格：在同一組 v_max、a_max 下，誰的最短 T 最小？誰的殘餘振動最小？',
   },
 ];
 
@@ -105,7 +107,7 @@ const quiz: QuizQuestion[] = [
     question: '為什麼加速度不連續（例如梯形的轉角）容易激發機械振動？',
     options: [
       '因為此時速度也不連續',
-      '加速度跳變代表驅動力突然改變（jerk 是脈衝），對有彈性的結構就像敲一下，會激起它在自然頻率上的振盪',
+      '加速度跳變代表驅動力突然改變（jerk 是脈衝），對有彈性的結構就像猛然推一把，會激起它在自然頻率上的振盪',
       '因為位置在那一刻會跳一下',
       '只有總時間很長時才會發生',
     ],
@@ -129,7 +131,13 @@ const TH0 = 0;
 const TH1 = (135 * Math.PI) / 180;
 const DTH = TH1 - TH0;
 const LEN = 1.05;
-const BAR_X0 = 1.8, BAR_X1 = 3.4, YS = 1.0, YT = 0.18;
+/**
+ * Where the path bar (s) and the time bar (t) sit. Wide panes put them to the right of the arm; phones
+ * put them under it, so the labels and handles are not squeezed into a strip a few centimetres wide.
+ */
+interface BarLayout { x0: number; x1: number; ys: number; yt: number; world: World; canvas: { height: number } | { aspect: number } }
+const WIDE: BarLayout = { x0: 1.8, x1: 3.4, ys: 1.0, yt: 0.18, world: { xmin: -1.4, xmax: 3.6, ymin: -0.36, ymax: 1.36 }, canvas: { height: 160 } };
+const NARROW: BarLayout = { x0: -1.15, x1: 1.55, ys: -0.75, yt: -1.35, world: { xmin: -1.4, xmax: 1.75, ymin: -1.62, ymax: 1.36 }, canvas: { aspect: 3.15 / 2.98 } };
 const TAIL = 1.2; // seconds shown after the motion ends (residual vibration)
 const ZETA = 0.02;
 const AMP = 20; // visual amplification of the load deviation q − s
@@ -163,7 +171,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // ---------------------------------------------------------------- layout
   simTitle(host, '時間縮放實驗台：單關節 0° → 135°', 'θ(t) = θ(s(t))');
-  const cv = new Canvas2D(host, { height: 170, world: { xmin: -1.4, xmax: 3.6, ymin: -0.36, ymax: 1.36 }, overlay: true });
+  const G = host.clientWidth > 0 && host.clientWidth < 520 ? NARROW : WIDE;
+  const BAR_X0 = G.x0, BAR_X1 = G.x1, YS = G.ys, YT = G.yt;
+  const cv = new Canvas2D(host, { ...G.canvas, world: G.world, overlay: true });
 
   const panel = controlPanel(host, { compact: true });
   const chipRow = row(panel);
@@ -350,7 +360,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   cv.addHandle({
     get: () => [xT(st.t, prof[st.kind].T), YT],
     set: (p) => setTime(clamp((p[0] - BAR_X0) / (BAR_X1 - BAR_X0), 0, 1) * prof[st.kind].T),
-    onStart: grab, onEnd: release, radius: 7, color: cssVar('--fg-muted'),
+    onStart: grab, onEnd: release, radius: 7, color: '--fg-muted',
   });
   cv.addHandle({
     get: () => dir(TH0 + curState().s * DTH, LEN),
@@ -404,7 +414,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     for (const k of KINDS) flexR[k] = flexResponse(prof[k], st.fn, ZETA, Math.max(Tall, x1));
 
     // curves
-    const ext = { sd: [0, 0.9], sdd: [-1, 1], jerk: [-4.5, 4.5], e: [-0.004, 0.004] };
+    // The jerk floor of ±5 keeps labelled ticks (−5, 0, 5) on the short jerk plot.
+    const ext = { sd: [0, 0.9], sdd: [-1, 1], jerk: [-5, 5], e: [-0.004, 0.004] };
     KINDS.forEach((k, i) => {
       if (!shown.includes(k)) { plots.forEach((p) => p.setXY(i, [], [])); return; }
       const P = prof[k];
@@ -486,7 +497,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       color = ok;
     } else {
       const i = P.info;
-      text = `S 曲線可行：jerk 斜坡 ${fmt(i.tJerk!, 2)} s、等加速 ${fmt(i.tConstA!, 2)} s、巡航 ṡ = ${fmt(i.v!, 3)}、等速 ${fmt(i.tCruise!, 2)} s` +
+      text = `S 曲線可行：斜坡 ${fmt(i.tJerk!, 2)} s、等加速 ${fmt(i.tConstA!, 2)} s、巡航 ṡ = ${fmt(i.v!, 3)}、等速 ${fmt(i.tCruise!, 2)} s` +
         `${i.aSaturated ? '' : '（加速度未達 a_max）'}。T_min = ${fmt(P.Tmin, 2)} s。`;
       color = ok;
     }

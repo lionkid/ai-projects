@@ -357,11 +357,14 @@ export class HybridSim {
         this.iPn += en * TC;
         this.iPn = Math.max(-I_P_MAX / G.Ki, Math.min(I_P_MAX / G.Ki, this.iPn));
         const an = G.Kp * en + G.Ki * this.iPn - G.Kd * vn;
-        const Fn = matVec(tm.L, [an * n[0], an * n[1]]);
-        pushPos = -(Fn[0] * n[0] + Fn[1] * n[1]);
-        // No projections: both loops act on the normal direction at full strength.
-        Fmotion = [Fm[0] + Fn[0], Fm[1] + Fn[1]];
-        Fforce = Ff;
+        // The normal acceleration command becomes a pure normal force (I − P)Λ n a_n = m_n a_n n
+        // with the effective mass m_n = 1/(nᵀΛ⁻¹n). Both loops then push along n against each
+        // other while the wiping loop is untouched. (An unprojected Λ n a_n would also have a
+        // tangential part that drags the tip sideways — a second, unrelated mistake.)
+        const mn = 1 / dot2(n, matVec(tm.Linv, n));
+        const Fn: Vec2 = [mn * an * n[0], mn * an * n[1]];
+        pushPos = -mn * an;
+        Fmotion = [Fmotion[0] + Fn[0], Fmotion[1] + Fn[1]];
       }
       F = [Fmotion[0] + Fforce[0] - LJdqd[0], Fmotion[1] + Fforce[1] - LJdqd[1]];
     }

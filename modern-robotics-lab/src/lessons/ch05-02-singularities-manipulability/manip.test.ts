@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { svd, planarFK, matVec, manipulability } from '@/mr';
 import {
   L2R, L3R, sigmaInfo, tipJacobian, solveTip, elbowBranch, reachAnnulus, sweepTheta2,
-  sigmaMinProfile, sampleProfile, radialRates, radialPathConfig, virtualLink,
+  sigmaMinProfile, sampleProfile, radialRates, radialPathConfig, radialWarp, virtualLink,
 } from './manip';
 
 const D = Math.PI / 180;
@@ -150,6 +150,32 @@ describe('sweeps, radial profiles and rates', () => {
     const rr3 = radialRates(L3R, [0.2, 0.6, -0.9], 0.1);
     const v3 = matVec(tipJacobian(L3R, [0.2, 0.6, -0.9]), rr3.qdot!);
     expect(v3[0]).toBeCloseTo(rr3.v[0], 9);
+  });
+
+  it('radialWarp keeps the over-limit phase of the step-6 radial run watchable', () => {
+    // Same numbers as the lesson (index.ts): 0.1 m/s, playback 0.7 far away, θ2 ∝ e^(−1.2 t_real) close in.
+    const th0 = [20 * D, 60 * D];
+    const tip0 = planarFK(L2R, th0).tip as [number, number];
+    const sMax = 2 - 2e-5 - Math.hypot(...tip0);
+    const dt = 1 / 60;
+    let s = 0, tReal = 0, tSim = 0, overReal = 0, th = th0;
+    while (s < sMax && tReal < 60) {
+      const w = radialWarp(L2R, th, 0.1, 0.7, 1.2);
+      expect(w).toBeGreaterThan(0);
+      expect(w).toBeLessThanOrEqual(0.7);
+      tSim += dt * w;
+      s = Math.min(sMax, s + 0.1 * dt * w);
+      tReal += dt;
+      th = radialPathConfig(L2R, tip0, s, 1, th0);
+      const rr = radialRates(L2R, th, 0.1);
+      if (rr.qdot && Math.max(...rr.qdot.map(Math.abs)) > 2) overReal += dt;
+    }
+    expect(s).toBe(sMax); // the run ends (θ2 ≈ 0.51°)
+    expect(tSim).toBeCloseTo(sMax / 0.1, 3); // physical time of the 0.1 m/s motion is unchanged
+    expect(tReal).toBeGreaterThan(4);
+    expect(tReal).toBeLessThan(10);
+    expect(overReal).toBeGreaterThan(1.2); // plain 0.5× slow motion showed this phase for ≈ 0.1 s
+    expect(radialWarp(L2R, [0, 90 * D], 0.1, 0.7, 1.2)).toBe(0.7); // far away: plain playback factor
   });
 
   it('radialPathConfig keeps the tip on the ray', () => {

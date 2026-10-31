@@ -222,8 +222,10 @@ export interface SecondOrderPrediction {
   zeta: number;
   /** Percent overshoot of the step response, 100·exp(−πζ/√(1−ζ²)) (0 when ζ ≥ 1). */
   overshootPct: number;
-  /** 2 % settling-time estimate: 4/(ζω_n) when ζ < 1, 4/|slow root| otherwise. */
+  /** 2 % settling-time rule of thumb: 4/(ζω_n) when ζ < 1, 4/|slow root| otherwise. */
   ts: number;
+  /** Exact 2 % settling time of the linear model (`linearSettlingTime`). */
+  tsExact: number;
 }
 
 /** Prediction for torque input + PD: M θ̈_e + (b + K_d) θ̇_e + K_p θ_e = 0. */
@@ -233,7 +235,54 @@ export function pdPrediction(plant: JointPlant, kp: number, kd: number): SecondO
   const zeta = (plant.b + kd) / (2 * Math.sqrt(kp * plant.M));
   const overshootPct = zeta < 1 ? 100 * Math.exp((-Math.PI * zeta) / Math.sqrt(1 - zeta * zeta)) : 0;
   const ts = zeta < 1 ? 4 / (zeta * wn) : 4 / (wn * (zeta - Math.sqrt(zeta * zeta - 1)));
-  return { wn, zeta, overshootPct, ts };
+  return { wn, zeta, overshootPct, ts, tsExact: linearSettlingTime(zeta, wn) };
+}
+
+/**
+ * Exact settling time of the LINEAR second-order error response ë + 2ζωn ė + ωn² e = 0 started
+ * from e(0) = 1, ė(0) = 0: the time after which |e| stays within `band`. This is what the linear
+ * model actually predicts; the familiar 4/(ζωn) is only an envelope estimate (it overestimates
+ * for ζ ≈ 0.4 and is far too short near ζ = 1, where the exact value is ≈ 5.8/ωn).
+ */
+export function linearSettlingTime(zeta: number, wn: number, band = 0.02): number {
+  if (!(wn > 0) || !(zeta > 0)) return Infinity;
+  let e: (t: number) => number;
+  let slow: number;
+  if (Math.abs(zeta - 1) < 1e-6) {
+    e = (t) => (1 + wn * t) * Math.exp(-wn * t);
+    slow = wn;
+  } else if (zeta < 1) {
+    const wd = wn * Math.sqrt(1 - zeta * zeta), k = (zeta * wn) / wd;
+    e = (t) => Math.exp(-zeta * wn * t) * (Math.cos(wd * t) + k * Math.sin(wd * t));
+    slow = zeta * wn;
+  } else {
+    const r = wn * Math.sqrt(zeta * zeta - 1), s1 = -zeta * wn + r, s2 = -zeta * wn - r;
+    e = (t) => (s1 * Math.exp(s2 * t) - s2 * Math.exp(s1 * t)) / (s1 - s2);
+    slow = -s1;
+  }
+  // Past T the envelope is far inside the band (the +8 covers the 1/√(1−ζ²) amplitude near ζ = 1).
+  const T = (Math.log(1 / band) + 8) / slow;
+  const N = 4000;
+  let last = -1;
+  for (let k = N; k >= 0; k--) if (Math.abs(e((k * T) / N)) > band) { last = k; break; }
+  if (last < 0) return 0;
+  // Refine the band exit inside [t_last, t_last + T/N] by bisection.
+  let lo = (last * T) / N, hi = ((last + 1) * T) / N;
+  for (let i = 0; i < 40; i++) {
+    const mid = 0.5 * (lo + hi);
+    if (Math.abs(e(mid)) > band) lo = mid; else hi = mid;
+  }
+  return hi;
+}
+
+/** Right-most (slowest, dominant) root; for a complex pair the one with Im ≥ 0. */
+export function dominantRoot(roots: Complex[]): Complex | null {
+  let best: Complex | null = null;
+  for (const z of roots) {
+    if (!Number.isFinite(z.re) || !Number.isFinite(z.im)) continue;
+    if (!best || z.re > best.re + 1e-9 || (Math.abs(z.re - best.re) <= 1e-9 && z.im > best.im)) best = z;
+  }
+  return best;
 }
 
 /** PD gains that place the roots of M s² + (b + K_d) s + K_p at re ± j·im. */

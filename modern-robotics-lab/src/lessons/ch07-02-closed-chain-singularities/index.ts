@@ -38,7 +38,9 @@ $$H_a(\\theta)\\,\\dot\\theta_a + H_p(\\theta)\\,\\dot\\theta_p = 0,\\qquad H_a 
 
 五連桿的 $H_a, H_p$ 都是 $2\\times 2$，每一欄是「只轉一個關節時，那條腿端點的速度」（左腿取正號、右腿取負號）。只要 $H_p$ 可逆，被動關節的速度就由馬達唯一決定：
 
-$$\\dot\\theta_p = -H_p^{-1} H_a\\,\\dot\\theta_a .$$`,
+$$\\dot\\theta_p = -H_p^{-1} H_a\\,\\dot\\theta_a .$$
+
+（教材還列了第三類：整個 $[H_a\\ H_p]$ 降秩的**組態空間奇異**。五連桿要所有關節排成一直線才會遇到，本課的尺寸碰不到，所以只談另外兩類。）`,
     simHint: '轉動 θ₁、θ₂（或拖藍色末端），看 $H_a$、$H_p$ 與被動速度映射 $-H_p^{-1}H_a$ 即時改變。下方曲線：固定 θ₂、把 θ₁ 從一端掃到另一端時，三個奇異指標怎麼變。',
   },
   {
@@ -144,6 +146,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let locked = false;
   let redundant = false;
   let virt: Pt | null = null;
+  /** Direction of the unit motor-rate vector (dθ₁/dt, dθ₂/dt) picked in the inset (set by the presets). */
   let rateDir = 0.6;
   let loadDir = 90 * D;
   let step = -1;
@@ -516,13 +519,28 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
 
   // ---------------------------------------------------------------- drawing
+  // Canvas labels stay below the overlay line, whose height grows if its text wraps on a narrow screen.
+  let labelTop = LABEL_TOP;
+  const overlayRO = new ResizeObserver(() => {
+    const ov = cv.overlay;
+    const top = ov.textContent ? Math.max(LABEL_TOP, ov.offsetTop + ov.offsetHeight + 6) : LABEL_TOP;
+    if (Math.abs(top - labelTop) > 0.5) { labelTop = top; cv.requestRender(); }
+  });
+  overlayRO.observe(cv.overlay);
+
   const labelInside = (c: Canvas2D, p: Pt, str: string, style: TextStyle): void => {
     c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
     const half = c.ctx.measureText(str).width / 2 + 8;
     const [sx, sy] = c.toScreen(p);
     const x = Math.min(c.width - half, Math.max(half, sx + (style.dx ?? 0)));
-    const y = Math.min(c.height - 12, Math.max(LABEL_TOP, sy + (style.dy ?? 0)));
+    const y = Math.min(c.height - 12, Math.max(labelTop, sy + (style.dy ?? 0)));
     c.text(c.toWorld(x, y), str, { ...style, dx: 0, dy: 0 });
+  };
+
+  /** Is a world point comfortably inside the drawable area (below the overlay line)? */
+  const roomy = (c: Canvas2D, p: Pt, marginPx = 40): boolean => {
+    const [sx, sy] = c.toScreen(p);
+    return sx > marginPx && sx < c.width - marginPx && sy > labelTop + 10 && sy < c.height - 16;
   };
 
   const motorSymbol = (c: Canvas2D, p: Pt): void => {
@@ -578,30 +596,66 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.ellipse(cfg.P, a, Math.max(b, 0.004), ang, { fill: accent, alpha: 0.13, width: 0 });
     c.ellipse(cfg.P, a, Math.max(b, 0.004), ang, { color: accent, width: 2, dash: capped ? [7, 5] : undefined });
     if (capped) {
-      const tip: Pt = [cfg.P[0] + e.dirs[0][0] * a, cfg.P[1] + e.dirs[0][1] * a];
-      labelInside(c, tip, '橢圓 → ∞', { color: accent, bg, font: 'bold 12px sans-serif', dy: -12 });
+      // Beside the major axis, about 1 m from the tip, on whichever end has room (never on the overlay line).
+      const d = e.dirs[0];
+      const off = b + 34 / c.scale;
+      const spots: Pt[] = [];
+      for (const s of [1, -1]) {
+        const on: Pt = [cfg.P[0] + s * d[0] * 1.05, cfg.P[1] + s * d[1] * 1.05];
+        for (const t of [1, -1]) spots.push([on[0] - t * d[1] * off, on[1] + t * d[0] * off]);
+      }
+      const at = spots.find((p) => roomy(c, p, 50)) ?? spots[0];
+      labelInside(c, at, '橢圓 → ∞', { color: accent, bg, font: 'bold 12px sans-serif' });
     }
   }
 
-  function drawLostDirection(c: Canvas2D): void {
+  /** Draw a label beside point p, pushed perpendicular to the world direction u (side s) until it clears the line. */
+  function labelBeside(c: Canvas2D, p: Pt, u: Pt, s: number, str: string, style: TextStyle): void {
+    c.ctx.font = style.font ?? `12px ${cssVar('--font') || 'sans-serif'}`;
+    const w = c.ctx.measureText(str).width + 12;
+    const nx = -u[1] * s;
+    const ny = u[0] * s;
+    const ext = (w / 2) * Math.abs(nx) + 9 * Math.abs(ny) + 6;
+    const [sx, sy] = c.toScreen(p);
+    labelInside(c, c.toWorld(sx + nx * ext, sy - ny * ext), str, style);
+  }
+
+  /** Which side of a line through p (direction u) faces away from the mechanism's centre: +1 or -1. */
+  function outerSide(p: Pt, u: Pt): number {
+    const pts = [basePoint(g, 0), basePoint(g, 1), cfg.B1, cfg.B2, cfg.P];
+    const cx = pts.reduce((a, q) => a + q[0], 0) / pts.length;
+    const cy = pts.reduce((a, q) => a + q[1], 0) / pts.length;
+    return -u[1] * (p[0] - cx) + u[0] * (p[1] - cy) >= 0 ? 1 : -1;
+  }
+
+  /** Unit direction the end-effector cannot move in (along the straight or folded leg, away from its base), if any. */
+  function lostDirection(): Pt | null {
     const ind = indicators(g, cfg);
-    if (Math.min(Math.abs(ind.s1), Math.abs(ind.s2)) > 0.03) return;
+    if (Math.min(Math.abs(ind.s1), Math.abs(ind.s2)) > 0.03) return null;
+    const e = velocityEllipse(inverseRates(g, cfg, redundant));
+    const legBase = basePoint(g, Math.abs(ind.s1) <= Math.abs(ind.s2) ? 0 : 1);
+    const u: Pt = [e.dirs[1][0], e.dirs[1][1]];
+    return u[0] * (cfg.P[0] - legBase[0]) + u[1] * (cfg.P[1] - legBase[1]) < 0 ? [-u[0], -u[1]] : u;
+  }
+
+  /** The load arrow (when shown) points along u, so it would sit on top of the lost-direction glyph. */
+  const loadAlong = (u: Pt | null): boolean => !!u && show.load && Math.cos(loadDir) * u[0] + Math.sin(loadDir) * u[1] > 0.8;
+
+  function drawLostDirection(c: Canvas2D): void {
+    const u = lostDirection();
+    if (!u) return;
     const danger = cssVar('--danger', '#b91c1c');
     const bg = cssVar('--bg-elev', '#fff');
-    const e = velocityEllipse(inverseRates(g, cfg, redundant));
-    // the flattened (lost) direction lies along the straight or folded leg; orient it away from that leg's base
-    const legBase = basePoint(g, Math.abs(ind.s1) <= Math.abs(ind.s2) ? 0 : 1);
-    let u: Pt = [e.dirs[1][0], e.dirs[1][1]];
-    if (u[0] * (cfg.P[0] - legBase[0]) + u[1] * (cfg.P[1] - legBase[1]) < 0) u = [-u[0], -u[1]];
     // A blocked double arrow on the leg's extension beyond the tip: on the leg itself it would hide behind
-    // the link, and beside the tip it would cross the flattened ellipse and the v arrow.
+    // the link, and beside the tip it would cross the flattened ellipse and the v arrow. It starts past the
+    // load arrow when that one points the same way.
     const L = 0.36;
-    const gap = 0.2;
+    const gap = loadAlong(u) ? FORCE_LEN + 0.14 : 0.2;
     const Q: Pt = [cfg.P[0] + u[0] * (gap + L), cfg.P[1] + u[1] * (gap + L)];
     c.line(cfg.P, [cfg.P[0] + u[0] * gap, cfg.P[1] + u[1] * gap], { color: danger, width: 1.5, dash: [3, 3] });
     for (const s of [1, -1]) c.arrow(Q, [Q[0] + s * u[0] * L, Q[1] + s * u[1] * L], { color: danger, width: 2.5, head: 11 });
     c.text(Q, '✗', { color: danger, font: 'bold 14px sans-serif', bg });
-    labelInside(c, [Q[0] + u[0] * (L + 0.1), Q[1] + u[1] * (L + 0.1)], '沿腿的方向動不了', { color: danger, bg, font: 'bold 12px sans-serif', dy: -16 });
+    labelBeside(c, Q, u, outerSide(Q, u), '沿腿的方向動不了', { color: danger, bg, font: 'bold 12px sans-serif' });
   }
 
   function drawFreeDirection(c: Canvas2D): void {
@@ -671,7 +725,13 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const f: Pt = [Math.cos(loadDir), Math.sin(loadDir)];
     const head: Pt = [cfg.P[0] + f[0] * FORCE_LEN, cfg.P[1] + f[1] * FORCE_LEN];
     c.arrow(cfg.P, head, { color: danger, width: 3, head: 12 });
-    labelInside(c, head, 'f = 1 N', { color: danger, dx: 16 * f[0], dy: -16 * f[1], bg: cssVar('--bg-elev', '#fff'), font: 'bold 12px sans-serif' });
+    const style: TextStyle = { color: danger, bg: cssVar('--bg-elev', '#fff'), font: 'bold 12px sans-serif' };
+    const u = lostDirection();
+    if (loadAlong(u)) {
+      // the lost-direction glyph continues past the head: label the load on the other side of the line
+      const mid: Pt = [cfg.P[0] + f[0] * FORCE_LEN * 0.6, cfg.P[1] + f[1] * FORCE_LEN * 0.6];
+      labelBeside(c, mid, u!, -outerSide(mid, u!), 'f = 1 N', style);
+    } else labelInside(c, head, 'f = 1 N', { ...style, dx: 16 * f[0], dy: -16 * f[1] });
   }
 
   cv.draw = (c) => {
@@ -691,15 +751,33 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     drawLoad(c);
     drawInset(c);
     const ind = indicators(g, cfg);
-    c.setOverlayText(`θ = (${deg(cfg.th1, 0)}, ${deg(cfg.th2, 0)})  detH_p/(L₂L₄) = ${redundant ? '—' : fmt(ind.act, 3)}  sinφ = (${fmt(ind.s1, 2)}, ${fmt(ind.s2, 2)})${locked ? '  [馬達鎖住]' : ''}`);
+    const det = redundant ? '—' : fmt(ind.act, 3);
+    // a compact line on narrow canvases so the overlay stays on one line above the labels
+    c.setOverlayText(c.width < 540
+      ? `θ=(${deg(cfg.th1, 0)},${deg(cfg.th2, 0)}) det=${det} sinφ=(${fmt(ind.s1, 2)},${fmt(ind.s2, 2)})${locked ? ' 鎖' : ''}`
+      : `θ = (${deg(cfg.th1, 0)}, ${deg(cfg.th2, 0)})  detH_p/(L₂L₄) = ${det}  sinφ = (${fmt(ind.s1, 2)}, ${fmt(ind.s2, 2)})${locked ? '  [馬達鎖住]' : ''}`);
   };
 
   // ---------------------------------------------------------------- presets
+  /**
+   * Point the motor-rate handle (inset) at the unit input that drives the tip along the ellipse's major axis,
+   * oriented away from the base, so the v arrow starts long and clear of the links.
+   */
+  function alignRateToMajor(): void {
+    const Km = inverseRates(g, cfg, false);
+    let d = velocityEllipse(Km).dirs[0];
+    if (d[0] * cfg.P[0] + d[1] * cfg.P[1] < 0) d = [-d[0], -d[1]];
+    const r0 = Km[0][0] * d[0] + Km[0][1] * d[1];
+    const r1 = Km[1][0] * d[0] + Km[1][1] * d[1];
+    if (Math.hypot(r0, r1) > 1e-9) rateDir = Math.atan2(r1, r0);
+  }
+
   const put = (c: Config | null, opts: { lock?: boolean; red?: boolean; load?: number; text?: string } = {}) => () => {
     stopSnapState();
     setRedundant(opts.red ?? false);
     setLocked(opts.lock ?? false);
     setCfg(c ?? general());
+    alignRateToMajor();
     if (opts.load !== undefined) { loadDir = opts.load; sLoad.set(loadDir, { silent: true }); }
     msg = opts.text ?? '';
     update();
@@ -819,6 +897,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onStep,
     destroy() {
       anim.stop();
+      overlayRO.disconnect();
       preview.destroy();
       cv.destroy();
       plotSlice.destroy();

@@ -38,8 +38,8 @@ $$\\tau = \\tilde g(\\theta) + J^\\T(\\theta)\\Big(\\vF_d + K_{fp}\\vF_e + K_{fi
 
 $$A(\\theta)\\,\\vV = 0, \\qquad A = n^\\T = \\begin{bmatrix} -\\sin\\alpha & \\cos\\alpha \\end{bmatrix}$$
 
-在 $\\{s\\}$ 中描述平的桌面時 $A$ 是常數；改用關節速度表示，$A(\\theta) = n^\\T J(\\theta)$ 就會隨組態改變。`,
-    simHint: '把桌面傾角 α 調到 ±10°，看 A 與 A(θ) 怎麼變，以及圖上的 t（運動方向）與 n（施力方向）如何跟著轉。',
+在 $\\{s\\}$ 中描述平的桌面時 $A$ 是常數；把同一個約束改寫成關節速度的形式 $A\\,J(\\theta)\\,\\dot\\theta = 0$，係數列 $n^\\T J(\\theta)$ 就會隨組態改變。`,
+    simHint: '把桌面傾角 α 調到 ±10°，看 A 與 nᵀJ(θ) 怎麼變，以及圖上的 t（運動方向）與 n（施力方向）如何跟著轉。',
   },
   {
     title: '投影矩陣 P',
@@ -48,7 +48,7 @@ $$A(\\theta)\\,\\vV = 0, \\qquad A = n^\\T = \\begin{bmatrix} -\\sin\\alpha & \\
 $$P = I - A^\\T\\big(A\\Lambda^{-1}A^\\T\\big)^{-1}A\\Lambda^{-1}$$
 
 $P\\vF$ 是會產生運動的部分：它造成的加速度 $\\Lambda^{-1}P\\vF$ 滿足 $A\\Lambda^{-1}P\\vF = 0$，必定沿著桌面；$(I-P)\\vF$ 永遠沿法向，只改變接觸力。$\\Lambda$ 是任務空間質量矩陣；手臂慣性有耦合，所以 $P$ 是「斜的」投影，不等於單純刪掉法向分量。注意 $P$ 作用在**力**上，不是速度。`,
-    simHint: '拖曳灰色的測試力 F：看 PF（藍）與 (I−P)F（粉紅）如何分解，以及 PF 造成的加速度（虛線）永遠貼著桌面。試試「純切向」：(I−P)F 是 0 嗎？',
+    simHint: '在右上角的放大圖拖曳灰色的測試力 F：看 PF（藍）與 (I−P)F（粉紅）如何分解，以及 PF 造成的加速度 a（虛線）永遠平行桌面。試試「純切向」：(I−P)F 是 0 嗎？',
   },
   {
     title: '擦桌子：混合控制器',
@@ -56,12 +56,12 @@ $P\\vF$ 是會產生運動的部分：它造成的加速度 $\\Lambda^{-1}P\\vF$
 
 $$\\tau = J^\\T\\Big(P\\,\\tilde\\Lambda\\,a_{cmd} + (I-P)\\,\\vF_{cmd} + \\tilde\\eta\\Big)$$
 
-其中 $a_{cmd} = t\\,(\\ddot s_d + K_p e_s + K_d \\dot e_s)$ 是沿切線 $t$ 的加速度指令，$\\vF_{cmd}$ 是上一步的 PI 力指令（方向 $-n$）。因為 $(I-P)P = 0$，運動迴路送出的力不會改變接觸力；$(I-P)\\vF_{cmd}$ 也不會讓末端沿桌面加速，兩個迴路互不干擾。`,
-    simHint: '看兩張圖：法向力貼在 f_d，切向誤差只有零點幾毫米。點「快速擦拭」或改 f_d，兩條曲線還是互不影響嗎？',
+其中 $a_{cmd} = t\\,(\\ddot s_d + K_p e_s + K_d \\dot e_s)$ 是沿切線 $t$ 的加速度指令，$\\vF_{cmd}$ 是上一步的力指令（PI 加上法向速度阻尼，方向 $-n$）。因為 $(I-P)P = 0$，運動迴路送出的力不會改變接觸力；$(I-P)\\vF_{cmd}$ 也不會讓末端沿桌面加速，兩個迴路互不干擾。`,
+    simHint: '看兩張圖：法向力貼在 f_d，切向誤差不到 0.1 毫米。點「快速擦拭」或改 f_d，兩條曲線還是互不影響嗎？',
   },
   {
     title: '矛盾的指令與下一課',
-    md: `如果在法向**同時**要求「停在模型中的桌面高度」和「壓 10 N」呢？沿法向，桌面把兩者綁死：$f = k_e\\,\\delta$。除非剛好 $f_d = k_e\\,\\delta_d$，兩個要求不可能同時成立，兩個積分器只會互相拉扯：
+    md: `如果在法向**同時**要求「停在模型中的桌面高度」和「壓 10 N」呢？沿法向，桌面把兩者綁死：$f = k_e\\,\\delta$（$\\delta$ 是壓入桌面的深度）。位置目標其實指定了一個深度 $\\delta_d$，除非剛好 $f_d = k_e\\,\\delta_d$，兩個要求不可能同時成立，兩個積分器只會互相拉扯：
 
 - 桌面比模型高（$\\Delta > 0$）：位置迴路越壓越用力，壓力一路上升；
 - 桌面比模型低（$\\Delta < 0$）：位置迴路把工具往上提，最後離開桌面。
@@ -122,10 +122,19 @@ const quiz: QuizQuestion[] = [
 
 const WORLD = { xmin: -0.3, xmax: 2.0, ymin: -0.85, ymax: 0.72 };
 const FLOOR_Y = -0.82;
-/** Drawing scale for forces (m per N) and accelerations (m per m/s²). */
+/** Drawing scale for forces (m per N). */
 const F_SCALE = 0.012;
-const TEST_SCALE = 0.032;
-const ACC_SCALE = 0.03;
+/**
+ * Step 4 draws the test-force decomposition enlarged in an inset in the empty upper-right part of
+ * the canvas (at the tip the arrows would be buried in the table slab). Forces are drawn at
+ * TEST_SCALE m per N and accelerations at TEST_SCALE m per m/s² (i.e. as force on a 1 kg mass).
+ */
+// The top stays ~0.19 m below the canvas edge so the mono overlay text (which spans most of the
+// width on phones) never covers the inset title.
+const INSET = { xmin: 1.24, xmax: 1.98, ymin: -0.06, ymax: 0.6 };
+const INSET_C: Pt = [1.61, 0.25];
+const TEST_SCALE = 0.028;
+const TEST_MAX = 11;
 /** Plot sample period (s) and the per-frame CPU budget for physics (ms). */
 const LOG_DT = 0.01;
 const FRAME_BUDGET_MS = 8;
@@ -246,7 +255,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const mats = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.15rem 0.3rem', margin: '0.35rem 0 0.2rem' } });
   host.appendChild(mats);
   const mA = matrixView(mats, { label: 'A = nᵀ =', digits: 2, title: '平面桌面在 {s} 中的約束列' });
-  const mAj = matrixView(mats, { label: 'A(θ) = nᵀJ(θ) =', digits: 2, title: '同一個約束，用關節速度表示' });
+  const mAj = matrixView(mats, { label: 'A J(θ) = nᵀJ(θ) =', digits: 2, title: '同一個約束改用關節速度表示：A J(θ) dθ/dt = 0' });
   const mL = matrixView(mats, { label: 'Λ(θ) =', digits: 2, title: '任務空間質量矩陣（kg）' });
   const mP = matrixView(mats, { label: 'P =', digits: 2 });
   const mIP = matrixView(mats, { label: 'I − P =', digits: 2 });
@@ -273,8 +282,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     label: 's₀', radius: 7,
   });
   const testHandle: Handle = cv.addHandle({
-    get: () => add(tip, Ftest, TEST_SCALE),
-    set: (p) => { Ftest = capLen([(p[0] - tip[0]) / TEST_SCALE, (p[1] - tip[1]) / TEST_SCALE], 25); chips?.clear(); cv.requestRender(); },
+    get: () => add(INSET_C, Ftest, TEST_SCALE),
+    set: (p) => { Ftest = capLen([(p[0] - INSET_C[0]) / TEST_SCALE, (p[1] - INSET_C[1]) / TEST_SCALE], TEST_MAX); chips?.clear(); cv.requestRender(); },
     label: 'F', radius: 7, enabled: false,
   });
 
@@ -345,20 +354,39 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         c.text(add(of, ff), `力迴路 ${fmt(Math.hypot(inf.Fforce[0], inf.Fforce[1]), 0)} N`, { color: cN, align: 'left', dx: 6 });
       }
     }
-    // Test wrench decomposition.
+    // Test wrench decomposition (step 4), enlarged in an inset with its own t / n axes.
     if (step === 3 && inf) {
       const PF = matVec(inf.P, Ftest) as Vec2;
       const IPF = matVec(inf.IP, Ftest) as Vec2;
       const acc = matVec(inf.tm.Linv, PF) as Vec2;
-      c.arrow(tip, add(tip, Ftest, TEST_SCALE), { color: muted, width: 2.5 });
-      c.arrow(tip, add(tip, PF, TEST_SCALE), { color: cT, width: 3 });
-      c.arrow(tip, add(tip, IPF, TEST_SCALE), { color: cN, width: 3 });
-      c.line(add(tip, PF, TEST_SCALE), add(tip, Ftest, TEST_SCALE), { color: cN, width: 1, dash: [3, 3] });
-      c.line(add(tip, IPF, TEST_SCALE), add(tip, Ftest, TEST_SCALE), { color: cT, width: 1, dash: [3, 3] });
-      const av = capLen([acc[0] * ACC_SCALE, acc[1] * ACC_SCALE], 0.6);
-      c.arrow(add(tip, n, -0.015), add(add(tip, n, -0.015), av), { color: cT, width: 1.5, dash: [4, 3] });
-      c.text(add(tip, PF, TEST_SCALE), 'PF', { color: cT, dx: 14, dy: -8 });
-      c.text(add(tip, IPF, TEST_SCALE), '(I−P)F', { color: cN, dx: 24, dy: 0 });
+      const { xmin, xmax, ymin, ymax } = INSET;
+      c.polygon([[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]], { fill: cssVar('--bg-elev'), color: cssVar('--border'), width: 1 });
+      c.text([xmin + 0.02, ymax - 0.035], '末端受力（放大）', { color: muted, align: 'left', font: '11px sans-serif' });
+      const C = INSET_C;
+      c.line(add(C, t, -0.35), add(C, t, 0.35), { color: cT, width: 1, dash: [4, 4] });
+      c.line(add(C, n, -0.3), add(C, n, 0.24), { color: cN, width: 1, dash: [4, 4] });
+      c.text(add(C, t, 0.33), 't', { color: cT, font: 'bold 12px sans-serif', dy: -9 });
+      c.text(add(C, n, 0.22), 'n', { color: cN, font: 'bold 12px sans-serif', dx: 9 });
+      const pF = add(C, Ftest, TEST_SCALE), pP = add(C, PF, TEST_SCALE), pI = add(C, IPF, TEST_SCALE);
+      c.line(pP, pF, { color: cN, width: 1, dash: [3, 3] });
+      c.line(pI, pF, { color: cT, width: 1, dash: [3, 3] });
+      c.arrow(C, pF, { color: muted, width: 2.5 });
+      c.arrow(C, pP, { color: cT, width: 3 });
+      c.arrow(C, pI, { color: cN, width: 3 });
+      // Acceleration caused by PF (always along t), drawn on the side of t away from PF and
+      // labelled beside the arrow (starting just off the n axis).
+      const side = PF[0] * n[0] + PF[1] * n[1] > 0 ? -1 : 1;
+      const a0 = add(C, n, 0.04 * side);
+      const av = capLen([acc[0] * TEST_SCALE, acc[1] * TEST_SCALE], 0.34);
+      const fwd = av[0] * t[0] + av[1] * t[1] >= 0;
+      if (Math.hypot(av[0], av[1]) > 0.01) {
+        c.arrow(a0, add(a0, av), { color: cT, width: 1.5, dash: [4, 3] });
+        c.text(a0, 'a = Λ⁻¹PF', { color: cT, font: '11px sans-serif', align: fwd ? 'left' : 'right', dx: fwd ? 6 : -6, dy: side > 0 ? -11 : 12 });
+      }
+      if (Math.hypot(PF[0], PF[1]) > 0.3) c.text(pP, 'PF', { color: cT, dx: 14, dy: side > 0 ? 8 : -8 });
+      // (I − P)F lies on the n axis: label it on the side away from the grey F arrow.
+      const fRight = Ftest[0] * t[0] + Ftest[1] * t[1] >= 0;
+      if (Math.hypot(IPF[0], IPF[1]) > 0.3) c.text(pI, '(I−P)F', { color: cN, align: fRight ? 'right' : 'left', dx: fRight ? -8 : 8 });
     }
   };
   const overlayText = (): string => {

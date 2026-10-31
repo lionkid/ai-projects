@@ -352,7 +352,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     curEx = clearance('exact', L, W, q, obstacles);
     curCv = clearance('cover', L, W, q, obstacles, K);
     curBits = linkCollisions(mode(), L, W, q, obstacles, K);
-    hQ.color = curBits ? cssVar('--danger') : cssVar('--fg');
+    hQ.color = curBits ? '--danger' : '--fg';
     readouts();
     ws.requestRender();
     cs.requestRender();
@@ -568,29 +568,22 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
 
   // ---------------- handles
-  const hS = cs.addHandle({ get: () => disp(S), set: (p) => { S = wrapQ(p as P2); onSGChanged(); }, color: cssVar('--series-3'), label: 'S', radius: 8, onStart: () => stopPlay() });
-  const hG = cs.addHandle({ get: () => disp(G), set: (p) => { G = wrapQ(p as P2); onSGChanged(); }, color: cssVar('--series-1'), label: 'G', radius: 8, onStart: () => stopPlay() });
-  const hQ = cs.addHandle({ get: () => disp(q), set: (p) => { q = wrapQ(p as P2); updateQ(); }, color: cssVar('--fg'), radius: 6, onStart: () => stopPlay() });
-  const hElbow = ws.addHandle({
+  const hS = cs.addHandle({ get: () => disp(S), set: (p) => { S = wrapQ(p as P2); onSGChanged(); }, color: '--series-3', label: 'S', radius: 8, onStart: () => stopPlay() });
+  const hG = cs.addHandle({ get: () => disp(G), set: (p) => { G = wrapQ(p as P2); onSGChanged(); }, color: '--series-1', label: 'G', radius: 8, onStart: () => stopPlay() });
+  const hQ = cs.addHandle({ get: () => disp(q), set: (p) => { q = wrapQ(p as P2); updateQ(); }, color: '--fg', radius: 6, onStart: () => stopPlay() });
+  ws.addHandle({
     get: () => armPoints(Ls(), q)[1] as Pt,
     set: (p) => { q = [Math.atan2(p[1], p[0]), q[1]]; updateQ(); },
-    color: cssVar('--accent'), radius: 7, onStart: () => stopPlay(),
+    color: '--accent', radius: 7, onStart: () => stopPlay(),
   });
-  const hTip = ws.addHandle({
+  ws.addHandle({
     get: () => armPoints(Ls(), q)[2] as Pt,
     set: (p) => { const e = armPoints(Ls(), q)[1]; q = [q[0], wrapToPi(Math.atan2(p[1] - e[1], p[0] - e[0]) - q[0])]; updateQ(); },
-    color: cssVar('--accent'), radius: 7, onStart: () => stopPlay(),
+    color: '--accent', radius: 7, onStart: () => stopPlay(),
   });
   function syncObsHandles(): void {
     addBtn.disabled = obstacles.length >= MAX_OBS;
     delBtn.disabled = obstacles.length === 0;
-  }
-  function refreshHandleColors(): void {
-    hS.color = cssVar('--series-3');
-    hG.color = cssVar('--series-1');
-    hElbow.color = cssVar('--accent');
-    hTip.color = cssVar('--accent');
-    hQ.color = curBits ? cssVar('--danger') : cssVar('--fg');
   }
 
   // ---------------- workspace pointer: drag an obstacle's interior to move it, its rim to resize it
@@ -616,6 +609,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       stopPlay();
       const o = obstacles[hit.k];
       obsDrag = { ...hit, off: [p[0] - o.c[0], p[1] - o.c[1]] };
+      ev.preventDefault(); // dragging an obstacle must not start a text selection on the page
       try { ws.canvas.setPointerCapture(ev.pointerId); } catch { /* synthetic events have no capture target */ }
     },
     move: (p, ev) => {
@@ -639,8 +633,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let dragQ = false;
   let drawing = false;
   const offPointer = cs.onPointer({
-    down: (p) => {
+    down: (p, ev) => {
       const qq = wrapQ(p as P2);
+      ev.preventDefault(); // no text selection while dragging q or drawing a path
+      try { cs.canvas.setPointerCapture(ev.pointerId); } catch { /* synthetic events have no capture target */ }
       if (drawMode) { addWaypoint(qq); drawing = drawMode; return; }
       stopPlay();
       q = qq;
@@ -848,7 +844,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     focused.forEach((f) => f.classList.add('mr-focus'));
   }
 
-  const offTheme = ctx.onThemeChange(() => { makePalette(); refreshHandleColors(); repaint(); });
+  // handle colours are theme variables (resolved at draw time); only the raster palette needs re-resolving
+  const offTheme = ctx.onThemeChange(() => { makePalette(); repaint(); });
 
   let lastStep = clampN(ctx.currentStep, 0, STEP_CFG.length - 1);
   let skipNext = true;

@@ -200,6 +200,20 @@ describe('dragging', () => {
     expect(analyze(m).mobility).toBe(1);
   });
 
+  it('a dof-1 point that cannot follow the cursor is still movable (rocker pushed past its limit)', () => {
+    // dragPin reports `locked` whenever the pin made no progress; the UI must not read that as dof = 0.
+    const m = presetByKey('fourbar').build();
+    const ref = { body: 3, pin: 0 }; // coupler–rocker joint B
+    const B = worldPt(m.bodies[3], 0);
+    const target: Pt = [B[0] + 2, B[1] + 1.5]; // beyond the rocker's swing
+    let r = dragPin(m, ref, target);
+    for (let k = 0; k < 20; k++) r = dragPin(m, ref, target);
+    expect(r.locked).toBe(true);
+    expect(pinMotion(m, analyze(m), ref).dof).toBe(1);
+    expect(analyze(m).mobility).toBe(1);
+    expect(residual(m)).toBeLessThan(1e-8);
+  });
+
   it('skewed version is locked', () => {
     const m = presetByKey('stackedSkew').build();
     const ref = { body: 2, pin: 1 };

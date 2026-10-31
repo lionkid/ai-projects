@@ -33,7 +33,7 @@ $$\\tau = J^\\T(\\theta)\\Big(\\tilde\\Lambda\\ddot x + \\tilde\\eta - \\big(M\\
 $$\\ddot x_c = M^{-1}\\big(f_{ext} - B\\dot x_c - K(x_c - x_0)\\big)$$
 
 積分得到的 $x_c$ 交給一個很硬的內層位置迴路去追。內迴路夠硬，摩擦與減速機慣量都被「蓋掉」，渲染出的 $M$、$B$、$K$ 很準，而且 $M$ 可以自由設定——這正是**高減速比、難以背驅動**的工業手臂常用的作法。模擬分兩層：虛擬模型與內迴路以 1 kHz 更新，手臂本身以 0.2 ms 子步積分。`,
-    simHint: '高減速比手臂在導納模式下：拉一下末端，紫色虛線 x_c 與實際 x 幾乎重合。再點「M = 0.5」與「M = 8」比較讓步快慢。',
+    simHint: '高減速比手臂在導納模式下：拉一下末端，紫色的 x_c（方塊與曲線）與實際 x 幾乎重合。再點「M = 0.5」與「M = 8」比較讓步快慢。',
   },
   {
     title: '碰牆',
@@ -41,7 +41,7 @@ $$\\ddot x_c = M^{-1}\\big(f_{ext} - B\\dot x_c - K(x_c - x_0)\\big)$$
 
 $$f \\approx \\frac{K\\,k_w}{K + k_w}\\,(x_0 - x_w) \\approx K\\,(x_0 - x_w)$$
 
-- **阻抗控制**只輸出彈簧力，末端與牆的互動是被動的，牆再硬都穩定。
+- **阻抗控制**只輸出彈簧與阻尼的力，末端與牆的互動理想上是被動的（迴路本身不注入能量），牆再硬也穩定。
 - **導納控制**把牆的反力經感測器（帶延遲）送回虛擬模型，再變成位置命令。牆越硬，$x_c$ 的一點點變化就造成很大的力；延遲讓這個迴路像負阻尼一樣不斷注入能量，於是開始敲牆。牆越軟，能容忍的延遲越長。`,
     simHint: '一開始是「導納＋延遲 15 ms」：看接觸力曲線的彈跳。改點「延遲 0」或「阻抗」，再試「硬牆 5×10⁴」兩種模式的差別。',
   },
@@ -325,7 +325,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       drawSpring(c, x0, xc, cT);
       c.polygon([[xc[0] - 0.03, xc[1] - 0.03], [xc[0] + 0.03, xc[1] - 0.03], [xc[0] + 0.03, xc[1] + 0.03], [xc[0] - 0.03, xc[1] + 0.03]], { color: cT, width: 2 });
       c.line(xc, tip, { color: cT, width: 1, dash: [2, 3] });
-      if (step === 2) c.text(add(xc, [-0.06, 0.1]), 'x_c（虛擬質量 M）', { color: cT, font: '11px sans-serif', align: 'right' });
+      // Below-left of x_c: clear of the grab-handle label above the tip and of the x₀ flag below.
+      if (step === 2) c.text(add(xc, [-0.07, -0.08]), 'x_c（虛擬質量 M）', { color: cT, font: '11px sans-serif', align: 'right' });
     }
     // Rubber band from the tip to the mouse.
     if (dragging) c.line(tip, pointer, { color: cssVar('--series-6'), width: 1.5, dash: [6, 4] });
@@ -398,7 +399,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     script = s.map((e) => ({ at: e.at, x0: [...e.x0] as Vec2 }));
     pending = [];
     plotX.clear(); plotF.clear();
-    plotX.setMarkers(sim.p.wallOn ? [{ y: sim.p.wallX, label: '牆 x_w', color: cssVar('--fg-muted') }] : []);
+    plotX.setMarkers(sim.p.wallOn ? [{ y: sim.p.wallX, label: '牆 x_w', color: '--fg-muted' }] : []);
     peak = 0; lossTimes.length = 0; wasContact = false; stillSince = -1;
     status.textContent = '';
     loop.start();
@@ -447,8 +448,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     pbk.setTime(sim.t);
     cv.overlay.textContent = overlayText();
     const p = sim.p;
-    const Lxx = sim.Lambda[0][0];
-    info.set('表觀質量', p.mode === 'impedance' ? `Λ(θ) 沿 x ≈ ${fmt(Lxx, 2)} kg（手臂自己的慣量）` : `M = ${fmt(p.M, 1)} kg（虛擬，由導納模型決定）`);
+    // Mass felt when the tip is pushed along x (y free): 1/(Λ⁻¹)ₓₓ = Λxx − Λxy²/Λyy, not Λxx.
+    const L = sim.Lambda;
+    const mx = L[0][0] - (L[0][1] * L[1][0]) / L[1][1];
+    info.set('表觀質量', p.mode === 'impedance' ? `沿 x 推時 1/(Λ⁻¹)ₓₓ ≈ ${fmt(mx, 2)} kg（手臂自己的慣量）` : `M = ${fmt(p.M, 1)} kg（虛擬，由導納模型決定）`);
     info.set('牆面接觸力 f_w', `${fmt(sim.fWall, 1)} N`);
     info.set('峰值接觸力', `${fmt(peak, 1)} N（自上次撞牆／重設）`);
     info.set('感測器讀值', p.mode === 'impedance'
@@ -464,16 +467,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (stuck) { if (stillSince < 0) stillSince = sim.t; } else stillSince = -1;
     const msgs: string[] = [];
     if (lossTimes.length >= 3) msgs.push(p.mode === 'admittance' ? '⚠ 末端在牆上彈跳：導納迴路的阻尼不足以抵銷延遲與牆面剛度' : '⚠ 末端在牆上彈跳：B 太小');
-    if (stillSince >= 0 && sim.t - stillSince > 0.4) msgs.push(`末端卡在離目標 ${fmt(err * 100, 1)} cm 處：關節摩擦大於彈簧力 K·距離（阻抗控制無法蓋掉摩擦）`);
+    if (stillSince >= 0 && sim.t - stillSince > 0.4) msgs.push(`末端卡在離目標 ${fmt(err * 100, 1)} cm 處：彈簧力 K·距離 經 Jᵀ 換成的關節力矩小於靜摩擦（阻抗控制無法蓋掉摩擦）`);
     if (sim.saturated) msgs.push('關節力矩飽和');
     status.textContent = msgs.join('；');
   }
 
   // ---- per-step configuration ---------------------------------------------
   const W = DEFAULT_PARAMS.wallX;
-  const MOVE: Script = [{ at: 0.6, x0: [1.36, 0.42] }, { at: 2.4, x0: [1.08, 0.18] }];
-  const HIT: Script = [{ at: 0.6, x0: [W + 0.15, 0.25] }];
-  const PRESS: Script = [{ at: 0.5, x0: [W + 0.12, 0.25] }];
+  // Scripted target moves start at 0.2 s so the first view of every step already shows motion.
+  const MOVE: Script = [{ at: 0.2, x0: [1.36, 0.42] }, { at: 2.4, x0: [1.08, 0.18] }];
+  const HIT: Script = [{ at: 0.2, x0: [W + 0.15, 0.25] }];
+  const PRESS: Script = [{ at: 0.2, x0: [W + 0.12, 0.25] }];
   type Chip = { label: string; q: Partial<ImpParams>; run?: Script; push?: boolean; title?: string };
   const STEP_SETUP: { q: Partial<ImpParams>; run: Script; chips: Chip[] }[] = [
     {
@@ -537,7 +541,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       chips: (['direct', 'geared'] as ArmKind[]).flatMap((arm) => (['impedance', 'admittance'] as Mode[]).map((mode) => ({
         label: `${arm === 'direct' ? '直驅' : '高減速比'}＋${mode === 'impedance' ? '阻抗' : '導納'}`,
         q: { arm, mode, M: 2, B: 60, K: 300, kw: 2e4, delayMs: 10 } as Partial<ImpParams>,
-        run: [{ at: 0.5, x0: [1.36, 0.42] as Vec2 }, { at: 2.0, x0: [W + 0.12, 0.3] as Vec2 }],
+        run: [{ at: 0.2, x0: [1.36, 0.42] as Vec2 }, { at: 2.0, x0: [W + 0.12, 0.3] as Vec2 }],
       }))),
     },
   ];
