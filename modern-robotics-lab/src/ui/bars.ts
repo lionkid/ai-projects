@@ -1,5 +1,8 @@
 /** Signed horizontal bars (joint torques, energies, errors) with an optional saturation limit. */
-import { el, fmt, cssVar } from './dom';
+import { el, fmt } from './dom';
+
+/** CSS colour for a bar: '--x' becomes var(--x) so the browser follows theme switches. */
+const cssColor = (c: string | undefined): string | undefined => (c && c.startsWith('--') ? `var(${c})` : c);
 
 export interface BarsOpts {
   labels: string[];
@@ -18,7 +21,7 @@ export interface BarsHandle { el: HTMLElement; set(values: ArrayLike<number>): v
 export function torqueBars(parent: HTMLElement, opts: BarsOpts): BarsHandle {
   let max = opts.max; let limit = opts.limit;
   const rows = opts.labels.map((label, i) => {
-    const fill = el('span', { class: 'mr-bar-fill', style: { background: opts.colors?.[i] ?? cssVar(`--series-${(i % 8) + 1}`, '#36f') } });
+    const fill = el('span', { class: 'mr-bar-fill', style: { background: cssColor(opts.colors?.[i]) ?? `var(--series-${(i % 8) + 1})` } });
     const lim1 = el('span', { class: 'mr-bar-limit' }); const lim2 = el('span', { class: 'mr-bar-limit' });
     const track = el('span', { class: 'mr-bar-track' }, el('span', { class: 'mr-bar-zero' }), lim1, lim2, fill);
     const val = el('span', { class: 'mr-bar-value' }, '–');

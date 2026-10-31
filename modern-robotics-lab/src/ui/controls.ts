@@ -147,14 +147,19 @@ export function select<T extends string>(
 export interface ReadoutHandle { el: HTMLElement; set(v: string | number, digits?: number): void }
 
 /** A labelled live value, e.g. `θ = 1.234 rad`. */
-export function readout(parent: HTMLElement, opts: { label: string; value?: string; unit?: string; title?: string }): ReadoutHandle {
+export function readout(parent: HTMLElement, opts: { label: string; value?: string; unit?: string; title?: string; minWidth?: string }): ReadoutHandle {
   const valueEl = el('span', { class: 'mr-value' }, opts.value ?? '–');
+  // A fixed minimum width (e.g. '7ch') stops rows of readouts from re-wrapping as digits change.
+  if (opts.minWidth) { valueEl.style.display = 'inline-block'; valueEl.style.minWidth = opts.minWidth; }
   const wrap = el('div', { class: 'mr-readout', title: opts.title }, el('span', { class: 'mr-label' }, opts.label), valueEl);
   parent.appendChild(wrap);
   const unit = opts.unit ? ` ${opts.unit}` : '';
   return {
     el: wrap,
-    set(v, digits = 3) { valueEl.textContent = (typeof v === 'number' ? fmt(v, digits) : v) + unit; },
+    set(v, digits = 3) {
+      const t = (typeof v === 'number' ? fmt(v, digits) : v) + unit;
+      if (valueEl.textContent !== t) valueEl.textContent = t;
+    },
   };
 }
 
@@ -174,20 +179,32 @@ export function matrixView(parent: HTMLElement, opts: { label?: string; digits?:
   const wrap = el('div', { class: 'mr-matrix', title: opts.title }, labelEl, grid);
   parent.appendChild(wrap);
   const digits = opts.digits ?? 3;
+  let cells: HTMLSpanElement[] = [];
+  let shape = '';
   return {
     el: wrap,
     setLabel(l) { labelEl.textContent = l; },
     set(M, o) {
       const rows: number[][] = Array.isArray(M[0]) ? (M as number[][]) : (M as number[]).map((x) => [x]);
       const cols = rows[0]?.length ?? 1;
-      grid.style.gridTemplateColumns = `repeat(${cols}, auto)`;
-      grid.replaceChildren();
+      const key = `${rows.length}x${cols}`;
+      if (key !== shape) {
+        // Rebuild only when the shape changes; otherwise update cells in place (cheap per frame).
+        shape = key;
+        grid.style.gridTemplateColumns = `repeat(${cols}, auto)`;
+        cells = Array.from({ length: rows.length * cols }, () => el('span', { class: 'mr-cell' }));
+        grid.replaceChildren(...cells);
+      }
       const d = o?.digits ?? digits;
       rows.forEach((r, i) => r.forEach((x, j) => {
         const hc = o?.highlightCols?.[j];
         const hr = o?.highlightRows?.[i];
         const cls = hc ? (hc === 'hl' ? 'hl' : `hl-${hc}`) : hr ? (hr === 'hl' ? 'hl' : `hl-${hr}`) : '';
-        grid.appendChild(el('span', { class: `mr-cell ${cls}`.trim() }, fmt(x, d)));
+        const cell = cells[i * cols + j];
+        const className = `mr-cell ${cls}`.trim();
+        if (cell.className !== className) cell.className = className;
+        const t = fmt(x, d);
+        if (cell.textContent !== t) cell.textContent = t;
       }));
     },
   };
@@ -238,6 +255,14 @@ export function playback(parent: HTMLElement, opts: PlaybackOpts = {}): Playback
     playBtn.textContent = p ? '⏸ 暫停' : '▶ 播放';
     if (!o?.silent) (p ? opts.onPlay : opts.onPause)?.();
   };
+  let pendingT = 0;
+  let lastTimePaint = 0;
+  let timeTimer = 0;
+  const paintTime = () => {
+    lastTimePaint = performance.now();
+    timeEl.textContent = `${fmt(pendingT, 2)} s`;
+    if (document.activeElement !== scrub) scrub.value = String(pendingT);
+  };
   playBtn.addEventListener('click', () => setPlaying(!playing));
   resetBtn.addEventListener('click', () => { opts.onReset?.(); });
   speedSel.addEventListener('change', () => opts.onSpeed?.(Number(speedSel.value)));
@@ -247,8 +272,11 @@ export function playback(parent: HTMLElement, opts: PlaybackOpts = {}): Playback
     get playing() { return playing; },
     setPlaying,
     setTime(t) {
-      timeEl.textContent = `${fmt(t, 2)} s`;
-      if (document.activeElement !== scrub) scrub.value = String(t);
+      // Called every frame by many lessons: write to the DOM at most ~15 times per second,
+      // always ending on the latest value.
+      pendingT = t;
+      if (performance.now() - lastTimePaint >= 66) paintTime();
+      else if (!timeTimer) timeTimer = window.setTimeout(() => { timeTimer = 0; paintTime(); }, 70);
     },
     setDuration(d) { duration = d; scrub.max = String(d || 1); },
     get speed() { return Number(speedSel.value); },
@@ -276,24 +304,42 @@ export function legend(parent: HTMLElement, items: { color: string; label: strin
   return l;
 }
 
-export interface KVHandle { el: HTMLElement; set(key: string, value: string | number, digits?: number): void }
+export interface KVHandle {
+  el: HTMLElement;
+  set(key: string, value: string | number, digits?: number): void;
+  /** Rename the label shown for `key`. */
+  setLabel(key: string, label: string): void;
+  /** Show or hide the row for `key`. */
+  show(key: string, visible: boolean): void;
+}
 
 /** Key/value table for live numeric state. */
 export function kv(parent: HTMLElement, keys: string[]): KVHandle {
   const dl = el('dl', { class: 'mr-kv' });
   const cells = new Map<string, HTMLElement>();
-  for (const k of keys) {
+  const labels = new Map<string, HTMLElement>();
+  const add = (k: string) => {
+    const dt = el('dt', {}, k);
     const dd = el('dd', {}, '–');
-    cells.set(k, dd);
-    dl.append(el('dt', {}, k), dd);
-  }
+    cells.set(k, dd); labels.set(k, dt);
+    dl.append(dt, dd);
+    return dd;
+  };
+  for (const k of keys) add(k);
   parent.appendChild(dl);
   return {
     el: dl,
     set(k, v, digits = 3) {
-      let dd = cells.get(k);
-      if (!dd) { dd = el('dd', {}, '–'); cells.set(k, dd); dl.append(el('dt', {}, k), dd); }
-      dd.textContent = typeof v === 'number' ? fmt(v, digits) : v;
+      const dd = cells.get(k) ?? add(k);
+      const t = typeof v === 'number' ? fmt(v, digits) : v;
+      if (dd.textContent !== t) dd.textContent = t;
+    },
+    setLabel(k, label) { const dt = labels.get(k); if (dt) dt.textContent = label; },
+    show(k, visible) {
+      const d = visible ? '' : 'none';
+      const dt = labels.get(k); const dd = cells.get(k);
+      if (dt) dt.style.display = d;
+      if (dd) dd.style.display = d;
     },
   };
 }

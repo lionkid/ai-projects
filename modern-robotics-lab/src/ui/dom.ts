@@ -72,6 +72,20 @@ export function cssVar(name: string, fallback = ''): string {
   return v || fallback;
 }
 
+/**
+ * Resolve a colour that may name a CSS custom property: '--accent' or 'var(--accent)'
+ * (optionally 'var(--accent, #36f)') gives the current theme value; anything else is returned
+ * unchanged. Canvas2D, Plot2D and torqueBars accept such strings, so colours chosen at creation
+ * time stay correct after the learner switches theme.
+ */
+export function themeColor(c: string | undefined, fallback = ''): string {
+  if (!c) return fallback;
+  if (c.startsWith('--')) return cssVar(c, fallback);
+  const m = /^var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\)$/.exec(c);
+  if (m) return cssVar(m[1], m[2]?.trim() ?? fallback);
+  return c;
+}
+
 /** Debounce via requestAnimationFrame: many calls per frame → one invocation. */
 export function rafThrottle(fn: () => void): () => void {
   let pending = false;

@@ -1,5 +1,5 @@
 /** Lightweight canvas line plot for time series and XY curves (DPR-aware, themed). */
-import { el, cssVar, rafThrottle } from './dom';
+import { el, cssVar, rafThrottle, themeColor } from './dom';
 
 export interface SeriesSpec {
   name: string;
@@ -161,7 +161,8 @@ export class Plot2D {
     if (fixed) return fixed;
     const data = axis === 'x' ? this.xs : this.ys;
     let lo = Infinity, hi = -Infinity;
-    for (const arr of data) for (const v of arr) { if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } }
+    // Only the configured series count (arrays left over after setOptions must not drive the range).
+    for (const arr of data.slice(0, this.opts.series.length)) for (const v of arr) { if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } }
     for (const m of this.markers) { const v = axis === 'x' ? m.x : m.y; if (v != null && Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } }
     if (!Number.isFinite(lo)) return axis === 'x' ? [0, 1] : [-1, 1];
     if (axis === 'x') {
@@ -245,7 +246,7 @@ export class Plot2D {
     o.series.forEach((s, i) => {
       const xs = this.xs[i], ys = this.ys[i];
       if (!xs?.length) return;
-      const color = s.color ?? palette[i % palette.length];
+      const color = s.color ? themeColor(s.color, palette[i % palette.length]) : palette[i % palette.length];
       ctx.strokeStyle = color; ctx.fillStyle = color;
       ctx.lineWidth = s.width ?? 1.8;
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -266,7 +267,8 @@ export class Plot2D {
     });
     // Markers
     for (const m of this.markers) {
-      ctx.strokeStyle = m.color ?? muted; ctx.fillStyle = m.color ?? muted; ctx.lineWidth = 1; ctx.setLineDash(m.dash ?? [4, 4]);
+      const mc = m.color ? themeColor(m.color, muted) : muted;
+      ctx.strokeStyle = mc; ctx.fillStyle = mc; ctx.lineWidth = 1; ctx.setLineDash(m.dash ?? [4, 4]);
       if (m.x != null && m.y != null) {
         ctx.setLineDash([]); ctx.beginPath(); ctx.arc(X(m.x), Y(m.y), 4, 0, Math.PI * 2); ctx.fill();
         if (m.label) { ctx.textAlign = 'left'; ctx.fillText(m.label, X(m.x) + 6, Y(m.y) - 8); }
@@ -275,7 +277,7 @@ export class Plot2D {
         if (m.label) { ctx.textAlign = 'left'; ctx.fillText(m.label, X(m.x) + 4, mT + 10); }
       } else if (m.y != null) {
         ctx.beginPath(); ctx.moveTo(mL, Y(m.y)); ctx.lineTo(mL + pw, Y(m.y)); ctx.stroke();
-        if (m.label) { ctx.textAlign = 'right'; ctx.fillText(m.label, mL + pw - 4, Y(m.y) - 8); }
+        if (m.label) { ctx.textAlign = 'right'; const ly = Y(m.y) - 8 < mT + 8 ? Y(m.y) + 12 : Y(m.y) - 8; ctx.fillText(m.label, mL + pw - 4, ly); }
       }
       ctx.setLineDash([]);
     }
@@ -287,8 +289,8 @@ export class Plot2D {
       ctx.textAlign = 'left';
       let lx = mL + 8, ly = mT + 10;
       o.series.forEach((s, i) => {
-        if (!this.xs[i]?.length && o.series.length > 1) { /* still show */ }
-        const color = s.color ?? palette[i % palette.length];
+        if (!this.xs[i]?.length && o.series.length > 1) return; // no data yet: keep it out of the legend
+        const color = s.color ? themeColor(s.color, palette[i % palette.length]) : palette[i % palette.length];
         const tw = ctx.measureText(s.name).width;
         if (lx + 18 + tw > mL + pw - 4) { lx = mL + 8; ly += 15; }
         ctx.fillStyle = color; ctx.fillRect(lx, ly - 4, 12, 3);

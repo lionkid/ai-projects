@@ -1,5 +1,5 @@
 /** World-coordinate 2D canvas (y up, aspect preserved) with drawing primitives and draggable handles. */
-import { el, cssVar, rafThrottle } from './dom';
+import { el, cssVar, rafThrottle, themeColor } from './dom';
 
 export type Pt = [number, number];
 export interface World { xmin: number; xmax: number; ymin: number; ymax: number }
@@ -79,7 +79,9 @@ export class Canvas2D {
     parent.appendChild(this.el);
     this.ctx = this.canvas.getContext('2d')!;
     this.requestRender = rafThrottle(() => this.render());
-    this.ro = new ResizeObserver(() => this.resize());
+    // Resize on the next frame: changing our own height inside the observer callback would
+    // otherwise trigger 'ResizeObserver loop completed with undelivered notifications'.
+    this.ro = new ResizeObserver(() => this.scheduleResize());
     this.ro.observe(this.el);
     window.addEventListener('mr-theme', this.onTheme);
     this.bindPointer();
@@ -87,6 +89,37 @@ export class Canvas2D {
   }
 
   // ---- geometry -------------------------------------------------------
+  private resizeQueued = false;
+  private scheduleResize(): void {
+    if (this.resizeQueued) return;
+    this.resizeQueued = true;
+    requestAnimationFrame(() => { this.resizeQueued = false; this.resize(); });
+  }
+
+  /** Change the height (px) or the aspect ratio after construction. */
+  setSize(o: { height?: number; aspect?: number }): void {
+    if (o.aspect !== undefined) { this.opts.aspect = o.aspect; if (o.height === undefined) this.opts.height = undefined; }
+    if (o.height !== undefined) this.opts.height = o.height;
+    this.resize();
+  }
+
+  private overlayText = '';
+  private overlayPending = '';
+  private overlayAt = 0;
+  private overlayTimer = 0;
+  /**
+   * Set the overlay text cheaply: unchanged text is ignored and DOM writes are limited to one per
+   * `minIntervalMs` (the latest value is always shown). Prefer this over writing
+   * `overlay.textContent` every frame, which forces re-rasterisation of the sim pane.
+   */
+  setOverlayText(text: string, minIntervalMs = 80): void {
+    this.overlayPending = text;
+    if (text === this.overlayText) return;
+    const flush = () => { this.overlayAt = performance.now(); this.overlayText = this.overlayPending; this.overlay.textContent = this.overlayPending; };
+    if (performance.now() - this.overlayAt >= minIntervalMs) flush();
+    else if (!this.overlayTimer) this.overlayTimer = window.setTimeout(() => { this.overlayTimer = 0; flush(); }, minIntervalMs);
+  }
+
   private resize(): void {
     const W = this.el.clientWidth;
     if (W <= 0) return;
@@ -145,8 +178,9 @@ export class Canvas2D {
 
   private applyStyle(s?: Style): void {
     const c = this.ctx;
-    c.strokeStyle = s?.color ?? cssVar('--fg', '#222');
-    c.fillStyle = s?.fill ?? s?.color ?? cssVar('--fg', '#222');
+    const stroke = s?.color ? themeColor(s.color, cssVar('--fg', '#222')) : cssVar('--fg', '#222');
+    c.strokeStyle = stroke;
+    c.fillStyle = s?.fill ? themeColor(s.fill, stroke) : stroke;
     c.lineWidth = s?.width ?? 1.5;
     c.setLineDash(s?.dash ?? []);
     c.globalAlpha = s?.alpha ?? 1;
@@ -263,7 +297,7 @@ export class Canvas2D {
     c.moveTo(bx, by);
     c.lineTo(bx - ux * head - uy * head * 0.45, by - uy * head + ux * head * 0.45);
     c.lineTo(bx - ux * head + uy * head * 0.45, by - uy * head - ux * head * 0.45);
-    c.closePath(); c.fillStyle = s?.color ?? cssVar('--fg'); c.fill();
+    c.closePath(); c.fillStyle = s?.color ? themeColor(s.color, cssVar('--fg')) : cssVar('--fg'); c.fill();
     this.resetStyle();
   }
 
@@ -302,10 +336,10 @@ export class Canvas2D {
       const w = m.width + 8, h = 16;
       let bx = tx - w / 2;
       if (c.textAlign === 'left') bx = tx - 4; else if (c.textAlign === 'right') bx = tx - w + 4;
-      c.fillStyle = s.bg; c.globalAlpha = 0.85;
+      c.fillStyle = themeColor(s.bg); c.globalAlpha = 0.85;
       c.beginPath(); c.roundRect(bx, ty - h / 2, w, h, 4); c.fill(); c.globalAlpha = 1;
     }
-    c.fillStyle = s.color ?? cssVar('--fg', '#222');
+    c.fillStyle = s.color ? themeColor(s.color, cssVar('--fg', '#222')) : cssVar('--fg', '#222');
     c.fillText(str, tx, ty);
   }
 
@@ -338,7 +372,7 @@ export class Canvas2D {
     for (const h of this.handles) {
       if (h.enabled === false) continue;
       const r = h.radius ?? 8;
-      const color = h.color ?? cssVar('--accent', '#36f');
+      const color = h.color ? themeColor(h.color, cssVar('--accent', '#36f')) : cssVar('--accent', '#36f');
       const isActive = h === this.active || h === this.hover;
       const [x, y] = this.toScreen(h.get());
       const c = this.ctx;
@@ -407,6 +441,7 @@ export class Canvas2D {
 
   destroy(): void {
     this.ro.disconnect();
+    if (this.overlayTimer) clearTimeout(this.overlayTimer);
     window.removeEventListener('mr-theme', this.onTheme);
     this.el.remove();
   }

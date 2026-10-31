@@ -7,6 +7,8 @@ const lessonLoaders = import.meta.glob<Lesson>('../lessons/*/index.ts', { import
 export interface LessonEntry {
   meta: LessonMeta;
   dir: string;
+  /** False while a lesson only has meta.ts (work in progress). */
+  hasIndex: boolean;
   load(): Promise<Lesson>;
 }
 
@@ -27,6 +29,7 @@ export const lessons: LessonEntry[] = Object.entries(metaModules)
     return {
       meta: { ...meta, id: dir },
       dir,
+      hasIndex: !!loader,
       load: loader ?? (() => Promise.reject(new Error(`lesson ${dir} has no index.ts`))),
     };
   })

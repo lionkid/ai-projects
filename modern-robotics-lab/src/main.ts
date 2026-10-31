@@ -57,5 +57,5 @@ onRoute(async (route) => {
 
 // Exposed for smoke tests and debugging.
 (window as unknown as { __MRLAB__: unknown }).__MRLAB__ = {
-  lessons: lessons.map((l) => ({ id: l.dir, chapter: l.meta.chapter, order: l.meta.order, title: l.meta.title })),
+  lessons: lessons.map((l) => ({ id: l.dir, chapter: l.meta.chapter, order: l.meta.order, title: l.meta.title, hasIndex: l.hasIndex })),
 };

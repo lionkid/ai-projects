@@ -103,6 +103,42 @@ Guidelines
   side-by-side canvas + plot and keep total height reasonable (< ~900 px).
 * No network requests, no external assets.
 
+### 3b. Toolkit updates (read this even if you know the toolkit)
+
+* **Theme-aware colours everywhere.** In 2D, any colour string may be a CSS variable name:
+  `'--accent'` or `'var(--accent)'`. `Canvas2D` styles, text, handles (`handle.color`), `Plot2D`
+  series/markers and `torqueBars` resolve it at draw time, so a theme switch just works. `cssVar('--x')`
+  returns a fixed value: fine inside a draw callback, wrong for anything stored at creation time.
+  In 3D, pass the variable names to `Scene3D.add*`, `Arrow3D`, `Link3D`, `ScrewAxis3D`, `Robot3D`,
+  `makeTextSprite`, `themedStandardMaterial` (see the 3D row above). `themeColor(c)` (from `@/ui`)
+  resolves such a string yourself.
+* `readout(panel, { label, unit, minWidth: '7ch' })` stops rows of readouts from re-wrapping as digits change;
+  `readout.set`, `kv.set` and `matrixView.set` skip unchanged text and update matrix cells in place,
+  so calling them every frame is cheap. `kv(...).setLabel(key, label)` and `.show(key, visible)`.
+* `presetChips(...).highlight(i)` marks a chip without running it; `.setPresets(list)` swaps the set
+  (e.g. one set per step).
+* `Canvas2D`: `setOverlayText(text)` (throttled, use it instead of `overlay.textContent` in draw
+  callbacks), `setSize({ aspect } | { height })` after construction. Resizes happen on the next frame,
+  so creating a canvas in a hidden container no longer triggers ResizeObserver loop errors.
+* `playback.setTime(t)` is throttled internally (~15 Hz DOM writes), so call it every frame freely.
+* `physicsRunner({ ..., budgetMs: 8 })`: when a frame would exceed the CPU budget the rest of its
+  sub-steps are dropped (slow motion instead of a frozen page).
+* `Plot2D`: series without data are left out of the legend; stale series beyond `series.length`
+  no longer affect auto-ranging; horizontal marker labels near the top are drawn below the line.
+* 3D: `ScrewAxis3D({ size: 0.5, length })` scales the glyph for small robots and has `setColor(c)`;
+  `makeTextSprite(text, color, fontPx, scale)` and `scene.addLabel(text, pos, color, scale)` size labels;
+  `scene.addTube(points, { radius, color })` draws thick trails (WebGL lines are always 1 px).
+* The simulation pane scrolls internally on desktop when it is taller than the viewport, but the first
+  view should still show what matters without scrolling (~860 px at a 1400×950 window).
+* Text rendering: combining-dot glyphs (θ̇, θ̈) render badly in canvas text, `<select>` options and plot
+  legends; write `dθ/dt` or `ω` there and keep dots for KaTeX.
+* Performance: `@/mr` `ForwardDynamics` costs ~0.3 ms per call for a 2R arm (it builds the mass matrix
+  with n+1 Newton–Euler passes). For live planar 2R simulations use `planar2RAccel`; for 3D arms
+  precompute trajectories or cap the integration rate.
+* `scripts/smoke.mjs` runs Vite without HMR (other agents' edits no longer reload your page mid-run),
+  takes screenshots with the viewport stretched to the page height, skips lessons without `index.ts`
+  when no `--lesson` is given, and `--step-shots` saves the first view of every step as `<id>-s<k>.png`.
+
 ## 4. Math library (`@/mr`)
 
 Function names mirror the open-source Modern Robotics library (so learners can cross-reference):
@@ -132,7 +168,7 @@ The session scratchpad is shared by all agents: put every scratch file (scripts,
 ```bash
 npm run typecheck                       # no errors in your folder
 npx vitest run src/lessons/<id>         # if you added tests
-node scripts/smoke.mjs --lesson <id> --screens /tmp/claude-0/.../scratchpad/smoke   # must PASS
+node scripts/smoke.mjs --lesson <id> --screens <scratch>/<your-folder>/smoke --step-shots   # must PASS; read every PNG
 ```
 
 Then look at the screenshot: is the first thing the learner sees meaningful (not an empty canvas)?

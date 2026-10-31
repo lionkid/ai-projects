@@ -1,5 +1,5 @@
 /** Fixed-sub-step physics runner with blow-up protection, built on createLoop + substep. */
-import { createLoop, substep, type Loop } from './loop';
+import { createLoop, type Loop } from './loop';
 
 export interface PhysicsRunnerOpts {
   /** Integration sub-step in seconds (default 1/240). */
@@ -15,6 +15,12 @@ export interface PhysicsRunnerOpts {
   onReset?: () => void;
   /** Upper bound on simulated seconds per frame (default 0.05). */
   maxDt?: number;
+  /**
+   * CPU budget per frame in ms (default 8). When the machine cannot keep up, the remaining
+   * sub-steps of that frame are dropped, so the simulation runs in slow motion instead of
+   * freezing the page.
+   */
+  budgetMs?: number;
 }
 
 export interface PhysicsRunner {
@@ -35,9 +41,18 @@ export function physicsRunner(opts: PhysicsRunnerOpts): PhysicsRunner {
   const h = opts.h ?? 1 / 240;
   let t = 0;
   let blownUp = false;
+  const budget = opts.budgetMs ?? 8;
   const advance = (dt: number) => {
     if (blownUp) return;
-    substep(dt, h, (hh) => { opts.step(hh, t); t += hh; });
+    const start = performance.now();
+    let remaining = dt;
+    while (remaining > 1e-12) {
+      const hh = Math.min(h, remaining);
+      opts.step(hh, t);
+      t += hh;
+      remaining -= hh;
+      if (performance.now() - start > budget) break; // over budget: drop the rest of this frame
+    }
     if (opts.guard && !opts.guard()) { blownUp = true; loop.stop(); opts.onBlowUp?.(); }
   };
   const loop = createLoop((dt) => { advance(dt); opts.onFrame?.(t, dt); }, { maxDt: opts.maxDt });

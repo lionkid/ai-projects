@@ -205,17 +205,30 @@ export class ScrewAxis3D {
   private dot: THREE.Mesh;
   private ring: THREE.Mesh;
   private length: number;
-  constructor(opts: { color?: THREE.ColorRepresentation; length?: number } = {}) {
+  private size: number;
+  /**
+   * `length`: half-length of the drawn axis line (m). `size`: scale factor for the ring, dot and
+   * arrow (default 1 suits ~1 m robots; use ~0.5 for small arms). Colours may be CSS variable names.
+   */
+  constructor(opts: { color?: THREE.ColorRepresentation; length?: number; size?: number } = {}) {
     const color = opts.color ?? 0xd97706;
     this.length = opts.length ?? 1.5;
+    const k = (this.size = opts.size ?? 1);
     const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
-    const lineMat = new THREE.LineDashedMaterial({ dashSize: 0.06, gapSize: 0.04 });
+    const lineMat = new THREE.LineDashedMaterial({ dashSize: 0.06 * k, gapSize: 0.04 * k });
     setThemedColor(lineMat, color);
     this.line = new THREE.Line(geo, lineMat);
-    this.arrow = new Arrow3D(color, 0.014, 0.1);
-    this.dot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12), themedStandardMaterial(color));
-    this.ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.008, 8, 40), themedStandardMaterial(color));
+    this.arrow = new Arrow3D(color, 0.014 * k, 0.1 * k);
+    this.dot = new THREE.Mesh(new THREE.SphereGeometry(0.03 * k, 12, 12), themedStandardMaterial(color));
+    this.ring = new THREE.Mesh(new THREE.TorusGeometry(0.12 * k, 0.008 * k, 8, 40), themedStandardMaterial(color));
     this.group.add(this.line, this.arrow.group, this.dot, this.ring);
+  }
+  /** Recolour the whole glyph (a CSS variable name keeps it theme-aware). */
+  setColor(c: THREE.ColorRepresentation): void {
+    setThemedColor(this.line.material as THREE.LineDashedMaterial, c);
+    setThemedColor(this.dot.material as THREE.MeshStandardMaterial, c);
+    setThemedColor(this.ring.material as THREE.MeshStandardMaterial, c);
+    this.arrow.setColor(c);
   }
   /** Update from S = [ω; v] (6-vector). Pure translation (ω = 0) is drawn as an arrow along v. */
   setScrew(S: ArrayLike<number>): void {
@@ -230,13 +243,13 @@ export class ScrewAxis3D {
       this.line.geometry.setFromPoints([a, b]);
       this.line.computeLineDistances();
       this.line.visible = true;
-      this.arrow.setDir(q, wh, 0.45);
+      this.arrow.setDir(q, wh, 0.45 * this.size);
       this.dot.position.copy(q); this.dot.visible = true;
       this.ring.position.copy(q); this.ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wh); this.ring.visible = true;
     } else {
       const vn = v.length();
       this.line.visible = false; this.dot.visible = false; this.ring.visible = false;
-      if (vn > 1e-9) this.arrow.setDir([0, 0, 0], v.clone().divideScalar(vn), 0.6); else this.arrow.visible = false;
+      if (vn > 1e-9) this.arrow.setDir([0, 0, 0], v.clone().divideScalar(vn), 0.6 * this.size); else this.arrow.visible = false;
     }
   }
   setVisible(v: boolean): void { this.group.visible = v; }
@@ -260,13 +273,13 @@ function drawTextCanvas(text: string, color: string, fontPx: number): HTMLCanvas
  * Text label rendered to a sprite (always faces the camera). `color` defaults to the theme
  * foreground; pass a CSS variable name ('--accent') to keep it theme-aware, or a fixed colour.
  */
-export function makeTextSprite(text: string, color: string = '--fg', fontPx = 48): THREE.Sprite {
+export function makeTextSprite(text: string, color: string = '--fg', fontPx = 48, scale = 0.0028): THREE.Sprite {
   const canvas = drawTextCanvas(text, String(resolveColor(color, '#222222')), fontPx);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
   const sprite = new THREE.Sprite(mat);
-  const scale = 0.0028;
+  // `scale` is world units per canvas pixel: the default makes 48 px text about 0.18 m tall.
   sprite.scale.set(canvas.width * scale, canvas.height * scale, 1);
   sprite.renderOrder = 999;
   if (color.startsWith('--')) sprite.userData.themeText = { text, color, fontPx };
@@ -302,6 +315,7 @@ export class Scene3D {
   private last = 0;
   private t = 0;
   private onTheme = () => { this.applyTheme(); this.requestRender(); };
+  private resizeQueued = false;
 
   constructor(parent: HTMLElement, opts: Scene3DOptions = {}) {
     this.opts = opts;
@@ -349,7 +363,8 @@ export class Scene3D {
     }
     this.applyTheme();
     window.addEventListener('mr-theme', this.onTheme);
-    this.ro = new ResizeObserver(() => this.resize());
+    // Resize on the next frame to avoid ResizeObserver loop errors (we change our own height).
+    this.ro = new ResizeObserver(() => { if (this.resizeQueued) return; this.resizeQueued = true; requestAnimationFrame(() => { this.resizeQueued = false; this.resize(); }); });
     this.ro.observe(this.el);
     this.resize();
     if (opts.autoStart !== false) this.start();
@@ -477,8 +492,32 @@ export class Scene3D {
       update: (pts) => { line.geometry.setFromPoints(pts.map(vec3)); if (opts.dashed) line.computeLineDistances(); this.requestRender(); },
     };
   }
-  addLabel(text: string, pos: Vec3Like, color?: string): THREE.Sprite {
-    const s = makeTextSprite(text, color ?? '--fg');
+  /**
+   * Thick 3D path (a tube along a polyline). WebGL lines are always 1 px wide, so use this for
+   * trajectories and trails that must stay visible. Call `update(points)` to change it.
+   */
+  addTube(points: Vec3Like[], opts: { radius?: number; color?: THREE.ColorRepresentation; opacity?: number } = {}): { mesh: THREE.Mesh; update(pts: Vec3Like[]): void } {
+    const radius = opts.radius ?? 0.008;
+    const opacity = opts.opacity ?? 1;
+    const mat = themedStandardMaterial(opts.color ?? '--warn', { roughness: 0.6, transparent: opacity < 1, opacity });
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
+    const build = (pts: Vec3Like[]) => {
+      const vs = pts.map(vec3);
+      const path = new THREE.CurvePath<THREE.Vector3>();
+      for (let i = 0; i + 1 < vs.length; i++) if (vs[i].distanceToSquared(vs[i + 1]) > 1e-14) path.add(new THREE.LineCurve3(vs[i], vs[i + 1]));
+      mesh.geometry.dispose();
+      if (!path.curves.length) { mesh.geometry = new THREE.BufferGeometry(); mesh.visible = false; return; }
+      mesh.geometry = new THREE.TubeGeometry(path, Math.min(4000, path.curves.length * 3), radius, 8, false);
+      mesh.visible = true;
+    };
+    build(points);
+    this.scene.add(mesh);
+    return { mesh, update: (pts) => { build(pts); this.requestRender(); } };
+  }
+
+  /** Text label (always faces the camera). `scale` is world units per canvas pixel (default 0.0028). */
+  addLabel(text: string, pos: Vec3Like, color?: string, scale?: number): THREE.Sprite {
+    const s = makeTextSprite(text, color ?? '--fg', 48, scale);
     s.position.copy(vec3(pos));
     this.scene.add(s);
     return s;
