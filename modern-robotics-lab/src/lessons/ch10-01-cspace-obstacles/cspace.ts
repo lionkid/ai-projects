@@ -6,6 +6,10 @@
  */
 import { planarFK, segPointDistance, wrapToPi, type P2 } from '@/mr';
 
+/** Bit flags stored in a C-obstacle code grid: which link of the arm is in collision. */
+export const HIT_LINK1 = 1;
+export const HIT_LINK2 = 2;
+
 export interface Obstacle { c: P2; r: number }
 export interface Circle { c: P2; r: number; link: number }
 export type CollisionMode = 'exact' | 'cover';
@@ -96,12 +100,95 @@ export function coverClearance(L: readonly [number, number], w: number, q: P2, o
   return best;
 }
 
-export function clearance(mode: CollisionMode, L: readonly [number, number], w: number, q: P2, obstacles: readonly Obstacle[]): ClearanceResult {
-  return mode === 'cover' ? coverClearance(L, w, q, obstacles) : exactClearance(L, w, q, obstacles);
+export function clearance(mode: CollisionMode, L: readonly [number, number], w: number, q: P2, obstacles: readonly Obstacle[], K = 5): ClearanceResult {
+  return mode === 'cover' ? coverClearance(L, w, q, obstacles, K) : exactClearance(L, w, q, obstacles);
 }
 
-export function collides(mode: CollisionMode, L: readonly [number, number], w: number, q: P2, obstacles: readonly Obstacle[]): boolean {
-  return clearance(mode, L, w, q, obstacles).d <= 0;
+export function collides(mode: CollisionMode, L: readonly [number, number], w: number, q: P2, obstacles: readonly Obstacle[], K = 5): boolean {
+  return clearance(mode, L, w, q, obstacles, K).d <= 0;
+}
+
+/**
+ * Does the link from a to b (length len, capsule half-width w) touch any obstacle?
+ * 'exact' tests the capsule; 'cover' tests the K + 1 cover circles used by circleCover.
+ */
+function linkHits(mode: CollisionMode, ax: number, ay: number, bx: number, by: number, len: number, w: number, obstacles: readonly Obstacle[], K: number): boolean {
+  if (mode === 'exact') {
+    for (const ob of obstacles) if (segPointDistance([ax, ay], [bx, by], ob.c) <= ob.r + w) return true;
+    return false;
+  }
+  const rc = Math.hypot(w, len / (2 * K));
+  for (let i = 0; i <= K; i++) {
+    const s = i / K;
+    const cx = ax + s * (bx - ax), cy = ay + s * (by - ay);
+    for (const ob of obstacles) if (Math.hypot(ob.c[0] - cx, ob.c[1] - cy) <= rc + ob.r) return true;
+  }
+  return false;
+}
+
+/** Which links collide at configuration q (bit flags HIT_LINK1 / HIT_LINK2), same tests as computeCobsCodes. */
+export function linkCollisions(mode: CollisionMode, L: readonly [number, number], w: number, q: P2, obstacles: readonly Obstacle[], K = 5): number {
+  const [b, e, t] = armPoints(L, q);
+  return (linkHits(mode, b[0], b[1], e[0], e[1], L[0], w, obstacles, K) ? HIT_LINK1 : 0)
+    | (linkHits(mode, e[0], e[1], t[0], t[1], L[1], w, obstacles, K) ? HIT_LINK2 : 0);
+}
+
+/**
+ * Rasterised C-obstacle with per-link information: codes[j * n + i] has bit HIT_LINK1 when link 1
+ * collides and bit HIT_LINK2 when link 2 collides at (θ₁, θ₂) = (cellAngle(i), cellAngle(j)).
+ *
+ * Link 1 only depends on θ₁, so its test runs once per column (that is why link-1 collisions
+ * always form full-height bands). Link 2 reuses the elbow of its column and a forearm vector
+ * that depends only on the absolute angle φ = θ₁ + θ₂, both obtained from planarFK, so the
+ * O(n²) loop does no trigonometry.
+ */
+export function computeCobsCodes(n: number, mode: CollisionMode, L: readonly [number, number], w: number, obstacles: readonly Obstacle[], K = 5): Uint8Array {
+  const codes = new Uint8Array(n * n);
+  if (obstacles.length === 0) return codes;
+  const ex = new Float64Array(n), ey = new Float64Array(n), hit1 = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const e = planarFK([L[0]], [cellAngle(i, n)]).tip;
+    ex[i] = e[0]; ey[i] = e[1];
+    hit1[i] = linkHits(mode, 0, 0, e[0], e[1], L[0], w, obstacles, K) ? HIT_LINK1 : 0;
+  }
+  // cellAngle(i) + cellAngle(j) = -2π + (i + j + 1)·2π/n, so the forearm direction depends on k = i + j only.
+  const fx = new Float64Array(2 * n - 1), fy = new Float64Array(2 * n - 1);
+  for (let k = 0; k < 2 * n - 1; k++) {
+    const f = planarFK([L[1]], [-2 * Math.PI + ((k + 1) / n) * 2 * Math.PI]).tip;
+    fx[k] = f[0]; fy[k] = f[1];
+  }
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const tx = ex[i] + fx[i + j], ty = ey[i] + fy[i + j];
+      codes[j * n + i] = hit1[i] | (linkHits(mode, ex[i], ey[i], tx, ty, L[1], w, obstacles, K) ? HIT_LINK2 : 0);
+    }
+  }
+  return codes;
+}
+
+/** Fraction of cells with a non-zero code. */
+export function blockedFraction(codes: Uint8Array): number {
+  let k = 0;
+  for (let i = 0; i < codes.length; i++) if (codes[i]) k++;
+  return codes.length ? k / codes.length : 0;
+}
+
+/**
+ * Where does the C-obstacle meet a seam of the unwrapped square? The seam lies between index
+ * s − 1 and s (mod n) along `axis` (0: a θ₁ = const seam, scanned over rows; 1: a θ₂ = const seam,
+ * scanned over columns). Returns runs [k0, k1] (inclusive) of blocked cells touching the seam on
+ * either side, so the same runs can be marked on both opposite edges of the square.
+ */
+export function seamRuns(codes: Uint8Array, n: number, axis: 0 | 1, s: number): [number, number][] {
+  const a = (s - 1 + n) % n, b = s % n;
+  const runs: [number, number][] = [];
+  let start = -1;
+  for (let k = 0; k <= n; k++) {
+    const on = k < n && (axis === 0 ? (codes[k * n + a] || codes[k * n + b]) : (codes[a * n + k] || codes[b * n + k]));
+    if (on && start < 0) start = k;
+    if (!on && start >= 0) { runs.push([start, k - 1]); start = -1; }
+  }
+  return runs;
 }
 
 /** θ value of grid column/row index k in an n-cell discretisation of [-π, π). */
@@ -116,13 +203,13 @@ export function angleCell(theta: number, n: number): number {
  * Rasterised C-obstacle: grid[j * n + i] = 1 when (θ₁ = cellAngle(i), θ₂ = cellAngle(j)) collides.
  * i indexes θ₁ (columns), j indexes θ₂ (rows, j = 0 at θ₂ = -π).
  */
-export function computeCobsGrid(n: number, mode: CollisionMode, L: readonly [number, number], w: number, obstacles: readonly Obstacle[]): Uint8Array {
+export function computeCobsGrid(n: number, mode: CollisionMode, L: readonly [number, number], w: number, obstacles: readonly Obstacle[], K = 5): Uint8Array {
   const grid = new Uint8Array(n * n);
   if (obstacles.length === 0) return grid;
   for (let j = 0; j < n; j++) {
     const th2 = cellAngle(j, n);
     for (let i = 0; i < n; i++) {
-      if (collides(mode, L, w, [cellAngle(i, n), th2], obstacles)) grid[j * n + i] = 1;
+      if (collides(mode, L, w, [cellAngle(i, n), th2], obstacles, K)) grid[j * n + i] = 1;
     }
   }
   return grid;
@@ -195,12 +282,12 @@ export interface PathSample { q: P2; hit: boolean; seg: number }
 export interface PathCheck { samples: PathSample[]; hits: number; badSegments: number; length: number }
 
 /** Sample a joint-space polyline (shortest torus segments between consecutive points) and test every sample. */
-export function checkPath(path: readonly P2[], mode: CollisionMode, L: readonly [number, number], w: number, obstacles: readonly Obstacle[], ds = 0.02): PathCheck {
+export function checkPath(path: readonly P2[], mode: CollisionMode, L: readonly [number, number], w: number, obstacles: readonly Obstacle[], ds = 0.02, K = 5): PathCheck {
   const samples: PathSample[] = [];
   let hits = 0, badSegments = 0, length = 0;
   if (path.length === 0) return { samples, hits, badSegments, length };
   const push = (q: P2, seg: number) => {
-    const hit = collides(mode, L, w, q, obstacles);
+    const hit = collides(mode, L, w, q, obstacles, K);
     if (hit) hits++;
     samples.push({ q: wrapQ(q), hit, seg });
     return hit;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  angleCell, cellAngle, checkPath, circleCover, componentAt, computeCobsGrid, coverClearance, exactClearance, pathAt,
-  torusComponents, torusDelta, torusSegmentPieces, type Obstacle,
+  HIT_LINK1, HIT_LINK2, angleCell, blockedFraction, cellAngle, checkPath, circleCover, clearance, componentAt, computeCobsCodes,
+  computeCobsGrid, coverClearance, exactClearance, pathAt, seamRuns, torusComponents, torusDelta, torusSegmentPieces, type Obstacle,
 } from './cspace';
 
 const L: [number, number] = [1, 1];
@@ -97,5 +97,67 @@ describe('path checking', () => {
     const good = checkPath([[0, 0.3], [-Math.PI + 0.1, 0.3]], 'exact', L, 0.05, obs);
     expect(good.badSegments).toBe(0);
     expect(good.length).toBeCloseTo(Math.PI - 0.1, 9);
+  });
+});
+
+describe('coded C-obstacle raster', () => {
+  const obs: Obstacle[] = [{ c: [0.75, 0.65], r: 0.22 }, { c: [-1.2, -0.4], r: 0.3 }];
+  for (const mode of ['exact', 'cover'] as const) {
+    it(`agrees with the per-configuration query (${mode})`, () => {
+      const n = 48;
+      const L2: [number, number] = [1, 0.8];
+      const codes = computeCobsCodes(n, mode, L2, 0.06, obs, 4);
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+        const q: [number, number] = [cellAngle(i, n), cellAngle(j, n)];
+        const d = clearance(mode, L2, 0.06, q, obs, 4).d;
+        if (Math.abs(d) < 1e-9) continue; // exactly on the boundary: either answer is fine
+        expect(codes[j * n + i] !== 0).toBe(d <= 0);
+      }
+    });
+  }
+  it('link-1 collisions fill whole columns (they do not depend on θ₂)', () => {
+    const n = 64;
+    const codes = computeCobsCodes(n, 'exact', L, 0.06, [{ c: [0.5, 0], r: 0.15 }]);
+    const i = angleCell(0, n);
+    for (let j = 0; j < n; j++) expect(codes[j * n + i] & HIT_LINK1).toBe(HIT_LINK1);
+    // a disk beyond link 1's reach can only be hit by link 2
+    const far = computeCobsCodes(n, 'exact', L, 0.06, [{ c: [1.6, 0.4], r: 0.15 }]);
+    expect(far.some((v) => (v & HIT_LINK1) !== 0)).toBe(false);
+    expect(far.some((v) => (v & HIT_LINK2) !== 0)).toBe(true);
+  });
+  it('the cover is conservative and tightens as K grows', () => {
+    const n = 64;
+    const exact = blockedFraction(computeCobsCodes(n, 'exact', L, 0.06, obs));
+    const k2 = blockedFraction(computeCobsCodes(n, 'cover', L, 0.06, obs, 2));
+    const k8 = blockedFraction(computeCobsCodes(n, 'cover', L, 0.06, obs, 8));
+    expect(k2).toBeGreaterThanOrEqual(k8);
+    expect(k8).toBeGreaterThanOrEqual(exact);
+    expect(k2).toBeGreaterThan(exact);
+  });
+  it('matches the plain 0/1 grid', () => {
+    const n = 40;
+    const codes = computeCobsCodes(n, 'exact', L, 0.06, obs);
+    const grid = computeCobsGrid(n, 'exact', L, 0.06, obs);
+    let mismatches = 0;
+    for (let k = 0; k < n * n; k++) if ((codes[k] !== 0) !== (grid[k] === 1)) mismatches++;
+    expect(mismatches).toBe(0);
+  });
+});
+
+describe('seam runs', () => {
+  it('finds the rows where a C-obstacle crosses the θ₁ = ±π seam', () => {
+    const n = 64;
+    // a disk behind the base: link 1 hits it around θ₁ = π, i.e. on the seam of the default square
+    const codes = computeCobsCodes(n, 'exact', L, 0.06, [{ c: [-0.6, 0], r: 0.2 }]);
+    const runs = seamRuns(codes, n, 0, 0);
+    expect(runs).toEqual([[0, n - 1]]);
+    // moving the seam to θ₁ = 0 (between columns n/2 − 1 and n/2) leaves nothing on it
+    expect(seamRuns(codes, n, 0, n / 2)).toEqual([]);
+  });
+  it('reports separate runs along a θ₂ seam', () => {
+    const n = 8;
+    const codes = new Uint8Array(n * n);
+    codes[0 * n + 1] = 1; codes[0 * n + 2] = 1; codes[(n - 1) * n + 5] = 2;
+    expect(seamRuns(codes, n, 1, 0)).toEqual([[1, 2], [5, 5]]);
   });
 });

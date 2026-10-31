@@ -30,7 +30,7 @@ $$\\tau = G\\,\\tau_m,\\qquad \\dot\\theta = \\dot\\theta_m / G$$
 
 $$I_{\\text{eff}} = I_{\\text{link}} + G^2 J_m$$
 
-轉子雖小，$G^2$ 放大得很兇：$J_m = 3\\times10^{-4}\\ \\text{kg·m}^2$、$G=100$ 時就有 $3\\ \\text{kg·m}^2$，是 1 m 長、1 kg 連桿的三倍。`,
+轉子雖小，$G^2$ 放大得很兇：$J_m = 3\\times10^{-4}\\ \\text{kg·m}^2$、$G=100$ 時就有 $3\\ \\text{kg·m}^2$，是「長 1 m、末端 1 kg」連桿（$1\\ \\text{kg·m}^2$）的三倍。關節因此變「重」：自由擺動的週期按 $\\sqrt{I_{\\text{eff}}}$ 拉長；而且不論手臂擺成什麼姿勢，這份慣量都一樣，是個常數。`,
     simHint: '實驗②：馬達斷電、連桿從 60° 放開。G 依序換成 1、50、100、200（會自動重新放開），比較右側慣量長條與擺動的快慢；擺動很快停下，則是被放大的摩擦（第 4 步）。',
   },
   {
@@ -56,7 +56,7 @@ $$M_{\\text{eff}}(\\theta) \\approx M(\\theta) + \\diag(G_1^2J_1,\\ G_2^2J_2)$$
 $$\\tau_f = b\\,\\dot\\theta + \\tau_c\\,\\sgn(\\dot\\theta)$$
 
 **黏滯**項與速度成正比，讓自由擺動按比例（指數）衰減；**庫侖**項大小固定、方向隨速度翻轉，讓振幅每擺一次少掉固定量，最後停在偏離平衡處。靜止時還得先超過**靜摩擦** $\\tau_s>\\tau_c$ 才動得起來，於是低速拖動時會「卡住→突然滑一段→又卡住」，稱為**黏滑（stick–slip）**。數值上 $\\sgn(0)$ 沒有定義，要用死區判斷「卡住」，或用 $\\tanh$ 平滑。`,
-    simHint: '實驗⑤：彈簧以 0.15 rad/s 慢慢拉動連桿，看 θ̇ 走走停停、τ_f 在卡住時跟著彈簧力矩爬升。再把「摩擦實作」切成 sgn（τ_f 狂抖）與 tanh（不再真正卡住）比較。',
+    simHint: '實驗⑤：彈簧以 0.15 rad/s 慢慢拉動連桿，看 θ̇ 走走停停、τ_f 在卡住時跟著彈簧力矩爬升。再把「摩擦實作」切成 sgn（起步時 τ_f 每步正負亂跳，之後也不再黏滑）與 tanh（平滑，但不會真正卡住）比較。',
   },
   {
     title: '修正後的逆動力學與下一章',
@@ -121,9 +121,9 @@ type ExpId = 'motor' | 'free' | 'coupling' | 'push' | 'spring' | 'decomp';
 const EXPS: { id: ExpId; label: string; title: string }[] = [
   { id: 'motor', label: '① 馬達力矩', title: '馬達以固定力矩出力，經減速機抬起連桿' },
   { id: 'free', label: '② 自由擺動', title: '馬達斷電，連桿從 60° 放開' },
-  { id: 'coupling', label: '③ 2R 耦合', title: '關節 1 照軌跡轉動、關節 2 斷電：看它被拖動多少' },
+  { id: 'coupling', label: '③ 耦合', title: '關節 1 照軌跡轉動、關節 2 斷電：看它被拖動多少' },
   { id: 'push', label: '④ 外力推動', title: '從外面以 3 N·m 推連桿 0.5 秒（背驅動測試）' },
-  { id: 'spring', label: '⑤ 慢速拖動', title: '減速機輸出端經扭簧慢慢拉動連桿（黏滑）' },
+  { id: 'spring', label: '⑤ 黏滑', title: '減速機輸出端經扭簧慢慢拉動連桿（黏滑）' },
   { id: 'decomp', label: '⑥ 力矩分解', title: '2R 沿軌跡來回擺動，拆解所需力矩' },
 ];
 
@@ -137,6 +137,8 @@ const BACKDRIVE_ALPHA = 2; // rad/s² for the "torque needed to start moving" re
 const COUP = { th0: [-0.9, 0.3], delta: 1.2, T: 1.0, end: 2.5 };
 const SWING = { A: [-2.3, 1.1], B: [-0.8, -0.9], Tf: 1.4 };
 const PIVOT: Pt = [-0.15, 0.25];
+const WORLD_COUPLING = { xmin: -2.3, xmax: 2.3, ymin: -2.15, ymax: 2.15 };
+const WORLD_DECOMP = { xmin: -2.3, xmax: 2.3, ymin: -2.2, ymax: 0.75 };
 const H_JOINT = 1e-3;
 const H_ARM = 1 / 400;
 const DEG = 180 / Math.PI;
@@ -176,6 +178,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const fr: { b: number; tc: number; ts: number; mode: FrictionMode } = { ...FRICTION_DEFAULT, mode: 'karnopp' };
   let startAngle = 0;
   let stuckTime = 0;
+  let stuckRun = 0; // seconds the joint has stayed stuck without interruption
   let runTime = 0;
   let tArm = 0;
   let peakBare = 0;
@@ -197,9 +200,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let geared = new CouplingTwin(arm2Params(false), G(), Jm, COUP.th0, COUP.delta, COUP.T);
 
   // ---------- layout
-  const expChips = presetChips(host, EXPS.map((e) => ({ label: e.label, title: e.title, apply: () => setExp(e.id) })), { label: '實驗' });
+  const expChips = presetChips(host, EXPS.map((e) => ({ label: e.label, title: e.title, apply: () => setExp(e.id) })));
   const cvJ = new Canvas2D(host, { aspect: 2, world: { xmin: -1.65, xmax: 1.95, ymin: -1.2, ymax: 1.22 }, overlay: true });
-  const cvR = new Canvas2D(host, { aspect: 1.75, world: { xmin: -2.3, xmax: 2.3, ymin: -2.2, ymax: 2.2 }, overlay: true });
+  const cvR = new Canvas2D(host, { aspect: 2, world: WORLD_COUPLING, overlay: true });
 
   const shared = controlPanel(host, { compact: true });
   const sG = slider(shared, {
@@ -208,46 +211,50 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onInput: (v) => { gIndex = Math.round(v); onParamsChanged(true); },
   });
   const sJ = slider(shared, {
-    label: '轉子慣量 J_m', min: 0, max: 10, step: 0.1, value: Jm * 1e4,
+    label: '轉子 J_m', min: 0, max: 10, step: 0.1, value: Jm * 1e4,
     format: (v) => `${fmt(v, 1)}×10⁻⁴ kg·m²`,
     onInput: (v) => { Jm = v * 1e-4; onParamsChanged(true); },
+  });
+  const sTau = slider(shared, {
+    label: 'τ_m 指令', min: 0, max: 0.3, step: 0.005, value: tauCmd, unit: 'N·m', title: '馬達端的力矩指令（電流控制）',
+    onInput: (v) => { tauCmd = v; if (exp === 'motor') jsim.drive = driveFor('motor'); },
   });
   const sharedRow = row(shared);
   const pb = playback(sharedRow, {
     onPlay: () => play(),
     onPause: () => pause(),
-    onReset: () => { restart(); play(); },
+    onReset: () => { restart(); },
     onSpeed: (s) => { loop.speed = s; },
   });
   const pushBtn = button(sharedRow, { label: '👉 再推一次', small: true, onClick: () => { pushAgain(); } });
+  const selMode = select<FrictionMode>(sharedRow, {
+    options: [
+      { value: 'karnopp', label: '摩擦：死區＋靜摩擦（Karnopp）' },
+      { value: 'tanh', label: '摩擦：tanh 平滑' },
+      { value: 'sgn', label: '摩擦：直接用 sgn（會抖）' },
+    ],
+    value: fr.mode,
+    onChange: (m) => {
+      fr.mode = m;
+      // restart the stick–slip run so the start-up phase (link held below τ_c) shows each treatment
+      if (exp === 'spring') { restart(); play(); } else onParamsChanged(false);
+    },
+  });
+  selMode.el.title = 'sgn(θ̇) 在零速附近的數值處理方式';
 
   // single-joint panel
   const panelJ = el('div');
   const panelR = el('div');
   host.append(panelJ, panelR);
   const ctlJ = controlPanel(panelJ, { compact: true });
-  const sTau = slider(ctlJ, {
-    label: 'τ_m 指令（馬達端）', min: 0, max: 0.3, step: 0.005, value: tauCmd, unit: 'N·m',
-    onInput: (v) => { tauCmd = v; if (exp === 'motor') jsim.drive = driveFor('motor'); },
-  });
   const sB = slider(ctlJ, { label: 'b（黏滯）', min: 0, max: 1, step: 0.01, value: fr.b, unit: 'N·m·s', onInput: (v) => { fr.b = v; onParamsChanged(false); } });
   const sTc = slider(ctlJ, { label: 'τ_c（庫侖）', min: 0, max: 2, step: 0.01, value: fr.tc, unit: 'N·m', onInput: (v) => { fr.tc = v; onParamsChanged(false); } });
   const sTs = slider(ctlJ, { label: 'τ_s（靜摩擦）', min: 0, max: 3, step: 0.01, value: fr.ts, unit: 'N·m', onInput: (v) => { fr.ts = v; onParamsChanged(false); } });
-  const selMode = select<FrictionMode>(ctlJ, {
-    label: '摩擦實作（sgn 的處理）',
-    options: [
-      { value: 'karnopp', label: '死區＋靜摩擦（Karnopp）' },
-      { value: 'tanh', label: 'tanh 平滑' },
-      { value: 'sgn', label: '直接用 sgn（會抖）' },
-    ],
-    value: fr.mode,
-    onChange: (m) => { fr.mode = m; onParamsChanged(false); },
-  });
   const [plotLHost, plotRHost] = split(panelJ);
-  const plotL = new Plot2D(plotLHost, { title: 'θ(t)', yLabel: '°', xLabel: 't (s)', series: [{ name: 'θ (°)' }], xWindow: 10, height: 135, yMinSpan: 2 });
+  const plotL = new Plot2D(plotLHost, { title: 'θ(t)', yLabel: 'θ (°)', xLabel: 't (s)', series: [{ name: 'θ (°)' }], xWindow: 10, height: 135, yMinSpan: 2, legend: false });
   const plotR = new Plot2D(plotRHost, {
     title: '關節端力矩 (N·m)', yLabel: 'N·m', xLabel: 't (s)', xWindow: 10, height: 135, yMinSpan: 0.2,
-    series: [{ name: '驅動' }, { name: '摩擦 τ_f' }, { name: '重力負載' }],
+    series: [{ name: '驅動' }, { name: '摩擦' }, { name: '重力' }],
   });
   const infoJ = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.15rem 1rem', marginTop: '0.25rem' } });
   panelJ.appendChild(infoJ);
@@ -258,7 +265,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const panelDec = el('div');
   panelR.append(panelCoup, panelDec);
   const coupPlot = new Plot2D(panelCoup, {
-    title: '關節角變化（關節 2 不出力）', yLabel: '°', xLabel: 't (s)', height: 150, xRange: [0, COUP.end],
+    title: '關節角變化（關節 2 不出力）', yLabel: 'Δθ (°)', xLabel: 't (s)', height: 150, xRange: [0, COUP.end],
     series: [{ name: 'Δθ₂ 有減速機' }, { name: 'Δθ₂ 直驅' }, { name: 'Δθ₁（兩者相同）', dash: [5, 4] }],
   });
   const matRow = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.1rem 0.4rem' } });
@@ -270,8 +277,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // 2R panel: torque decomposition
   const [barsL, barsR] = split(panelDec);
-  const BAR_LABELS = ['M(θ)θ̈', 'c', 'g', '轉子', '摩擦', '合計 τ'];
-  const barColors = () => [cssVar('--series-1'), cssVar('--series-6'), cssVar('--series-3'), cssVar('--series-5'), cssVar('--series-4'), cssVar('--fg')];
+  const BAR_LABELS = ['Mθ̈ + c', '重力 g', '轉子 ΔMθ̈', '摩擦', '合計 τ'];
+  // CSS variable strings (not resolved colours) so the bars follow theme switches
+  const barColors = () => ['var(--series-1)', 'var(--series-3)', 'var(--series-5)', 'var(--series-4)', 'var(--fg)'];
   const bars1 = torqueBars(barsL, { labels: BAR_LABELS, max: 20, unit: 'N·m', digits: 1, title: '關節 1 所需力矩', colors: barColors() });
   const bars2 = torqueBars(barsR, { labels: BAR_LABELS, max: 20, unit: 'N·m', digits: 1, title: '關節 2 所需力矩', colors: barColors() });
   const infoD = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.15rem 1rem' } });
@@ -324,10 +332,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const v = c.visible();
     // gravity / plane indicator
     if (p.gravity) {
-      c.arrow([v.xmin + 0.2, v.ymax - 0.12], [v.xmin + 0.2, v.ymax - 0.5], { color: muted, width: 2 });
-      c.text([v.xmin + 0.33, v.ymax - 0.32], 'g', { color: muted, font: 'italic 14px serif' });
+      c.arrow([v.xmin + 0.2, v.ymin + 0.6], [v.xmin + 0.2, v.ymin + 0.2], { color: muted, width: 2 });
+      c.text([v.xmin + 0.33, v.ymin + 0.4], 'g', { color: muted, font: 'italic 14px serif' });
     } else {
-      c.text([v.xmin + 0.05, v.ymax - 0.2], '俯視：水平面，無重力', { color: muted, align: 'left' });
+      c.text([v.xmin + 0.05, v.ymin + 0.15], '俯視：水平面，無重力', { color: muted, align: 'left' });
     }
     // inertia composition bar
     const IL = LINK.m * LINK.L * LINK.L;
@@ -361,9 +369,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     }
     drawGear(c, pin, rp, Math.max(6, Math.round(18 * (rp / R))), motorAngle, accent, cssVar('--bg-elev'));
     c.line(pin, [pin[0] + 0.15 * Math.cos(motorAngle), pin[1] + 0.15 * Math.sin(motorAngle)], { color: accent, width: 3 });
-    c.text([pin[0], pin[1] + 0.27], '馬達轉子', { color: accent, font: '12px sans-serif' });
+    c.text([pin[0] - 0.2, pin[1]], '馬達轉子', { color: accent, align: 'right', font: '12px sans-serif' });
     drawGear(c, PIVOT, R, 18, outAngle, muted, cssVar('--bg-elev'));
-    c.text([PIVOT[0] - 0.1, PIVOT[1] + 0.36], `減速機 ${p.G} : 1`, { color: fg, font: '12px sans-serif' });
+    c.text([PIVOT[0], PIVOT[1] + R + 0.16], `減速機 ${p.G} : 1`, { color: fg, font: '12px sans-serif' });
     // spring drive: output arm (dashed) + torsional spring to the link
     if (jsim.drive.kind === 'spring') {
       const ao = jsim.outputAngle() - Math.PI / 2;
@@ -397,7 +405,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const muted = cssVar('--fg-muted');
     const v = c.visible();
     if (exp === 'coupling') {
-      c.text([v.xmin + 0.1, v.ymax - 0.2], '俯視：水平面，無重力', { color: muted, align: 'left' });
+      c.text([v.xmin + 0.1, v.ymin + 0.2], '俯視：水平面，無重力', { color: muted, align: 'left' });
       drawPlanarArm(c, [1, 1], COUP.th0, { alpha: 0.15, linkWidth: 6 });
       const cBare = cssVar('--series-2');
       const cGear = cssVar('--series-1');
@@ -428,11 +436,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         jsim.step(h);
         runTime += h;
         if (jsim.stuck) stuckTime += h;
+        stuckRun = jsim.stuck ? stuckRun + h : 0;
       });
       plotL.push(jsim.t, [exp === 'spring' ? jsim.omega : jsim.theta * DEG]);
       plotR.push(jsim.t, [jsim.tauDrive, jsim.tauF, jsim.p.gravity ? jsim.tauGrav : Number.NaN]);
       pb.setTime(jsim.t);
       cvJ.requestRender();
+      // nothing more can happen: the joint is held by static friction and no push is pending
+      const pushPending = jsim.drive.kind === 'push' && jsim.t < jsim.drive.t0 + jsim.drive.dur;
+      if ((exp !== 'spring' && stuckRun > 2 && !pushPending) || (exp === 'spring' && jsim.t > 45)) pause();
     } else if (exp === 'coupling') {
       substep(dt, H_ARM, (h) => {
         bare.step(h);
@@ -476,6 +488,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (!isArm()) {
       jsim = new SingleJointSim(jointParams(), driveFor(exp), startAngle);
       stuckTime = 0;
+      stuckRun = 0;
       runTime = 0;
       plotL.clear();
       plotR.clear();
@@ -513,7 +526,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     for (let t = 0; t < 2 * SWING.Tf; t += 0.05) {
       const s = swingTrajectory(t, SWING.A, SWING.B, SWING.Tf);
       const br = torqueBreakdown(s.theta, s.dtheta, s.ddtheta, armDrive());
-      for (const k of ['inertial', 'velocity', 'gravity', 'rotor', 'friction', 'total'] as const) mx = Math.max(mx, Math.abs(br[k][0]), Math.abs(br[k][1]));
+      for (let i = 0; i < 2; i++) mx = Math.max(mx, Math.abs(br.inertial[i] + br.velocity[i]), Math.abs(br.gravity[i]), Math.abs(br.rotor[i]), Math.abs(br.friction[i]), Math.abs(br.total[i]));
     }
     bars1.setMax(mx * 1.05);
     bars2.setMax(mx * 1.05);
@@ -547,6 +560,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const arm = isArm(e);
     cvJ.el.style.display = arm ? 'none' : '';
     cvR.el.style.display = arm ? '' : 'none';
+    if (arm) cvR.setWorld(e === 'coupling' ? WORLD_COUPLING : WORLD_DECOMP);
     panelJ.style.display = arm ? 'none' : '';
     panelR.style.display = arm ? '' : 'none';
     panelCoup.style.display = e === 'coupling' ? '' : 'none';
@@ -556,14 +570,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     setFriction(e === 'spring' ? FRICTION_STICKSLIP : FRICTION_DEFAULT);
     startAngle = e === 'free' ? Math.PI / 3 : 0;
     plotL.setOptions(e === 'spring'
-      ? { title: 'θ̇(t)：卡住時為 0', yLabel: 'rad/s', series: [{ name: 'θ̇ (rad/s)' }], yMinSpan: 0.05 }
-      : { title: 'θ(t)', yLabel: '°', series: [{ name: 'θ (°)' }], yMinSpan: 2 });
-    plotR.setOptions({ series: [{ name: e === 'spring' ? '彈簧力矩' : e === 'push' ? '外力' : '驅動 Gτ_m' }, { name: '摩擦 τ_f' }, { name: '重力負載' }] });
+      ? { title: 'θ̇(t)：卡住時為 0', yLabel: 'θ̇ (rad/s)', series: [{ name: 'θ̇ (rad/s)' }], yMinSpan: 0.05 }
+      : { title: 'θ(t)', yLabel: 'θ (°)', series: [{ name: 'θ (°)' }], yMinSpan: 2 });
+    plotR.setOptions({ series: [{ name: e === 'spring' ? '彈簧' : e === 'push' ? '外力' : '驅動 Gτ_m' }, { name: '摩擦' }, { name: '重力' }] });
     noteJ.textContent = {
-      motor: `馬達：失速力矩 ${MOTOR.stallTorque} N·m、空載轉速 ${MOTOR.noLoadSpeed} rad/s（約 ${fmt(rpm(MOTOR.noLoadSpeed), 0)} rpm），力矩隨轉速線性下降。馬達端庫侖摩擦 ${TC_MOTOR} N·m，在關節端放大成 G 倍。`,
-      free: '拖曳連桿末端可改變放開角度。關節端的總庫侖摩擦 = τ_c + G·0.01 N·m（馬達端摩擦被放大）。',
-      push: '馬達斷電。外力在 t = 0.3 s 起作用 0.5 秒；「再推一次」可重複。',
-      spring: `減速機輸出端以 ${SPRING.omegaOut} rad/s 在 ±${fmt(SPRING.amp * DEG, 0)}° 間來回轉，經扭簧 k = ${SPRING.k} N·m/rad 拉動連桿（轉子在彈簧另一側，不影響連桿）。`,
+      motor: `馬達：失速力矩 ${MOTOR.stallTorque} N·m，轉速達 ${MOTOR.noLoadSpeed} rad/s（${fmt(rpm(MOTOR.noLoadSpeed), 0)} rpm）時力矩降為 0。可拖曳連桿末端改變起始角。`,
+      free: `拖曳連桿末端可改變放開角度。關節端庫侖摩擦 = τ_c + G × ${TC_MOTOR} N·m（馬達端摩擦被放大）。`,
+      push: '馬達斷電；外力在 t = 0.3 s 起作用 0.5 秒，「再推一次」可重複。',
+      spring: `輸出端以 ${SPRING.omegaOut} rad/s 在 ±${fmt(SPRING.amp * DEG, 0)}° 間來回轉，經扭簧（k = ${SPRING.k} N·m/rad）拉動連桿；轉子在彈簧另一側。`,
       coupling: '', decomp: '',
     }[e];
     if (e === 'motor') buildInfo(infoJ, [['tm', 'τ_m', 'N·m'], ['wm', 'ω_m'], ['tj', 'τ = Gτ_m', 'N·m'], ['wj', 'θ̇', 'rad/s'], ['pw', '功率 τ_mω_m = τθ̇', 'W'], ['eq', '平衡角 θ*']]);
@@ -619,7 +633,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const s = swingTrajectory(tArm, SWING.A, SWING.B, SWING.Tf);
       const br = torqueBreakdown(s.theta, s.dtheta, s.ddtheta, armDrive());
       peakTau = [Math.max(peakTau[0], Math.abs(br.total[0])), Math.max(peakTau[1], Math.abs(br.total[1]))];
-      const vals = (i: number) => [br.inertial[i], br.velocity[i], br.gravity[i], br.rotor[i], br.friction[i], br.total[i]];
+      const vals = (i: number) => [br.inertial[i] + br.velocity[i], br.gravity[i], br.rotor[i], br.friction[i], br.total[i]];
       bars1.set(vals(0));
       bars2.set(vals(1));
       setInfo('m1', br.motor[0], 3);

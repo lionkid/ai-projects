@@ -1,6 +1,6 @@
 import type { Lesson, LessonContext, LessonHandle, LessonStep, QuizQuestion } from '@/types';
 import {
-  el, cssVar, fmt, controlPanel, row, slider, toggle, select, playback, simTitle, note, split,
+  el, cssVar, fmt, controlPanel, row, slider, toggle, select, playback, simTitle, split,
   Canvas2D, Plot2D, plotGroup, presetChips, createLoop, drawPlanarArm,
   type Pt, type Marker, type SeriesSpec, type Handle,
 } from '@/ui';
@@ -22,7 +22,7 @@ $$\\theta_e(t) = \\theta_d(t) - \\theta(t).$$
 
 - **穩態誤差** $e_{ss}$：等得夠久之後還剩多少誤差；
 - **超調（overshoot）** $M_p$：誤差衝過終值多少，以起始誤差的百分比表示；
-- **2% 安定時間** $t_s$：從這一刻起誤差都留在終值 ±2% 的範圍內。
+- **2% 安定時間** $t_s$：從這一刻起，誤差與終值的差距一直小於起始差距的 2%。
 
 這個範例故意加了一點固定負載，所以 $e_{ss}$ 不是零，第 4 步會解釋原因。`,
     simHint: '播放動畫看關節從 0 轉到 θ_d = 1 rad。在誤差圖上找出 M_p 點、t_s 虛線與 e_ss 水平線，再對照下方表格的「模擬量測」列。',
@@ -46,7 +46,7 @@ $$M\\ddot\\theta_e + (b+K_d)\\,\\dot\\theta_e + K_p\\,\\theta_e = 0,$$
 
 $$\\omega_n = \\sqrt{K_p/M}, \\qquad \\zeta = \\frac{b+K_d}{2\\sqrt{K_p M}} .$$
 
-$K_p$ 像彈簧、$K_d$ 像阻尼（本頁關節 $M = 0.5$ kg·m²、$b = 0.1$ N·m·s/rad）。$\\zeta<1$ 時兩個共軛根讓響應振盪，超調 $M_p = e^{-\\pi\\zeta/\\sqrt{1-\\zeta^2}}$、$t_s \\approx 4/(\\zeta\\omega_n)$；$\\zeta = 1$（臨界阻尼）是所有不超調的設定裡最快的。`,
+$K_p$ 像彈簧、$K_d$ 像阻尼（本頁關節 $M = 0.5$ kg·m²、$b = 0.1$ N·m·s/rad）。$\\zeta<1$ 時兩個共軛根讓響應振盪，超調 $M_p = e^{-\\pi\\zeta/\\sqrt{1-\\zeta^2}}$、$t_s \\approx 4/(\\zeta\\omega_n)$；$K_p$ 固定時，$\\zeta = 1$（臨界阻尼）是所有不超調的設定裡最快的。`,
     simHint: '目前 ζ ≈ 0.17，超調很大。把 Kd 往上拉，或直接把 s 平面上的根往左下拖，讓 ζ 接近 1；比較表格中的「線性預測」與「模擬量測」。',
   },
   {
@@ -162,6 +162,7 @@ const PRESETS: { label: string; title: string; s: Partial<SimState> }[] = [
 ];
 
 const niceStep = (span: number): number => {
+  if (!(span > 0) || !Number.isFinite(span)) return 1;
   const raw = span / 6;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const r = raw / mag;
@@ -176,24 +177,24 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let locus: Complex[] = [];
   let tCur = 0;
   let dragging = false;
+  let destroyed = false;
 
   // ---- layout -------------------------------------------------------------
   simTitle(host, '單關節 PID 實驗台', '誤差動態');
   const chips = presetChips(host, PRESETS.map((p, i) => ({ label: p.label, title: p.title, apply: () => applyPreset(i) })));
   const [left, right] = split(host);
-  const armCv = new Canvas2D(left, { aspect: 1.4, world: { xmin: -1.25, xmax: 1.25, ymin: -1.15, ymax: 1.25 }, overlay: true });
+  const armCv = new Canvas2D(left, { aspect: 1.45, world: { xmin: -1.25, xmax: 1.25, ymin: -1.15, ymax: 1.25 }, overlay: true });
   armCv.overlay.style.whiteSpace = 'pre';
   const rootWrap = el('div');
   const previewWrap = el('div', { style: { display: 'none' } });
   right.append(rootWrap, previewWrap);
-  const rootCv = new Canvas2D(rootWrap, { aspect: 1.4, world: { xmin: -8, xmax: 2, ymin: -6, ymax: 6 }, overlay: true });
+  const rootCv = new Canvas2D(rootWrap, { aspect: 1.45, world: { xmin: -8, xmax: 2, ymin: -6, ymax: 6 }, overlay: true });
   rootCv.overlay.style.whiteSpace = 'pre';
   // The preview canvas is created on first use: a Canvas2D built while hidden would get its
   // height inside its own ResizeObserver callback, which browsers report as an RO loop.
   const previewHolder = el('div');
   previewWrap.appendChild(previewHolder);
   let previewCv: Canvas2D | null = null;
-  const rootNote = note(host, 's 平面：× ＝ 閉迴路特徵根（線性模型）；淡色點 ＝ Kp 由 0 增大時根走過的軌跡。');
 
   const panel = controlPanel(host, { compact: true });
   // One flex row for the two selects and the on/off switches keeps the panel to three rows.
@@ -240,15 +241,15 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const pb = playback(pbRow, {
     duration: T_END,
     playing: true,
-    onPlay: () => loop.start(),
+    onPlay: () => { if (tCur >= T_END - 1e-9) tCur = 0; loop.start(); },
     onPause: () => loop.stop(),
     onReset: () => { tCur = 0; frame(); },
     onSpeed: (s) => { loop.speed = s; },
     onScrub: (t) => { tCur = t; frame(); },
   });
 
-  const errPlot = new Plot2D(host, { title: '誤差 θ_e(t)', yLabel: 'θ_e (rad)', series: [{ name: 'θ_e' }], xRange: [0, T_END], height: 112 });
-  const uPlot = new Plot2D(host, { title: '致動指令', xLabel: 't (s)', yLabel: 'τ (N·m)', series: [{ name: 'τ' }], xRange: [0, T_END], height: 102 });
+  const errPlot = new Plot2D(host, { title: '誤差 θ_e(t)', yLabel: 'θ_e (rad)', series: [{ name: 'θ_e' }], xRange: [0, T_END], height: 108 });
+  const uPlot = new Plot2D(host, { title: '致動指令', xLabel: 't (s)', yLabel: 'τ (N·m)', series: [{ name: 'τ' }], xRange: [0, T_END], height: 98 });
   const group = plotGroup([errPlot, uPlot]);
 
   const tableWrap = el('div', { class: 'md', style: { fontSize: '0.78rem', overflowX: 'auto' } });
@@ -339,11 +340,17 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     return () => {
       if (pending) return;
       pending = true;
-      requestAnimationFrame(() => { pending = false; recompute(); });
+      requestAnimationFrame(() => { pending = false; if (!destroyed) recompute(); });
     };
   })();
 
   function touched(): void { chips.clear(); scheduleRecompute(); }
+
+  /** Set series data and empty the unused slots (Plot2D autoscales over every stored array). */
+  function setSeries(plot: Plot2D, data: [ArrayLike<number>, ArrayLike<number>][]): void {
+    data.forEach(([xs, ys], i) => plot.setXY(i, xs, ys));
+    for (let i = data.length; i < 5; i++) plot.setXY(i, [], []);
+  }
 
   function updatePlots(): void {
     const c1 = cssVar('--series-1', '#2563eb'), c4 = cssVar('--series-4', '#d97706'), c5 = cssVar('--series-5', '#7c3aed'), c8 = cssVar('--series-8', '#4b5563');
@@ -369,7 +376,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       eData.push([alt.t, alt.err]);
     }
     errPlot.setOptions({ series: eSeries });
-    eData.forEach(([xs, ys], i) => errPlot.setXY(i, xs, ys));
+    setSeries(errPlot, eData);
     // markers: steady-state level, settling time, overshoot peak (step input only)
     const marks: Marker[] = [];
     if (st.ref === 'step' && !trial.diverged) {
@@ -389,7 +396,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const uData: [number[], number[]][] = [[trial.t, trial.u]];
       if (g.ki > 0) { uSeries.push({ name: 'I 項 Ki∫θ_e', color: c4, dash: [6, 4], width: 1.8 }); uData.push([trial.t, trial.iTerm]); }
       uPlot.setOptions({ title: '力矩 τ(t)', yLabel: 'τ (N·m)', series: uSeries });
-      uData.forEach(([xs, ys], i) => uPlot.setXY(i, xs, ys));
+      setSeries(uPlot, uData);
       const lim = st.tauMax;
       group.setMarkers(1, Number.isFinite(lim) ? [{ y: lim, color: cssVar('--danger', '#b91c1c'), label: '±τmax' }, { y: -lim, color: cssVar('--danger', '#b91c1c') }] : []);
     } else {
@@ -397,7 +404,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const uData: [number[], number[]][] = [[trial.t, trial.u]];
       if (g.ki > 0) { uSeries.push({ name: 'I 項 Ki∫θ_e', color: c4, dash: [6, 4], width: 1.8 }); uData.push([trial.t, trial.iTerm]); }
       uPlot.setOptions({ title: '速度指令 u(t)', yLabel: 'u (rad/s)', series: uSeries });
-      uData.forEach(([xs, ys], i) => uPlot.setXY(i, xs, ys));
+      setSeries(uPlot, uData);
       group.setMarkers(1, []);
     }
   }
@@ -447,8 +454,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       caption.textContent = g.kp > 0 ? `時間常數 1/Kp = ${fmt(1 / g.kp, 3)} s（理想速度源：不受擾動力矩影響）` : 'Kp = 0：誤差不會被修正';
     }
     const rhp = roots.some((z) => z.re > 1e-9);
-    warning.textContent = trial.diverged || rhp ? '⚠ 有特徵根在右半平面：閉迴路不穩定，誤差會發散。'
-      : trial.saturated ? '⚠ 力矩曾經飽和：飽和期間迴路等於斷開，線性預測不再可靠。' : '';
+    warning.textContent = trial.diverged || rhp ? '⚠ 根在右半平面：閉迴路不穩定、誤差發散'
+      : trial.saturated ? '⚠ 力矩曾飽和：飽和時迴路等於斷開，線性預測失效' : '';
   }
 
   // ---- drawing ------------------------------------------------------------
@@ -535,7 +542,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     for (const z of roots) cross(c, z, z.re > 1e-9 ? danger : accent);
     const g = gains();
     const pred = st.mode === 'torque' ? pdPrediction(PLANT, g.kp, g.kd) : null;
-    c.overlay.textContent = `s 平面（${roots.length} 個根）` + (pred ? `\nζ = ${fmt(pred.zeta, 2)}  ωn = ${fmt(pred.wn, 2)}` : st.mode === 'velocity' ? `\ns = −Kp = ${fmt(-g.kp, 2)}` : '');
+    c.overlay.textContent = `s 平面　× 特徵根　· Kp 由 0 增大的軌跡` + (pred ? `\nζ = ${fmt(pred.zeta, 2)}  ωn = ${fmt(pred.wn, 2)}` : st.mode === 'velocity' ? `\ns = −Kp = ${fmt(-g.kp, 2)}` : '');
   };
 
   // Draggable dominant root (PD or P only): moving it solves for the gains.
@@ -609,7 +616,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   }
   function ensurePreview(): void {
     if (previewCv) return;
-    previewCv = new Canvas2D(previewHolder, { aspect: 1.4, world: { xmin: -1.15, xmax: 2.15, ymin: -1.35, ymax: 1.75 }, overlay: true });
+    previewCv = new Canvas2D(previewHolder, { aspect: 1.45, world: { xmin: -1.15, xmax: 2.15, ymin: -1.35, ymax: 1.75 }, overlay: true });
     previewCv.overlay.style.whiteSpace = 'pre';
     previewCv.draw = drawPreview;
     previewCv.addHandle({
@@ -652,7 +659,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     tFF.el.style.display = torque ? 'none' : '';
     rootWrap.style.display = st.preview ? 'none' : '';
     previewWrap.style.display = st.preview ? '' : 'none';
-    rootNote.style.display = st.preview ? 'none' : '';
     if (st.preview) ensurePreview();
   }
 
@@ -661,20 +667,28 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     syncControls();
     tCur = 0;
     recompute();
-    if (!loop.running && pb.playing) loop.start();
+    play();
+  }
+  /** Run the trial animation once from the current time; it stops on the last frame. */
+  function play(): void {
+    pb.setPlaying(true, { silent: true });
+    loop.start();
   }
 
   // ---- animation ------------------------------------------------------------
+  // Moving the plot cursor repaints both plots, so during playback it is updated at ~15 Hz.
+  let lastCursor = -Infinity;
   function frame(): void {
     const t = Math.min(tCur, T_END);
     armCv.requestRender();
-    group.setCursor(t);
+    const now = performance.now();
+    if (!loop.running || t >= T_END || now - lastCursor > 66) { group.setCursor(t); lastCursor = now; }
     pb.setTime(t);
   }
   const loop = createLoop((dt) => {
-    tCur += dt;
-    if (tCur > T_END + 0.8) tCur = 0;
+    tCur = Math.min(T_END, tCur + dt);
     frame();
+    if (tCur >= T_END) { loop.stop(); pb.setPlaying(false, { silent: true }); }
   });
 
   // ---- step focus ----------------------------------------------------------
@@ -699,11 +713,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const unsubTheme = ctx.onThemeChange(() => { updatePlots(); armCv.requestRender(); rootCv.requestRender(); previewCv?.requestRender(); });
   syncControls();
   onStep(ctx.currentStep);
-  loop.start();
 
   return {
     onStep,
     destroy() {
+      destroyed = true;
       loop.stop();
       unsubTheme();
       armCv.destroy(); rootCv.destroy(); previewCv?.destroy();

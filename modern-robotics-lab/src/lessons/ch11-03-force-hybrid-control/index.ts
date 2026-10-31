@@ -127,8 +127,13 @@ const F_SCALE = 0.012;
 const TEST_SCALE = 0.032;
 const ACC_SCALE = 0.03;
 /** Plot sample period (s) and the per-frame CPU budget for physics (ms). */
-const LOG_DT = 0.004;
-const FRAME_BUDGET_MS = 14;
+const LOG_DT = 0.01;
+const FRAME_BUDGET_MS = 8;
+/** Plot samples are batched and handed to Plot2D at most this often (each push redraws every point). */
+const PLOT_FLUSH_MS = 100;
+/** Minimum interval between canvas redraws while the sim runs (ms): ~30 fps is plenty here. */
+const DRAW_MIN_MS = 30;
+const PLOT_WINDOW = 6;
 const MODE_LABEL: Record<Mode, string> = {
   position: '位置控制', force: '純力控制', hybrid: '混合運動—力控制', conflict: '錯誤：法向同時指定位置與力',
 };
@@ -172,20 +177,29 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     { color: 'var(--series-4)', label: 'F_sensor（桌面推手臂）' },
     { color: 'var(--series-1)', label: '運動方向 t ／ P F' },
     { color: 'var(--series-7)', label: '施力方向 n ／ (I−P) F' },
-    { color: 'var(--warn)', label: '切向目標 s_d（可拖曳 s₀）' },
+    { color: 'var(--series-5)', label: '切向目標 s_d（可拖曳 s₀）' },
   ]);
   const [plotHostA, plotHostB] = split(host);
-  const seriesF = () => [{ name: 'f（實際）', color: cssVar('--series-4') }, { name: 'f_d', color: cssVar('--fg-muted'), dash: [5, 4] }];
+  const seriesF = () => [{ name: 'f（實際）', color: cssVar('--series-4') }, { name: 'f_d', color: cssVar('--fg-muted'), width: 1.2 }];
   const seriesE = () => [{ name: 'e_s', color: cssVar('--series-1') }, { name: 'h', color: cssVar('--series-6') }];
-  const plotF = new Plot2D(plotHostA, { title: '法向力 f (N)', xLabel: 't (s)', height: 160, xWindow: 8, yMinSpan: 20, series: seriesF() });
-  const plotE = new Plot2D(plotHostB, { title: '切向誤差 e_s 與離桌高度 h (mm)', xLabel: 't (s)', height: 160, xWindow: 8, yMinSpan: 2, series: seriesE() });
+  const plotF = new Plot2D(plotHostA, { title: '法向力 f (N)', xLabel: 't (s)', height: 160, xWindow: PLOT_WINDOW, yMinSpan: 20, series: seriesF() });
+  const plotE = new Plot2D(plotHostB, { title: '切向誤差 e_s 與離桌高度 h (mm)', xLabel: 't (s)', height: 160, xWindow: PLOT_WINDOW, yMinSpan: 2, series: seriesE() });
+  let pending: { t: number; f: number[]; e: number[] }[] = [];
+  let lastFlush = 0;
+  const flushPlots = (force = false): void => {
+    const now = performance.now();
+    if (!force && now - lastFlush < PLOT_FLUSH_MS) return;
+    lastFlush = now;
+    for (const s of pending) { plotF.push(s.t, s.f); plotE.push(s.t, s.e); }
+    pending = [];
+  };
   const offTheme = ctx.onThemeChange(() => { plotF.setOptions({ series: seriesF() }); plotE.setOptions({ series: seriesE() }); });
 
   const panel = controlPanel(host, { compact: true });
   const r1 = row(panel);
   const pbk = playback(r1, {
     playing: true,
-    onPlay: () => { if (!blownUp) loop.start(); },
+    onPlay: () => { if (blownUp) resetSim(); else loop.start(); },
     onPause: () => { loop.stop(); },
     onReset: () => resetSim(),
     onSpeed: (s) => { loop.speed = s; },
@@ -238,7 +252,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const mIP = matrixView(mats, { label: 'I − P =', digits: 2 });
 
   const info = kv(host, ['控制器', '接觸', 'f / f_d', 'F_sensor（桌面→手臂）', 'F_tip = −F_sensor', '切向誤差 e_s', '力積分 K_fi∫f_e', 'σ_min(J)']);
-  const testInfo = kv(host, ['測試力 F', 'P F（產生運動）', '(I − P) F（壓桌面）', '加速度 Λ⁻¹P F']);
+  const testInfo = kv(host, ['測試力 F', 'P F（產生運動）', '(I − P) F（由桌面承受）', '加速度 Λ⁻¹P F']);
   testInfo.el.style.display = 'none';
   testInfo.el.style.marginTop = '0.3rem';
   const bars = torqueBars(host, { labels: ['τ₁', 'τ₂'], colors: ['var(--series-1)', 'var(--series-2)'], max: TAU_MAX, limit: TAU_MAX * 0.995, unit: 'N·m', digits: 1, title: `關節力矩（上限 ±${TAU_MAX} N·m）` });
@@ -268,8 +282,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   cv.draw = (c) => {
     const muted = cssVar('--fg-muted');
     const cT = cssVar('--series-1', '#2563eb'), cN = cssVar('--series-7', '#db2777'), cF = cssVar('--series-4', '#d97706');
-    const warn = cssVar('--warn', '#b45309');
-    targetHandle.color = warn;
+    const cTarget = cssVar('--series-5', '#7c3aed');
+    targetHandle.color = cTarget;
     targetHandle.enabled = sim.p.mode !== 'force' && step !== 3;
     testHandle.color = muted;
     c.grid(0.25);
@@ -286,7 +300,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       const top = add(surfPoint(s), n, -thick);
       c.line(top, [top[0], FLOOR_Y], { color: muted, width: 4 });
     }
-    c.text([WORLD.xmax - 0.03, WORLD.ymax - 0.05], `桌面剛度 k_e = ${fmtStiff(sim.p.ke)}`, { color: muted, align: 'right' });
+    c.text([WORLD.xmax - 0.04, FLOOR_Y + 0.05], `k_e = ${fmtStiff(sim.p.ke)}`, { color: muted, align: 'right', bg: cssVar('--sim-bg') });
     if (Math.abs(sim.p.delta) > 5e-4) {
       const m1: Pt = [SURF_C[0] - 0.62 * t[0], SURF_C[1] - 0.62 * t[1]];
       const m2: Pt = [SURF_C[0] + 0.62 * t[0], SURF_C[1] + 0.62 * t[1]];
@@ -296,7 +310,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     // Instantaneous tangential target.
     const sd = sim.info?.sd ?? sim.p.s0;
     const pd = surfPoint(sd);
-    c.line(add(pd, n, -0.04), add(pd, n, 0.04), { color: warn, width: 3 });
+    c.line(add(pd, n, -0.04), add(pd, n, 0.04), { color: cTarget, width: 3 });
 
     // Arm (drawPlanarArm returns base, elbow and tip).
     const pts = drawPlanarArm(c, [1, 1], sim.theta, { eeColor: cssVar('--accent') });
@@ -346,15 +360,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       c.text(add(tip, PF, TEST_SCALE), 'PF', { color: cT, dx: 14, dy: -8 });
       c.text(add(tip, IPF, TEST_SCALE), '(I−P)F', { color: cN, dx: 24, dy: 0 });
     }
-    c.overlay.textContent = `t = ${fmt(sim.t, 2)} s   f = ${fmt(sim.f, 1)} N   e_s = ${fmt(((inf?.sd ?? 0) - (inf?.s ?? 0)) * 1000, 1)} mm`;
   };
+  const overlayText = (): string => {
+    const inf = sim.info;
+    return `t = ${fmt(sim.t, 2)} s   f = ${fmt(sim.f, 1)} N   e_s = ${fmt(((inf?.sd ?? 0) - (inf?.s ?? 0)) * 1000, 1)} mm`;
+  };
+  let lastDraw = 0;
 
   // ---- simulation loop ---------------------------------------------------
   function logSample(): void {
     const inf = sim.info;
     const es = inf ? (inf.sd - inf.s) * 1000 : 0;
-    plotF.push(sim.t, [sim.f, sim.p.fd]);
-    plotE.push(sim.t, [clamp(es, -100, 100), clamp(sim.h * 1000, -5, 60)]);
+    pending.push({ t: sim.t, f: [sim.f, sim.p.fd], e: [clamp(es, -100, 100), clamp(sim.h * 1000, -5, 60)] });
     if (wasContact && !sim.contact) lossTimes.push(sim.t);
     if (sim.contact) lastContactT = sim.t;
     wasContact = sim.contact;
@@ -382,7 +399,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       }
       if (performance.now() - t0 > FRAME_BUDGET_MS) break;
     }
-    cv.requestRender();
+    flushPlots();
+    const now = performance.now();
+    if (now - lastDraw >= DRAW_MIN_MS) { lastDraw = now; cv.requestRender(); }
     updateUi(false);
   });
 
@@ -391,6 +410,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     loop.stop();
     blownUp = false;
     sim.reset();
+    pending = [];
     plotF.clear(); plotE.clear();
     lossTimes.length = 0; wasContact = false; lastContactT = 0;
     status.textContent = '';
@@ -422,11 +442,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (reset) resetSim(); else { cv.requestRender(); updateUi(true); }
   }
 
+  // All DOM text (time, overlay, readouts) is refreshed on this ~90 ms tick, never per frame:
+  // per-frame text changes force the surrounding page tiles to be re-rasterised.
   function updateUi(force: boolean): void {
     const now = performance.now();
-    pbk.setTime(sim.t);
     if (!force && now - lastUi < 90) return;
     lastUi = now;
+    pbk.setTime(sim.t);
+    cv.overlay.textContent = overlayText();
     const inf = sim.info;
     const p = sim.p;
     const { n } = surfaceAxes(p.alpha);
@@ -453,7 +476,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         const acc = matVec(inf.tm.Linv, PF);
         testInfo.set('測試力 F', `(${fmt(Ftest[0], 1)}, ${fmt(Ftest[1], 1)}) N`);
         testInfo.set('P F（產生運動）', `(${fmt(PF[0], 2)}, ${fmt(PF[1], 2)}) N`);
-        testInfo.set('(I − P) F（壓桌面）', `(${fmt(IPF[0], 2)}, ${fmt(IPF[1], 2)}) N`);
+        testInfo.set('(I − P) F（由桌面承受）', `(${fmt(IPF[0], 2)}, ${fmt(IPF[1], 2)}) N`);
         testInfo.set('加速度 Λ⁻¹P F', `(${fmt(acc[0], 2)}, ${fmt(acc[1], 2)}) m/s²，法向分量 ${fmt(acc[0] * n[0] + acc[1] * n[1], 3)}`);
       }
     }

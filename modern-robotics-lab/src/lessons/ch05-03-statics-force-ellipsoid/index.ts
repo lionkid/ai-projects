@@ -70,7 +70,7 @@ $$f \\in \\mathcal N\\big(J_v^{\\mathsf T}\\big) \\;\\Rightarrow\\; \\tau = J_v^
 - $\\tau_2$ 取決於手肘的位置，兩解可以差很多。
 
 讓力的作用線靠近關節、讓負載沿著連桿傳遞，是安排工作姿勢時最省力的原則；選姿勢本身就是設計決策。`,
-    simHint: '點表格左欄的姿勢名稱套用該姿勢，比較 ‖τ‖；淡色虛影是同一末端位置的另一組解，旁邊標著它的力矩。',
+    simHint: '點表格左欄的姿勢名稱套用該姿勢，比較 ‖τ‖；淡色虛影是同一末端位置的另一組解，它的力矩 τ′ 顯示在上方讀數列。',
   },
   {
     title: '方向約定與下一章',
@@ -463,7 +463,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         labelBeside(c, back, rl, { color: muted, font: '11px sans-serif', bg: bgElev }, [-f[0] / m, f[1] / m]);
       }
       c.arrow(tip, head, { color: warn, width: 3.5, head: 13 });
-      labelBeside(c, head, conv === 'env' ? 'ℱ（末端 → 環境）' : 'ℱ_ext（環境 → 末端）', { color: warn, bg: bgElev }, side);
+      // narrow canvases (phones) get the short symbol; the select box spells out the convention
+      const wide = c.width >= 460;
+      const fl = conv === 'env' ? (wide ? 'ℱ（末端 → 環境）' : 'ℱ') : (wide ? 'ℱ_ext（環境 → 末端）' : 'ℱ_ext');
+      labelBeside(c, head, fl, { color: warn, bg: bgElev, font: wide ? undefined : 'bold 13px sans-serif' }, side);
     }
 
     const degs = th.map((t) => `${fmt(t / D, 0)}°`).join(', ');

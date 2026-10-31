@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import {
   el, cssVar, fmt, controlPanel, row, slider, angleSlider, button, select, kv, note, simTitle, legend, split,
   Canvas2D, Scene3D, Plot2D, createLoop, presetChips, drawPlanarArm, makeTextSprite, mdElement, rafThrottle,
-  type KVHandle, type Pt,
+  type KVHandle, type Loop, type Pt,
 } from '@/ui';
 import { planarFK, wrapToPi } from '@/mr';
 import { meta } from './meta';
@@ -119,8 +119,8 @@ const quiz: QuizQuestion[] = [
 
 const R_T = 1;      // torus major radius (3D view units)
 const r_T = 0.42;   // torus minor radius
-const NU = 96;      // θ1 segments of the torus mesh
-const NV = 48;      // θ2 segments
+const NU = 72;      // θ1 segments of the torus mesh
+const NV = 36;      // θ2 segments
 const TRAIL_MAX = 240;
 const PATH_DOTS_MAX = 700;
 const MAP_PX = 512;
@@ -163,6 +163,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let cardPick = 3;
   let stepNow = ctx.currentStep;
   let armNote: '' | 'singular' | 'clamped' = '';
+  // The animation loop (glue morph, camera tween, path playback, plot sampling) only runs while something
+  // changes and stops ~1.5 s after the last change; the 3D view renders on demand. An idle lesson does no work.
+  let loopRef: Loop | null = null;
+  let lastActive = 0;
+  function kick(): void {
+    lastActive = performance.now();
+    if (loopRef && !loopRef.running) loopRef.start();
+  }
 
   // ---------------- layout: 2 × 2 views, then a compact control panel
   simTitle(host, '2R 手臂的組態空間：方格、環面與工作空間', 'T² = S¹ × S¹');
@@ -196,7 +204,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const W = 1.3 * PI;
   const sq = new Canvas2D(sqHost, { aspect: 1, world: { xmin: -W, xmax: W, ymin: -W, ymax: W }, overlay: true, margin: 0.02 });
-  const scene = new Scene3D(torusHost, { aspect: 1, grid: false, axes: false, cameraPos: [2.4, -3.1, 2.4], target: [0, 0, 0], fov: 40 });
+  const scene = new Scene3D(torusHost, { aspect: 1, grid: false, axes: false, cameraPos: [2.4, -3.1, 2.4], target: [0, 0, 0], fov: 40, autoStart: false });
   const torusOverlay = el('div', { class: 'mr-overlay' });
   scene.el.appendChild(torusOverlay);
   const arm = new Canvas2D(armHost, { aspect: 1, world: { xmin: -2.5, xmax: 2.5, ymin: -2.5, ymax: 2.5 }, overlay: true, margin: 0.02 });
@@ -265,7 +273,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   scene.scene.add(torusGroup);
   const texture = new THREE.CanvasTexture(mapCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
   const nVert = (NU + 1) * (NV + 1);
   const posArr = new Float32Array(nVert * 3);
   const nrmArr = new Float32Array(nVert * 3);
@@ -300,15 +307,23 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
   const cur = markerPair(0.075, cssVar('--accent'), 0.45);
   const ghost = markerPair(0.062, cssVar('--fg-muted'), 0.4);
-  const makeDots = (max: number, color: string) => {
-    const m = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshStandardMaterial({ color, roughness: 0.5 }), max);
-    m.count = 0;
+  // trail / path dots: one round point sprite per sample (cheap even for software WebGL)
+  const dotCanvas = document.createElement('canvas');
+  dotCanvas.width = dotCanvas.height = 32;
+  const dctx = dotCanvas.getContext('2d');
+  if (dctx) { dctx.fillStyle = '#ffffff'; dctx.beginPath(); dctx.arc(16, 16, 14, 0, Math.PI * 2); dctx.fill(); }
+  const dotTex = new THREE.CanvasTexture(dotCanvas);
+  const makeDots = (max: number, color: string, size: number) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(max * 3), 3));
+    g.setDrawRange(0, 0);
+    const m = new THREE.Points(g, new THREE.PointsMaterial({ color, size, map: dotTex, alphaTest: 0.5, sizeAttenuation: true }));
     m.frustumCulled = false;
     torusGroup.add(m);
     return m;
   };
-  const trailDots = makeDots(TRAIL_MAX, cssVar('--series-6'));
-  const pathDotsMesh = makeDots(PATH_DOTS_MAX, cssVar('--series-7'));
+  const trailDots = makeDots(TRAIL_MAX, cssVar('--series-6'), 0.045);
+  const pathDotsMesh = makeDots(PATH_DOTS_MAX, cssVar('--series-7'), 0.06);
   let seamLabels: THREE.Sprite[] = [];
   const makeSeamLabels = () => {
     for (const s of seamLabels) { torusGroup.remove(s); s.material.map?.dispose(); s.material.dispose(); }
@@ -360,18 +375,25 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     torusOverlay.textContent = `② 環面　${glueLong(glue)}`;
   };
 
-  const m4 = new THREE.Matrix4();
-  const setDots = (mesh: THREE.InstancedMesh, pts: Th[], radius: number, max: number) => {
+  const setDots = (pts3: THREE.Points, pts: Th[], max: number) => {
     const n = Math.min(pts.length, max);
     const start = pts.length - n;
+    const attr = pts3.geometry.attributes.position as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
     for (let i = 0; i < n; i++) {
-      const p = surf(pts[start + i], 0.012);
-      m4.makeScale(radius, radius, radius);
-      m4.setPosition(p[0], p[1], p[2]);
-      mesh.setMatrixAt(i, m4);
+      const p = surf(pts[start + i], 0.02);
+      arr[3 * i] = p[0]; arr[3 * i + 1] = p[1]; arr[3 * i + 2] = p[2];
     }
-    mesh.count = n;
-    mesh.instanceMatrix.needsUpdate = true;
+    attr.needsUpdate = true;
+    pts3.geometry.setDrawRange(0, n);
+  };
+  // 3D renders are on demand and capped at ~30 per second (a trailing render keeps the last state)
+  let last3D = 0;
+  let pending3D = 0;
+  const render3D = () => {
+    const now = performance.now();
+    if (now - last3D >= 33) { last3D = now; scene.requestRender(); return; }
+    if (!pending3D) pending3D = window.setTimeout(() => { pending3D = 0; last3D = performance.now(); scene.requestRender(); }, 34 - (now - last3D));
   };
   const placeMarkers = () => {
     const p = surf(th, 0.04);
@@ -384,9 +406,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const showGhost = !o.atOrigin && torusDist(o.th, th) > 1e-6;
     ghost.solid.visible = showGhost;
     ghost.xray.visible = showGhost;
-    if (trailDirty) { setDots(trailDots, trail, 0.02, TRAIL_MAX); trailDirty = false; }
-    if (pathDotsDirty) { setDots(pathDotsMesh, pathDots, 0.026, PATH_DOTS_MAX); pathDotsDirty = false; }
-    scene.requestRender();
+    if (trailDirty) { setDots(trailDots, trail, TRAIL_MAX); trailDirty = false; }
+    if (pathDotsDirty) { setDots(pathDotsMesh, pathDots, PATH_DOTS_MAX); pathDotsDirty = false; }
+    render3D();
   };
 
   // ---------------- camera aiming (spherical coordinates about the origin, tweened in the loop)
@@ -402,12 +424,12 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     scene.camera.position.set(d * Math.cos(elv) * Math.cos(az), d * Math.cos(elv) * Math.sin(az), d * Math.sin(elv));
     scene.controls?.target.set(0, 0, 0);
     scene.controls?.update();
-    scene.requestRender();
+    render3D();
   };
   const aimCamera = (az: number, elv: number, dur = 0.8) => {
     const from = camSph();
     const to: V3 = [from[0] + wrapToPi(az - from[0]), elv, CAM_DIST];
-    if (dur <= 0) { camTween = null; setCamSph(to); } else camTween = { from, to, t: 0, dur };
+    if (dur <= 0) { camTween = null; setCamSph(to); } else { camTween = { from, to, t: 0, dur }; kick(); }
   };
   const circMean = (a: number, b: number) => Math.atan2(Math.sin(a) + Math.sin(b), Math.cos(a) + Math.cos(b));
 
@@ -479,6 +501,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   scene.el.addEventListener('pointerdown', onDown3D, true);
   scene.el.addEventListener('pointermove', onMove3D, true);
   scene.el.addEventListener('pointerup', onUp3D, true);
+  (window as unknown as Record<string, unknown>).__ch02bObjs = { torusMesh, trailDots, pathDotsMesh, cur, ghost, labels: () => seamLabels, scene }; // TEMP-DEBUG
 
   // ---------------- state updates
   function setTheta(t: Th, source: 'slider' | 'square' | 'torus' | 'arm' | 'button' | 'path'): void {
@@ -492,6 +515,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     th = w;
     if (source !== 'slider') { sT1.set(th[0], { silent: true }); sT2.set(th[1], { silent: true }); }
     refresh();
+    kick();
   }
 
   function setGlue(g: number): void {
@@ -503,6 +527,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function startGlueAnim(): void {
     glueAnim = { t: 0, dur: 3.8, camMoved: false };
+    kick();
     setGlue(0);
     aimCamera(0, 0.22, 0.5);          // face the flat sheet first
   }
@@ -537,6 +562,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (!path) { chips.activate(0); return; } // activating a preset loads it and calls startPlay again
     if (playS == null || playS >= 1) { playS = 0; setTheta(path[0], 'path'); }
     playBtn.textContent = '⏸ 暫停路徑';
+    kick();
   }
   function stopPlay(): void {
     if (playS != null && playS < 1) playS = null;
@@ -812,8 +838,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       plot.push(tNow, [th[0], Math.cos(th[0]), Math.sin(th[0])]);
       lastPush = tNow;
     }
+    const busy = !!glueAnim || !!camTween || (path != null && playS != null && playS < 1);
+    if (busy) lastActive = performance.now();
+    else if (performance.now() - lastActive > 1500) loop.stop();
   });
-  loop.start();
+  loopRef = loop;
 
   const unsubTheme = ctx.onThemeChange(() => {
     paintMap();
@@ -822,8 +851,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     (cur.xray.material as THREE.MeshBasicMaterial).color.set(cssVar('--accent'));
     (ghost.solid.material as THREE.MeshStandardMaterial).color.set(cssVar('--fg-muted'));
     (ghost.xray.material as THREE.MeshBasicMaterial).color.set(cssVar('--fg-muted'));
-    (trailDots.material as THREE.MeshStandardMaterial).color.set(cssVar('--series-6'));
-    (pathDotsMesh.material as THREE.MeshStandardMaterial).color.set(cssVar('--series-7'));
+    (trailDots.material as THREE.PointsMaterial).color.set(cssVar('--series-6'));
+    (pathDotsMesh.material as THREE.PointsMaterial).color.set(cssVar('--series-7'));
     makeSeamLabels();
     rebuildSurface();
     cfgHandle.color = cssVar('--accent');
@@ -872,8 +901,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       focusOn([gal.el, cardBox]);
     }
     refresh();
+    kick();
   };
   onStep(ctx.currentStep);
+  kick(); // draw a few plot samples so the first view is not empty
 
   return {
     onStep,
@@ -883,8 +914,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
       scene.el.removeEventListener('pointerdown', onDown3D, true);
       scene.el.removeEventListener('pointermove', onMove3D, true);
       scene.el.removeEventListener('pointerup', onUp3D, true);
-      trailDots.dispose();
-      pathDotsMesh.dispose();
+      clearTimeout(pending3D);
+      dotTex.dispose();
       for (const s of seamLabels) s.material.map?.dispose();
       texture.dispose();
       sq.destroy();

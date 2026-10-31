@@ -125,7 +125,7 @@ const KINDS: ControllerKind[] = ['pd', 'pdg', 'ct', 'task'];
 const KIND_LABEL: Record<ControllerKind, string> = {
   pd: 'PD（各關節獨立）', pdg: 'PD＋重力補償', ct: '計算力矩（關節空間）', task: '計算力矩（任務空間）',
 };
-const KIND_SHORT: Record<ControllerKind, string> = { pd: 'PD', pdg: 'PD+g', ct: '計算力矩（關節）', task: '計算力矩（任務）' };
+const KIND_SHORT: Record<ControllerKind, string> = { pd: 'PD', pdg: 'PD+g', ct: 'CT 關節', task: 'CT 任務' };
 const OFFSET = (20 * Math.PI) / 180;
 
 interface SimState {
@@ -163,7 +163,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   simTitle(host, '2R 手臂：四種控制器', '計算力矩');
   const chips = presetChips(host, PRESETS.map((p, i) => ({ label: p.label, title: p.title, apply: () => applyPreset(i) })));
   const [left, right] = split(host);
-  const cv = new Canvas2D(left, { aspect: 1.15, world: { xmin: -1.3, xmax: 1.8, ymin: -1.05, ymax: 1.75 }, overlay: true });
+  const cv = new Canvas2D(left, { aspect: 1.05, world: { xmin: -1.3, xmax: 1.8, ymin: -1.05, ymax: 2.0 }, overlay: true });
   cv.overlay.style.whiteSpace = 'pre';
 
   const tableWrap = el('div', { class: 'md', style: { fontSize: '0.74rem', overflowX: 'auto' } });
@@ -171,11 +171,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const table = el('table', { style: { width: '100%', margin: '0 0 0.3rem' } });
   tableWrap.appendChild(table);
   const pad = { padding: '0.12em 0.35em' };
-  const head = el('tr', {}, ...['控制器', '末端誤差 RMS', '回饋占比', '最大 |θ̇|'].map((h) => el('th', { style: pad }, h)));
+  const head = el('tr', {}, ...['控制器', '末端誤差 RMS (mm)', '回饋占比 (%)', '最大關節速度 (rad/s)'].map((h) => el('th', { style: pad }, h)));
   const rows = new Map<ControllerKind, { tr: HTMLTableRowElement; cells: HTMLTableCellElement[] }>();
   const tbody = el('tbody');
   for (const k of KINDS) {
-    const cells = [el('td', { style: pad }, KIND_SHORT[k]), el('td', { style: pad }, '…'), el('td', { style: pad }, '…'), el('td', { style: pad }, '…')];
+    const cells = [el('td', { style: { ...pad, whiteSpace: 'nowrap' } }, KIND_SHORT[k]), el('td', { style: pad }, '…'), el('td', { style: pad }, '…'), el('td', { style: pad }, '…')];
     const tr = el('tr', {}, ...cells);
     rows.set(k, { tr, cells });
     tbody.appendChild(tr);
@@ -197,14 +197,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     onChange: (v) => { st.kind = v; syncControls(); touched(); },
   });
   const routeSel = select<RouteKind>(topRow, {
-    options: [{ value: 'ab', label: '路徑 A⇄B（關節 2 維持 90°）' }, { value: 'cd', label: '路徑 C⇄D（掠過基座上方）' }],
+    options: [{ value: 'ab', label: '路徑 A⇄B' }, { value: 'cd', label: '路徑 C⇄D（掠過基座）' }],
     value: st.route,
     onChange: (v) => { st.route = v; touched(); },
   });
   kindSel.el.title = '控制器';
-  routeSel.el.title = '參考路徑';
+  routeSel.el.title = 'A⇄B：關節 1 擺動 90°、關節 2 維持 90°；C⇄D：末端兩點連線從基座上方 0.15 m 經過';
   const tKi = toggle(topRow, { label: '積分項 Ki', title: 'Ki = 0.5 ωn³（乘上 M̄ 或 M̃）', value: st.useKi, onChange: (v) => { st.useKi = v; touched(); } });
-  const tOff = toggle(topRow, { label: '起始偏差 Δθ₁ = 20°', value: st.offset, onChange: (v) => { st.offset = v; touched(); } });
+  const tOff = toggle(topRow, { label: '起始偏差 20°', title: '關節 1 從目標偏離 20° 的位置出發', value: st.offset, onChange: (v) => { st.offset = v; touched(); } });
   const sWn = slider(panel, { label: 'ωn', min: 3, max: 15, step: 0.5, value: st.wn, unit: 'rad/s', onInput: (v) => { st.wn = v; touched(); } });
   const sZeta = slider(panel, { label: 'ζ', min: 0.4, max: 1.5, step: 0.05, value: st.zeta, onInput: (v) => { st.zeta = v; touched(); } });
   const sTf = slider(panel, { label: '移動時間 T_f', min: 0.5, max: 3, step: 0.1, value: st.Tf, unit: 's', onInput: (v) => { st.Tf = v; touched(); } });
@@ -218,7 +218,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const pb = playback(pbRow, {
     duration: 5,
     playing: true,
-    onPlay: () => loop.start(),
+    onPlay: () => { if (trial && tCur >= trial.T - 1e-9) tCur = 0; loop.start(); },
     onPause: () => loop.stop(),
     onReset: () => { tCur = 0; frame(); },
     onSpeed: (s) => { loop.speed = s; },
@@ -227,8 +227,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const gainNote = el('div', { class: 'mr-note', style: { margin: '0 0 0.2rem' } });
   host.appendChild(gainNote);
-  const errPlot = new Plot2D(host, { title: '追蹤誤差', yLabel: 'θ_e (°)', series: [{ name: 'e₁' }, { name: 'e₂' }], height: 115 });
-  const auxPlot = new Plot2D(host, { title: '力矩', xLabel: 't (s)', yLabel: 'τ (N·m)', series: [{ name: 'τ' }], height: 115 });
+  const errPlot = new Plot2D(host, { title: '追蹤誤差', yLabel: 'θ_e (°)', series: [{ name: 'e₁' }, { name: 'e₂' }], height: 112 });
+  const auxPlot = new Plot2D(host, { title: '力矩', xLabel: 't (s)', yLabel: 'τ (N·m)', series: [{ name: 'τ' }], height: 112 });
   const group = plotGroup([errPlot, auxPlot]);
 
   // ---- helpers ------------------------------------------------------------
@@ -236,6 +236,10 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     kind, route: st.route, Tf: st.Tf, wn: st.wn, zeta: st.zeta, useKi: st.useKi, massError: st.massErrPct / 100,
     lambda: st.lambda, offset: st.offset ? [OFFSET, 0] : [0, 0],
   });
+  const setSeries = (plot: Plot2D, data: [ArrayLike<number>, ArrayLike<number>][]) => {
+    data.forEach(([xs, ys], i) => plot.setXY(i, xs, ys));
+    for (let i = data.length; i < 6; i++) plot.setXY(i, [], []);
+  };
   const idxAt = (t: number) => Math.max(0, Math.min(trial.t.length - 1, Math.round(t / (trial.t[1] - trial.t[0] || 1))));
   const deg = (x: number) => (x * 180) / Math.PI;
 
@@ -245,7 +249,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     tipdPts = trial.tipd.map((p): Pt => [p[0], p[1]]);
     pb.setDuration(trial.T);
     group.setXRange([0, trial.T]);
-    if (tCur > trial.T) tCur = 0;
+    if (tCur > trial.T) tCur = trial.T;
     let peak = 1;
     for (let i = 0; i < trial.t.length; i++) for (const v of [trial.ff[i][0], trial.ff[i][1], trial.fb[i][0], trial.fb[i][1]]) peak = Math.max(peak, Math.abs(v));
     bars.setMax(Math.ceil(peak / 5) * 5);
@@ -294,9 +298,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const s = tr.stats;
     if (tr.diverged) { r.cells[1].textContent = '發散'; r.cells[2].textContent = '—'; r.cells[3].textContent = '—'; }
     else {
-      r.cells[1].textContent = `${fmt(s.tipRms * 1000, s.tipRms < 0.01 ? 1 : 0)} mm`;
-      r.cells[2].textContent = `${fmt(100 * s.fbShare, s.fbShare < 0.1 ? 1 : 0)} %`;
-      r.cells[3].textContent = `${fmt(s.maxRate, 1)} rad/s`;
+      r.cells[1].textContent = fmt(s.tipRms * 1000, s.tipRms < 0.01 ? 1 : 0);
+      r.cells[2].textContent = fmt(100 * s.fbShare, s.fbShare < 0.1 ? 1 : 0);
+      r.cells[3].textContent = fmt(s.maxRate, 1);
     }
     r.cells[3].style.color = s.maxRate > 8 ? 'var(--danger)' : '';
     r.cells.slice(1).forEach((c) => { c.style.opacity = ''; });
@@ -319,11 +323,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const t = trial.t;
     if (st.kind === 'task') {
       errPlot.setOptions({ title: '末端追蹤誤差 x_d − x', yLabel: 'mm', series: [{ name: 'e_x', color: cssVar('--axis-x', '#e11') }, { name: 'e_y', color: cssVar('--axis-y', '#1a1') }] });
-      errPlot.setXY(0, t, trial.err.map((e) => 1000 * e[0]));
-      errPlot.setXY(1, t, trial.err.map((e) => 1000 * e[1]));
-      auxPlot.setOptions({ title: '關節速度 θ̇（奇異附近暴增）', yLabel: 'rad/s', series: [{ name: 'θ̇₁', color: c1 }, { name: 'θ̇₂', color: c4 }] });
-      auxPlot.setXY(0, t, trial.dth.map((d) => d[0]));
-      auxPlot.setXY(1, t, trial.dth.map((d) => d[1]));
+      setSeries(errPlot, [[t, trial.err.map((e) => 1000 * e[0])], [t, trial.err.map((e) => 1000 * e[1])]]);
+      auxPlot.setOptions({ title: '關節速度 dθ/dt（奇異附近暴增）', yLabel: 'rad/s', series: [{ name: 'dθ₁/dt', color: c1 }, { name: 'dθ₂/dt', color: c4 }] });
+      setSeries(auxPlot, [[t, trial.dth.map((d) => d[0])], [t, trial.dth.map((d) => d[1])]]);
       let iMin = 0;
       trial.detJ.forEach((d, i) => { if (Math.abs(d) < Math.abs(trial.detJ[iMin])) iMin = i; });
       group.setMarkers(0, []);
@@ -333,9 +335,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const eSeries: SeriesSpec[] = [{ name: 'e₁', color: c1, width: 2 }, { name: 'e₂', color: c4, width: 2 }];
     if (st.offset) eSeries.push({ name: '理想二階 e₁', color: c8, dash: [5, 4], width: 1.5 });
     errPlot.setOptions({ title: '關節追蹤誤差 θ_d − θ', yLabel: 'θ_e (°)', series: eSeries });
-    errPlot.setXY(0, t, trial.err.map((e) => deg(e[0])));
-    errPlot.setXY(1, t, trial.err.map((e) => deg(e[1])));
-    if (st.offset) errPlot.setXY(2, t, t.map((x) => deg(secondOrderFree(-OFFSET, st.wn, st.zeta, x))));
+    const eData: [number[], number[]][] = [[t, trial.err.map((e) => deg(e[0]))], [t, trial.err.map((e) => deg(e[1]))]];
+    if (st.offset) eData.push([t, t.map((x) => deg(secondOrderFree(-OFFSET, st.wn, st.zeta, x)))]);
+    setSeries(errPlot, eData);
     auxPlot.setOptions({
       title: '力矩：實線＝模型前饋，虛線＝回饋', yLabel: 'τ (N·m)',
       series: [
@@ -343,10 +345,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
         { name: 'τ₂ 前饋', color: c4, width: 2 }, { name: 'τ₂ 回饋', color: c4, dash: [5, 3], width: 1.6 },
       ],
     });
-    auxPlot.setXY(0, t, trial.ff.map((v) => v[0]));
-    auxPlot.setXY(1, t, trial.fb.map((v) => v[0]));
-    auxPlot.setXY(2, t, trial.ff.map((v) => v[1]));
-    auxPlot.setXY(3, t, trial.fb.map((v) => v[1]));
+    setSeries(auxPlot, [[t, trial.ff.map((v) => v[0])], [t, trial.fb.map((v) => v[0])], [t, trial.ff.map((v) => v[1])], [t, trial.fb.map((v) => v[1])]]);
     // mark the two moves
     const H = HOLD;
     const moves: Marker[] = [{ x: H, color: c8, dash: [2, 4] }, { x: H + st.Tf, color: c8, dash: [2, 4] }, { x: 2 * H + st.Tf, color: c8, dash: [2, 4] }, { x: 2 * H + 2 * st.Tf, color: c8, dash: [2, 4] }];
@@ -368,7 +367,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const names = st.route === 'ab' ? ['A', 'B'] : ['C', 'D'];
     [route.pa, route.pb].forEach((p, k) => {
       c.point([p[0], p[1]], 3.5, { color: accent });
-      c.text([p[0], p[1]], names[k], { color: accent, dx: k ? -12 : 12, dy: k ? -10 : 12 });
+      c.text([p[0], p[1]], names[k], { color: accent, dx: 12, dy: k ? -8 : 12 });
     });
     // actual tip trail up to now
     if (i > 1) c.polyline(tipPts.slice(0, i + 1), { color: warn, width: 2 });
@@ -392,18 +391,21 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   };
 
   // ---- animation --------------------------------------------------------------
+  // Moving the plot cursor repaints both plots, so during playback it is updated at ~15 Hz.
+  let lastCursor = -Infinity;
   function frame(): void {
     const t = Math.min(tCur, trial.T);
     const i = idxAt(t);
     bars.set([trial.ff[i][0], trial.fb[i][0], trial.ff[i][1], trial.fb[i][1]]);
     cv.requestRender();
-    group.setCursor(t);
+    const now = performance.now();
+    if (!loop.running || t >= trial.T || now - lastCursor > 66) { group.setCursor(t); lastCursor = now; }
     pb.setTime(t);
   }
   const loop = createLoop((dt) => {
-    tCur += dt;
-    if (tCur > trial.T + 0.8) tCur = 0;
+    tCur = Math.min(trial.T, tCur + dt);
     frame();
+    if (tCur >= trial.T) { loop.stop(); pb.setPlaying(false, { silent: true }); }
   });
 
   // ---- controls sync / presets -------------------------------------------------
@@ -427,6 +429,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     syncControls();
     tCur = 0;
     recompute();
+    pb.setPlaying(true, { silent: true });
+    loop.start();
   }
 
   const focusSets: HTMLElement[][] = [
@@ -449,7 +453,6 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const unsubTheme = ctx.onThemeChange(() => { if (trial) { updatePlots(); cv.requestRender(); } });
   syncControls();
   onStep(ctx.currentStep);
-  loop.start();
 
   return {
     onStep,

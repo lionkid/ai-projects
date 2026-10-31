@@ -57,10 +57,10 @@ $$p(s)=p_0+s\\,(p_1-p_0),\\qquad R(s)=R_0\\exp\\big(\\log(R_0^{\\T}R_1)\\,s\\big
     title: '笛卡兒路徑的代價',
     md: `沿笛卡兒直線逐點解 IK，可能遇到三種麻煩：
 
-- **靠近奇異**：腕點 $w$ 接近 $|w|=L_1+L_2$ 或 $|L_1-L_2|$ 時 $\\sin\\theta_2\\to0$，$\\|d\\theta/ds\\|$ 暴增。因為 $\\dot\\theta=\\theta'(s)\\,\\dot s$，換哪一種時間縮放都消不掉尖峰，只能整段放慢或改路徑。
+- **靠近奇異**：腕點 $w$ 接近 $|w|=L_1+L_2$ 或 $|L_1-L_2|$ 時 $\\sin\\theta_2\\to0$，$\\|d\\theta/ds\\|$ 暴增。因為 $\\dot\\theta=\\theta'(s)\\,\\dot s$，尖峰來自路徑幾何；時間縮放只能在那附近把 $\\dot s$ 壓低來抵銷，根本的解法是改路徑避開。
 - **不可達**：直線的一部分落在工作空間外，IK 無解。
 - **分支跳變**：IK 有兩組解（手肘上／下）。若每個樣本都從同一個初值重新求解，可能突然換到另一組，關節角瞬間跳動；以上一個樣本的解為初值（warm start）才能保持連續。`,
-    simHint: '依序點「靠近基座：θ̇ 尖峰」與「穿過不可達區」，看 ‖dθ/ds‖ 圖與紅色標記；再點「冷啟動 IK」並切換 IK 初值，比較跳變。',
+    simHint: '依序點「靠近基座：速度尖峰」與「穿過不可達區」，看 ‖dθ/ds‖ 圖與紅色標記；再點「冷啟動 IK」並切換 IK 初值，比較跳變。',
   },
   {
     title: '避障與選擇，以及經過點',
@@ -81,7 +81,7 @@ const quiz: QuizQuestion[] = [
     question: '焊縫要求末端走直線，但起點與終點之間的直線會經過靠近奇異的區域。最合理的做法是？',
     options: [
       '改用關節空間直線，反正兩端相同',
-      '保持笛卡兒直線，但移動工件、調整工具姿態或手肘分支，讓整段直線遠離奇異區',
+      '保持笛卡兒直線，但移動工件（或機器人底座）、或調整工具姿態，讓整段直線遠離奇異區',
       '在奇異附近加快速度，快速通過',
       '改用螺旋路徑，它也是直線',
     ],
@@ -183,7 +183,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const view2 = el('div');
   const view3 = el('div', { style: { display: 'none' } });
   host.append(view2, view3);
-  const cv = new Canvas2D(view2, { aspect: 1.85, world: WORLD, overlay: true });
+  // Narrow hosts (phones) get a taller canvas so the arm is not tiny.
+  const narrow = host.clientWidth > 0 && host.clientWidth < 520;
+  const cv = new Canvas2D(view2, { aspect: narrow ? 1.3 : 1.85, world: WORLD, overlay: true });
 
   const pbPanel = controlPanel(host);
   const pbRow = row(pbPanel);
@@ -205,7 +207,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   const panel2 = controlPanel(ctl2, { compact: true });
   const chips2 = presetChips(row(panel2), [
     { label: '三種直線', apply: () => applyPreset(PRESETS_2D.basic, { sel: 'joint', wrist: false }) },
-    { label: '靠近基座：θ̇ 尖峰', apply: () => applyPreset(PRESETS_2D.nearBase, { sel: 'cartesian', wrist: true }) },
+    { label: '靠近基座：速度尖峰', apply: () => applyPreset(PRESETS_2D.nearBase, { sel: 'cartesian', wrist: true }) },
     { label: '穿過不可達區', apply: () => applyPreset(PRESETS_2D.unreachable, { sel: 'cartesian', wrist: true }) },
     { label: '冷啟動 IK', apply: () => applyPreset(PRESETS_2D.cold, { sel: 'cartesian', wrist: false }) },
     { label: '障礙物 A', apply: () => applyPreset(PRESETS_2D.obstacleA, { sel: 'joint', wrist: false }) },
@@ -260,7 +262,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   paneB.appendChild(tableWrap);
   const tbody = el('tbody');
   tableWrap.appendChild(el('table', { style: { fontSize: '0.8rem', margin: '0.4rem 0 0.2rem' } },
-    el('thead', {}, el('tr', {}, ['路徑', '末端路徑長', '最大 ‖dθ/ds‖', '最小 |sin θ₂|', 'IK 無解', '關節跳變', '碰撞'].map((h) => el('th', {}, h)))),
+    el('thead', {}, el('tr', {}, ['路徑', '末端路徑長', '最大‖dθ/ds‖', '最小|sin θ₂|', 'IK 無解', '跳變', '碰撞'].map((h) => el('th', { style: { whiteSpace: 'nowrap' } }, h)))),
     tbody));
 
   function thetaSpecs(): SeriesSpec[] {
@@ -284,18 +286,26 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   toggle(row3, { label: '螺旋軸', value: true, onChange: (v) => { st.show3.axis = v; update3D(); } });
   const kv3 = kv(ctl3, ['轉角 |ω|', '螺距 h', 'max ‖R_screw(s) − R_cart(s)‖', 'max ‖p_screw(s) − p_cart(s)‖', '此刻 s、‖p_screw − p_cart‖']);
   const Vview = matrixView(ctl3, { label: '[ω; v] = log(X_start⁻¹ X_end) =', digits: 3 });
-  note(ctl3, '紫：螺旋路徑（虛線為螺旋軸）；橘：解耦的笛卡兒路徑；灰線連接同一個 s 時兩者的原點。起點姿態固定，終點 = 起點先繞 z 轉 α、再平移 (Δx, Δy, Δz)。');
+  note(ctl3, '終點 = 起點先繞 z 轉 α、再平移 (Δx, Δy, Δz)；灰線連接同一個 s 時兩條路徑的原點。');
 
   // ------------------------------------------------------------------ 2D drawing
   const clampPt = (x: number, y: number): Pt => [clamp(x, WORLD.xmin + 0.05, WORLD.xmax - 0.05), clamp(y, WORLD.ymin + 0.05, WORLD.ymax - 0.05)];
   const handleColor = cssVar('--fg-muted', '#667');
   const hStart = poseHandle(cv, { x: st.start.x, y: st.start.y, theta: st.start.phi }, {
     label: '起點', color: handleColor, knob: 0.38, frameSize: 0.22,
-    onChange: (p) => { const [x, y] = clampPt(p.x, p.y); st.start = { x, y, phi: p.theta }; chips2.clear(); recompute(); },
+    onChange: (p) => {
+      const [x, y] = clampPt(p.x, p.y);
+      if (x !== p.x || y !== p.y) hStart.set({ x, y }, { silent: true });
+      st.start = { x, y, phi: p.theta }; chips2.clear(); recompute();
+    },
   });
   const hEnd = poseHandle(cv, { x: st.end.x, y: st.end.y, theta: st.end.phi }, {
     label: '終點', color: handleColor, knob: 0.38, frameSize: 0.22,
-    onChange: (p) => { const [x, y] = clampPt(p.x, p.y); st.end = { x, y, phi: p.theta }; chips2.clear(); recompute(); },
+    onChange: (p) => {
+      const [x, y] = clampPt(p.x, p.y);
+      if (x !== p.x || y !== p.y) hEnd.set({ x, y }, { silent: true });
+      st.end = { x, y, phi: p.theta }; chips2.clear(); recompute();
+    },
   });
   const obHandle = cv.addHandle({
     get: () => st.obC,
@@ -356,7 +366,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     const P = res.paths[st.sel];
     const th = res.ok ? P.theta[idx()] : null;
     c.overlay.textContent = res.ok
-      ? `s = ${fmt(sNow(), 2)} · ${NAME[st.sel]} · θ = ${th ? `(${th.map((x) => fmt(x / deg, 0) + '°').join(', ')})` : '—'}`
+      ? `s = ${fmt(sNow(), 2)} · ${SHORT[st.sel]} · θ = ${th ? `(${th.map((x) => fmt(x / deg, 0) + '°').join(', ')})` : '—'}`
       : `${res.unreachable === 'start' ? '起點' : '終點'}不可達`;
   };
 
@@ -461,14 +471,14 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     if (P.failCount) parts.push(`${P.failCount} 個樣本 IK 無解（路徑有一段不可達）`);
     if (P.jumps.length) parts.push(`${P.jumps.length} 次關節跳變${st.policy === 'cold' && st.sel !== 'joint' ? '（每點都從起點組態求解，換到了另一組手肘解）' : ''}`);
     const nearSing = Number.isFinite(P.minSin2) && P.minSin2 < 0.25;
-    if (nearSing && st.sel !== 'joint') parts.push(`接近奇異（最小 |sin θ₂| = ${fmt(P.minSin2, 2)}，‖dθ/ds‖ 最大 ${fmt(P.maxSpeed, 1)}）`);
+    if (nearSing && st.sel !== 'joint') parts.push(`接近奇異（|sin θ₂| 低至 ${fmt(P.minSin2, 2)}，‖dθ/ds‖ 達 ${fmt(P.maxSpeed, 1)}）`);
     if (P.firstCollision >= 0) parts.push(`在 s = ${fmt(P.s[P.firstCollision], 2)} 撞到障礙物`);
     if (st.sel !== 'joint' && P.endElbow && P.endElbow !== st.elbow) parts.push('終點的手肘方向和起點不同');
     let text = `${NAME[st.sel]}：` + (parts.length ? parts.join('；') + '。'
       : st.sel === 'joint'
         ? `不需逐點解 IK，dθ/ds 恆定${nearSing ? '；途中雖經過奇異附近，關節速度仍平順' : ''}。`
         : '一路可達、連續，遠離奇異。');
-    if (Math.abs(res.dphi) < 1e-9) text += ' （起終點姿態相同，Δφ = 0：螺旋路徑退化成直線，與笛卡兒路徑重合。）';
+    if (Math.abs(res.dphi) < 1e-9) text += '（Δφ = 0：螺旋路徑與笛卡兒直線重合）';
     status2.textContent = text;
     status2.style.color = parts.length ? danger : (st.sel === 'joint' ? fg : ok);
   }
@@ -494,7 +504,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   let s3: Scene3Parts | null = null;
   function ensureScene(): Scene3Parts {
     if (s3) return s3;
-    const scene = new Scene3D(view3, { aspect: 16 / 10, grid: 2, axes: 0.25, cameraPos: [1.2, -1.5, 1.0], target: [-0.1, 0.1, 0.33] });
+    const scene = new Scene3D(view3, { aspect: 1.9, grid: 2, axes: 0.25, cameraPos: [1.2, -1.5, 1.0], target: [-0.1, 0.1, 0.33] });
     const tube = (color: number) => Array.from({ length: SAMPLES3 - 1 }, () => scene.addLink({ radius: 0.008, color }));
     const ghost = () => { const f = scene.addFrame({ size: 0.11, opacity: 0.45 }); return f; };
     s3 = {

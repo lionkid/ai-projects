@@ -30,8 +30,8 @@ $$\\dot\\theta=\\theta'(s)\\,\\dot s,\\qquad \\ddot\\theta=\\theta''(s)\\,\\dot 
 
 $\\theta'(s)$、$\\theta''(s)$ 只由路徑的形狀決定；$\\dot s$、$\\ddot s$ 只由時間縮放決定。本課的路徑是關節空間的直線 $\\theta(s)=\\theta_{\\rm start}+s\\,\\Delta\\theta$，所以 $\\theta'=\\Delta\\theta$ 是常數、$\\theta''=0$：關節的速度與加速度曲線，就是 $\\dot s$、$\\ddot s$ 乘上同一個常數。
 
-另一個好用的規律：總時間 $T$ 變成 $k$ 倍時，$\\dot s$ 的峰值變成 $1/k$ 倍，$\\ddot s$ 的峰值變成 $1/k^{2}$ 倍。`,
-    simHint: '盯著面板上 θ̇ = θ′ṡ 的讀數播放一次；再把 T 從 2.5 s 拉到 5 s，比較 ṡ 與 s̈ 圖的高度（約變成 1/2 與 1/4）。',
+另一個好用的規律：對 $s=f(t/T)$ 這種「形狀固定」的縮放（例如三次、五次），總時間 $T$ 變成 $k$ 倍時，$\\dot s$ 的峰值變成 $1/k$ 倍，$\\ddot s$ 的峰值變成 $1/k^{2}$ 倍。`,
+    simHint: '播放時盯著面板上 dθ/dt = θ′ṡ 的讀數；再把 T 從 2.5 s 拉到 5 s，比較 ṡ 與 s̈ 圖的高度（約變成 1/2 與 1/4）。',
   },
   {
     title: '三次與五次多項式',
@@ -41,7 +41,7 @@ $$s(t)=3\\tau^{2}-2\\tau^{3},\\qquad \\tau=t/T .$$
 
 代價是加速度在兩端**跳變**：起動瞬間 $\\ddot s$ 從 0 直接跳到 $6/T^{2}$。**五次多項式（quintic）**再要求兩端加速度為零，得到 $s=10\\tau^{3}-15\\tau^{4}+6\\tau^{5}$，加速度從 0 平滑爬升。
 
-平滑不是免費的：五次的峰值速度是 $1.875/T$，比三次的 $1.5/T$ 高 25%；峰值加速度兩者相近（$5.77/T^{2}$ 對 $6/T^{2}$），只是五次的最大值出現在行程中段而不是起點。`,
+平滑不是免費的：五次的峰值速度是 $1.875/T$，比三次的 $1.5/T$ 高 25%；峰值加速度兩者相近（$5.77/T^{2}$ 對 $6/T^{2}$），只是五次的最大值出現在途中（$\\tau\\approx0.21$ 與 $0.79$），而不是一起動就出現。`,
     simHint: '在 s̈ 圖比較藍線（三次）與紅線（五次）在 t = 0 的樣子：一條垂直跳起、一條從零爬升；再看 ṡ 圖誰的峰值較高。',
   },
   {
@@ -163,7 +163,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   // ---------------------------------------------------------------- layout
   simTitle(host, '時間縮放實驗台：單關節 0° → 135°', 'θ(t) = θ(s(t))');
-  const cv = new Canvas2D(host, { height: 190, world: { xmin: -1.4, xmax: 3.6, ymin: -0.4, ymax: 1.36 }, overlay: true });
+  const cv = new Canvas2D(host, { height: 170, world: { xmin: -1.4, xmax: 3.6, ymin: -0.36, ymax: 1.36 }, overlay: true });
 
   const panel = controlPanel(host, { compact: true });
   const chipRow = row(panel);
@@ -214,10 +214,9 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   const chainRow = row(panel);
   chainRow.style.gap = '0.2rem 0.9rem';
-  const rSd = readout(chainRow, { label: 'ṡ =', unit: '1/s' });
-  const rThd = readout(chainRow, { label: 'θ̇ = θ′ṡ =', unit: 'rad/s', title: `θ′ = Δθ = ${fmt(DTH, 3)} rad` });
-  const rSdd = readout(chainRow, { label: 's̈ =', unit: '1/s²' });
-  const rThdd = readout(chainRow, { label: 'θ̈ = θ′s̈ =', unit: 'rad/s²', title: `θ″ = 0（直線路徑）` });
+  // Chain rule shown with its factors: θ′ = Δθ (constant for this straight joint path) times ṡ or s̈.
+  const rThd = readout(chainRow, { label: 'dθ/dt = θ′ṡ =', unit: 'rad/s', title: `θ′ = Δθ = ${fmt(DTH, 3)} rad` });
+  const rThdd = readout(chainRow, { label: 'd²θ/dt² = θ′s̈ =', unit: 'rad/s²', title: 'θ″ = 0（直線路徑），所以 θ″ṡ² 項為零' });
 
   const status = el('div', { class: 'mr-note', style: { fontSize: '0.84rem', margin: '0.3rem 0' } });
   host.appendChild(status);
@@ -225,7 +224,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
   host.appendChild(legendEl);
 
   // Bottom area: three tabs keep the pane short (plots / residual vibration / comparison table).
-  const tabRow = el('div');
+  const tabRow = el('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 0.8rem' } });
   host.appendChild(tabRow);
   const paneA = el('div'), paneB = el('div'), paneC = el('div');
   host.append(paneA, paneB, paneC);
@@ -236,17 +235,18 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     { label: '比較表', apply: () => showPane(2) },
   ]);
   function showPane(i: number): void { panes.forEach((p, k) => { p.style.display = k === i ? '' : 'none'; }); }
+  tabRow.appendChild(el('span', { class: 'mr-note', style: { margin: '0' } }, '灰虛線＝上限；直虛線＝jerk 脈衝 δ'));
 
   const specs = (): SeriesSpec[] => KINDS.map((k) => ({ name: SHORT[k], width: k === st.kind ? 2.6 : 1.4, dash: k === st.kind ? undefined : [6, 4] }));
-  const plotOpts = { series: specs(), height: 114, legend: false };
+  const plotOpts = { series: specs(), height: 108, legend: false };
   const [c1, c2] = split(paneA);
-  const pS = new Plot2D(c1, { ...plotOpts, title: '路徑參數 s(t)', yRange: [-0.05, 1.08] });
+  const pS = new Plot2D(c1, { ...plotOpts, title: '路徑參數 s(t)（橫軸 t, s）', yRange: [-0.05, 1.08] });
   const pSd = new Plot2D(c2, { ...plotOpts, title: '速度 ṡ(t)（1/s）' });
   const [c3, c4] = split(paneA);
   const pSdd = new Plot2D(c3, { ...plotOpts, title: '加速度 s̈(t)（1/s²）' });
   const pJ = new Plot2D(c4, { ...plotOpts, title: 'jerk d³s/dt³（1/s³）' });
-  const pV = new Plot2D(paneB, { ...plotOpts, height: 200, title: '負載偏差 q − s：運動結束後仍在晃＝殘餘振動', xLabel: 't (s)' });
-  note(paneB, `負載經由彈簧跟著關節走（f_n 可調，ζ = ${ZETA}）。畫面中的負載偏差放大 ${AMP} 倍顯示；殘餘振動的數值見「比較表」。`);
+  const pV = new Plot2D(paneB, { ...plotOpts, height: 180, title: '負載偏差 q − s：運動結束後仍在晃＝殘餘振動', xLabel: 't (s)' });
+  note(paneB, `彈簧負載（f_n 可調，ζ = ${ZETA}）；動畫中的偏差放大 ${AMP} 倍，數值見「比較表」。`);
   const plots = [pS, pSd, pSdd, pJ, pV];
   const group = plotGroup(plots);
 
@@ -301,11 +301,11 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
     c.point([0, 0], 5, { color: fg });
 
     // path bar (where) and time bar (when), connected by s(t)
-    c.text([BAR_X0, YS + 0.2], '路徑參數 s：只管「到哪裡」', { align: 'left', color: fg });
+    c.text([BAR_X0, YS + 0.2], '路徑 s：到哪裡', { align: 'left', color: fg });
     c.line([BAR_X0, YS], [BAR_X1, YS], { color: gridS, width: 6 });
     c.text([BAR_X0, YS - 0.14], '0', { color: muted });
     c.text([BAR_X1, YS - 0.14], '1', { color: muted });
-    c.text([BAR_X0, YT + 0.2], '時間 t：只管「何時」', { align: 'left', color: fg });
+    c.text([BAR_X0, YT + 0.2], '時間 t：何時', { align: 'left', color: fg });
     c.line([BAR_X0, YT], [BAR_X1, YT], { color: gridS, width: 6 });
     c.text([BAR_X0, YT - 0.14], '0', { color: muted });
     c.text([BAR_X1, YT - 0.14], `T = ${fmt(P.T, 2)} s`, { color: muted, align: 'right' });
@@ -372,7 +372,8 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function frame(): void {
     const r = curState();
-    rSd.set(r.sd); rThd.set(r.sd * DTH); rSdd.set(r.sdd); rThdd.set(r.sdd * DTH);
+    rThd.set(`${fmt(DTH, 2)}×${fmt(r.sd, 2)} = ${fmt(r.sd * DTH, 2)}`);
+    rThdd.set(`${fmt(DTH, 2)}×${fmt(r.sdd, 2)} = ${fmt(r.sdd * DTH, 2)}`);
     group.setCursor(st.t);
     pb.setTime(st.t);
     cv.requestRender();
@@ -456,8 +457,7 @@ function mount(host: HTMLElement, ctx: LessonContext): LessonHandle {
 
   function renderLegend(shown: ScalingKind[]): void {
     legendEl.replaceChildren(...shown.map((k) => el('span', { style: { fontWeight: k === st.kind ? '700' : '400' } },
-      el('span', { class: 'sw', style: { background: colorOf(k) } }), LABEL[k] + (k === st.kind ? '（播放中）' : ''))),
-    el('span', {}, '橫軸 t (s)；灰虛線＝上限；jerk 圖直虛線＝脈衝 δ'));
+      el('span', { class: 'sw', style: { background: colorOf(k) } }), LABEL[k] + (k === st.kind ? '（播放中）' : ''))));
   }
 
   function renderStatus(): void {
