@@ -1,0 +1,76 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'modern-robotics-lab/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; let an in-progress deploy finish instead of cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: modern-robotics-lab
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: modern-robotics-lab/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # typecheck + vitest + vite build; any failure stops the deploy.
+      - name: Check and build
+        run: npm run check
+
+      - name: Assemble site
+        working-directory: .
+        run: |
+          mkdir -p _site
+          cp -r modern-robotics-lab/dist _site/modern-robotics-lab
+          cat > _site/index.html <<'EOF'
+          <!doctype html>
+          <html lang="zh-Hant-TW">
+            <head>
+              <meta charset="UTF-8" />
+              <meta http-equiv="refresh" content="0; url=./modern-robotics-lab/" />
+              <title>ai-projects</title>
+            </head>
+            <body>
+              <p><a href="./modern-robotics-lab/">Modern Robotics Lab｜互動式機器人學實驗室</a></p>
+            </body>
+          </html>
+          EOF
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}modern-robotics-lab/
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
